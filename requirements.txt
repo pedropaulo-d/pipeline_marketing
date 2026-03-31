@@ -1,0 +1,6 @@
+python-dotenv
+facebook-business
+google-ads
+sqlalchemy
+pandas
+psycopg2-binary

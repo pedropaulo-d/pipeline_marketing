@@ -1,0 +1,59 @@
+# ========================
+# Segurança e Credenciais
+# ========================
+.env
+
+# ========================
+# Dados Temporários e Logs
+# ========================
+# Ignora os arquivos brutos que testamos agora
+temp_meta_raw.json
+temp_google_raw.json
+*.log
+
+# (Opcional) Se for salvar arquivos CSV/JSON futuros de transformação
+*.csv
+/data/
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ========================
+# Ambientes Virtuais (Caso crie algum localmente no futuro)
+# ========================
+venv/
+.venv/
+env/
+.env_venv/
+
+# ========================
+# Editores e OS (Cursor / VS Code / Windows / Mac)
+# ========================
+.vscode/
+.cursor/
+.idea/
+.DS_Store
+Thumbs.db

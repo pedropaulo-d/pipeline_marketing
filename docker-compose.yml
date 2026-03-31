@@ -1,0 +1,7 @@
+services:
+  etl_app:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
