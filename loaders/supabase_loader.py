@@ -471,10 +471,14 @@ def upsert_fato_metricas(
 # ── Main ─────────────────────────────────────────────────────
 
 
-def main() -> None:
-    """Orquestra a carga completa: lê os CSVs transformados, faz UPSERT
-    nas tabelas de dimensão (respeitando a hierarquia de FKs) e na
-    tabela fato, tudo dentro de uma única transação.
+def run() -> int:
+    """Executa a carga completa no Supabase a partir dos CSVs transformados.
+
+    Faz UPSERT nas tabelas de dimensão (respeitando a hierarquia de FKs)
+    e na tabela fato, tudo dentro de uma única transação.
+
+    Returns:
+        Quantidade de registros carregados na tabela fato.
     """
     engine = get_engine()
     tables = reflect_tables(engine)
@@ -509,11 +513,17 @@ def main() -> None:
 
             session.commit()
             logger.info("Carga concluída com sucesso.")
+            return len(df_fato)
 
         except Exception:
             session.rollback()
             logger.exception("Erro durante a carga. Rollback realizado.")
             raise
+
+
+def main() -> None:
+    """Entry point para execução standalone via CLI."""
+    run()
 
 
 if __name__ == "__main__":

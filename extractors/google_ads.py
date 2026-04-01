@@ -1,6 +1,8 @@
+import argparse
 import json
 import logging
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,7 +27,7 @@ GAQL_DISCOVERY: str = """
       AND customer_client.manager = FALSE
 """
 
-GAQL_ADS: str = """
+GAQL_ADS_TEMPLATE: str = """
     SELECT
         customer.id,
         customer.descriptive_name,
@@ -42,7 +44,7 @@ GAQL_ADS: str = """
         metrics.conversions,
         metrics.conversions_value
     FROM ad_group_ad
-    WHERE segments.date DURING YESTERDAY
+    WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
       AND campaign.status = 'ENABLED'
 """
 
@@ -113,22 +115,29 @@ def discover_accounts(client: GoogleAdsClient) -> list[dict]:
 
 
 def extract_daily_ads(
-    client: GoogleAdsClient, account_id: str, account_name: str
+    client: GoogleAdsClient, account_id: str, account_name: str,
+    start_date: str, end_date: str,
 ) -> list[dict]:
-    """Extrai métricas do dia anterior a nível de anúncio para uma conta.
+    """Extrai métricas a nível de anúncio para uma conta num período.
 
     Args:
         client: Instância autenticada do GoogleAdsClient.
         account_id: ID numérico da conta Google Ads.
         account_name: Nome descritivo da conta.
+        start_date: Data inicial no formato ``YYYY-MM-DD``.
+        end_date: Data final no formato ``YYYY-MM-DD``.
 
     Returns:
         Lista de dicts com campos de hierarquia e métricas por anúncio.
     """
     ga_service = client.get_service("GoogleAdsService")
+    query = GAQL_ADS_TEMPLATE.format(start_date=start_date, end_date=end_date)
 
-    logger.info("Processando conta: %s (ID: %s)", account_name, account_id)
-    response = ga_service.search(customer_id=account_id, query=GAQL_ADS)
+    logger.info(
+        "Processando conta: %s (ID: %s) — período: %s a %s",
+        account_name, account_id, start_date, end_date,
+    )
+    response = ga_service.search(customer_id=account_id, query=query)
 
     rows: list[dict] = []
     for row in response:
@@ -164,25 +173,42 @@ def save_raw(rows: list[dict]) -> None:
     logger.info("Dados brutos salvos em %s (%d registros)", OUTPUT_PATH, len(rows))
 
 
-def main() -> None:
-    """Orquestra a extração completa do Google Ads: inicializa o client,
-    descobre subcontas ativas e extrai métricas diárias de cada uma.
+def run(start_date: str, end_date: str) -> int:
+    """Executa a extração completa do Google Ads para o período informado.
+
+    Args:
+        start_date: Data inicial no formato ``YYYY-MM-DD``.
+        end_date: Data final no formato ``YYYY-MM-DD``.
+
+    Returns:
+        Quantidade total de registros extraídos.
     """
-    try:
-        client = init_client()
-        accounts = discover_accounts(client)
+    client = init_client()
+    accounts = discover_accounts(client)
 
-        all_rows: list[dict] = []
-        for acc in accounts:
-            rows = extract_daily_ads(client, acc["id"], acc["name"])
-            all_rows.extend(rows)
+    all_rows: list[dict] = []
+    for acc in accounts:
+        rows = extract_daily_ads(client, acc["id"], acc["name"], start_date, end_date)
+        all_rows.extend(rows)
 
-        save_raw(all_rows)
-        logger.info("Extração concluída. Total geral: %d registros", len(all_rows))
+    save_raw(all_rows)
+    logger.info("Extração Google concluída. Total: %d registros", len(all_rows))
+    return len(all_rows)
 
-    except Exception:
-        logger.exception("Erro na extração do Google Ads.")
-        raise
+
+def _parse_args() -> argparse.Namespace:
+    """Parseia argumentos de linha de comando para período de extração."""
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    parser = argparse.ArgumentParser(description="Extrator Google Ads")
+    parser.add_argument("--start-date", default=yesterday, help="Data inicial (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=yesterday, help="Data final (YYYY-MM-DD)")
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Entry point para execução standalone via CLI."""
+    args = _parse_args()
+    run(args.start_date, args.end_date)
 
 
 if __name__ == "__main__":

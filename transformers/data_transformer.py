@@ -25,44 +25,24 @@ DIM_COLS: list[str] = [
 ]
 
 
-def _extract_from_actions(actions: list[dict] | None, keyword: str) -> float:
-    """Soma os values de actions cujo action_type contenha a keyword.
+def _sum_action_values(
+    entries: list[dict] | None, action_type: str
+) -> float:
+    """Soma os values de entries cujo action_type seja exatamente o informado.
 
     Args:
-        actions: Lista de dicts ``{"action_type": ..., "value": ...}``
-            retornada pela API do Meta, ou None.
-        keyword: Substring a procurar no campo ``action_type``.
+        entries: Lista de dicts ``{"action_type": ..., "value": ...}``
+            retornada pela API do Meta (actions ou action_values), ou None.
+        action_type: Valor exato esperado no campo ``action_type``.
 
     Returns:
         Soma dos valores correspondentes.
     """
-    if not isinstance(actions, list):
+    if not isinstance(entries, list):
         return 0
     total = 0.0
-    for entry in actions:
-        if keyword in entry.get("action_type", ""):
-            total += float(entry.get("value", 0))
-    return total
-
-
-def _extract_from_action_values(
-    action_values: list[dict] | None, keyword: str
-) -> float:
-    """Soma os values de action_values cujo action_type contenha a keyword.
-
-    Args:
-        action_values: Lista de dicts ``{"action_type": ..., "value": ...}``
-            retornada pela API do Meta, ou None.
-        keyword: Substring a procurar no campo ``action_type``.
-
-    Returns:
-        Soma dos valores monetários correspondentes.
-    """
-    if not isinstance(action_values, list):
-        return 0
-    total = 0.0
-    for entry in action_values:
-        if keyword in entry.get("action_type", ""):
+    for entry in entries:
+        if entry.get("action_type") == action_type:
             total += float(entry.get("value", 0))
     return total
 
@@ -95,19 +75,13 @@ def transform_meta(path: Path) -> pd.DataFrame:
     }, inplace=True)
 
     df["conversions"] = df.apply(
-        lambda r: (
-            _extract_from_actions(r.get("actions"), "conversion")
-            + _extract_from_actions(r.get("actions"), "lead")
-        ), axis=1,
+        lambda r: _sum_action_values(r.get("actions"), "lead"), axis=1,
     )
     df["conversion_value"] = df.apply(
-        lambda r: (
-            _extract_from_action_values(r.get("action_values"), "conversion")
-            + _extract_from_action_values(r.get("action_values"), "lead")
-        ), axis=1,
+        lambda r: _sum_action_values(r.get("action_values"), "lead"), axis=1,
     )
     df["video_views"] = df.apply(
-        lambda r: _extract_from_actions(r.get("actions"), "video_view"), axis=1,
+        lambda r: _sum_action_values(r.get("actions"), "video_view"), axis=1,
     ).astype(int)
 
     df["platform"] = "Meta Ads"
@@ -149,33 +123,37 @@ def transform_google(path: Path) -> pd.DataFrame:
     return df
 
 
-def main() -> None:
-    """Orquestra a transformação: lê JSONs brutos de cada plataforma,
-    concatena em um DataFrame unificado e gera os CSVs de dimensão e fato.
+def run() -> tuple[int, int]:
+    """Executa a transformação completa e gera os CSVs de dimensão e fato.
+
+    Returns:
+        Tupla ``(total_fato, total_dim)`` com a contagem de registros gerados.
     """
+    df_meta = transform_meta(META_RAW)
+    df_google = transform_google(GOOGLE_RAW)
+
+    df = pd.concat([df_meta, df_google], ignore_index=True)
+    logger.info("DataFrames concatenados. Total: %d registros", len(df))
+
+    # --- Tabela Fato ---
+    df_fato = df[FATO_COLS].copy()
+    df_fato.fillna(0, inplace=True)
+    df_fato.to_csv(OUTPUT_FATO, index=False)
+    logger.info("Fato salva em %s (%d registros)", OUTPUT_FATO, len(df_fato))
+
+    # --- Dimensão Anúncios ---
+    df_dim_ads = df[DIM_COLS].copy()
+    df_dim_ads.drop_duplicates(subset=["ad_id"], inplace=True)
+    df_dim_ads.to_csv(OUTPUT_DIM_ADS, index=False)
+    logger.info("Dimensão salva em %s (%d anúncios únicos)", OUTPUT_DIM_ADS, len(df_dim_ads))
+
+    return len(df_fato), len(df_dim_ads)
+
+
+def main() -> None:
+    """Entry point para execução standalone via CLI."""
     try:
-        df_meta = transform_meta(META_RAW)
-        df_google = transform_google(GOOGLE_RAW)
-
-        df = pd.concat([df_meta, df_google], ignore_index=True)
-        logger.info("DataFrames concatenados. Total: %d registros", len(df))
-
-        # --- Tabela Fato ---
-        df_fato = df[FATO_COLS].copy()
-        df_fato.fillna(0, inplace=True)
-        df_fato.to_csv(OUTPUT_FATO, index=False)
-        logger.info("Fato salva em %s (%d registros)", OUTPUT_FATO, len(df_fato))
-        print("\n=== df_fato.head() ===")
-        print(df_fato.head().to_string())
-
-        # --- Dimensão Anúncios ---
-        df_dim_ads = df[DIM_COLS].copy()
-        df_dim_ads.drop_duplicates(subset=["ad_id"], inplace=True)
-        df_dim_ads.to_csv(OUTPUT_DIM_ADS, index=False)
-        logger.info("Dimensão salva em %s (%d anúncios únicos)", OUTPUT_DIM_ADS, len(df_dim_ads))
-        print("\n=== df_dim_ads.head() ===")
-        print(df_dim_ads.head().to_string())
-
+        run()
     except Exception:
         logger.exception("Erro na transformação dos dados.")
         raise

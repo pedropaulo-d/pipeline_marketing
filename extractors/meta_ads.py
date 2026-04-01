@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -126,26 +127,32 @@ def discover_accounts() -> list[dict]:
     return active
 
 
-def extract_daily_ads(account_id: str, account_name: str) -> list[dict]:
-    """Extrai métricas do dia anterior a nível de anúncio para uma conta.
+def extract_daily_ads(
+    account_id: str, account_name: str, start_date: str, end_date: str
+) -> list[dict]:
+    """Extrai métricas a nível de anúncio para uma conta num período.
 
     Args:
         account_id: ID da conta de anúncios (com ou sem prefixo ``act_``).
         account_name: Nome descritivo da conta.
+        start_date: Data inicial no formato ``YYYY-MM-DD``.
+        end_date: Data final no formato ``YYYY-MM-DD``.
 
     Returns:
         Lista de dicts com campos de hierarquia e métricas por anúncio.
     """
     account = AdAccount(f"act_{account_id.removeprefix('act_')}")
 
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     params = {
         "level": "ad",
-        "time_range": {"since": yesterday, "until": yesterday},
+        "time_range": {"since": start_date, "until": end_date},
         "time_increment": 1,
     }
 
-    logger.info("Processando conta: %s (ID: %s) — data: %s", account_name, account_id, yesterday)
+    logger.info(
+        "Processando conta: %s (ID: %s) — período: %s a %s",
+        account_name, account_id, start_date, end_date,
+    )
     cursor = account.get_insights(fields=INSIGHT_FIELDS, params=params)
 
     rows: list[dict] = []
@@ -170,25 +177,42 @@ def save_raw(rows: list[dict]) -> None:
     logger.info("Dados brutos salvos em %s (%d registros)", OUTPUT_PATH, len(rows))
 
 
-def main() -> None:
-    """Orquestra a extração completa do Meta Ads: inicializa a API,
-    descobre contas ativas e extrai métricas diárias de cada uma.
+def run(start_date: str, end_date: str) -> int:
+    """Executa a extração completa do Meta Ads para o período informado.
+
+    Args:
+        start_date: Data inicial no formato ``YYYY-MM-DD``.
+        end_date: Data final no formato ``YYYY-MM-DD``.
+
+    Returns:
+        Quantidade total de registros extraídos.
     """
-    try:
-        init_api()
-        accounts = discover_accounts()
+    init_api()
+    accounts = discover_accounts()
 
-        all_rows: list[dict] = []
-        for acc in accounts:
-            rows = extract_daily_ads(acc["id"], acc["name"])
-            all_rows.extend(rows)
+    all_rows: list[dict] = []
+    for acc in accounts:
+        rows = extract_daily_ads(acc["id"], acc["name"], start_date, end_date)
+        all_rows.extend(rows)
 
-        save_raw(all_rows)
-        logger.info("Extração concluída. Total geral: %d registros", len(all_rows))
+    save_raw(all_rows)
+    logger.info("Extração Meta concluída. Total: %d registros", len(all_rows))
+    return len(all_rows)
 
-    except Exception:
-        logger.exception("Erro na extração do Meta Ads.")
-        raise
+
+def _parse_args() -> argparse.Namespace:
+    """Parseia argumentos de linha de comando para período de extração."""
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    parser = argparse.ArgumentParser(description="Extrator Meta Ads")
+    parser.add_argument("--start-date", default=yesterday, help="Data inicial (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=yesterday, help="Data final (YYYY-MM-DD)")
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Entry point para execução standalone via CLI."""
+    args = _parse_args()
+    run(args.start_date, args.end_date)
 
 
 if __name__ == "__main__":
