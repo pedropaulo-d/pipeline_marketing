@@ -1,10 +1,12 @@
+import datetime
 import logging
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, MetaData, select
+from sqlalchemy import Engine, MetaData, Table, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -16,33 +18,107 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DIM_ADS_CSV = BASE_DIR / "temp_dim_ads.csv"
-FATO_CSV = BASE_DIR / "temp_fato.csv"
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
+DIM_ADS_CSV: Path = BASE_DIR / "temp_dim_ads.csv"
+FATO_CSV: Path = BASE_DIR / "temp_fato.csv"
 
-METRIC_COLS = [
+METRIC_COLS: list[str] = [
     "spend", "impressions", "link_clicks",
     "conversions", "conversion_value", "video_views",
 ]
 
+# Type aliases para os mapas de FK
+FkMap = dict[tuple[str, int], int]
+PlataformaMap = dict[str, int]
+TempoMap = dict[datetime.date, int]
+AdIdMap = dict[str, int]
 
-def get_engine():
+
+def get_engine() -> Engine:
+    """Cria uma engine SQLAlchemy a partir da variável SUPABASE_DB_URL.
+
+    Returns:
+        Engine conectada ao banco Supabase.
+
+    Raises:
+        EnvironmentError: Se SUPABASE_DB_URL não estiver definida no .env.
+    """
+    from sqlalchemy import create_engine
+
     db_url = os.getenv("SUPABASE_DB_URL")
     if not db_url:
         raise EnvironmentError("Variável SUPABASE_DB_URL é obrigatória no .env")
     return create_engine(db_url)
 
 
-def reflect_tables(engine):
+def reflect_tables(engine: Engine) -> dict[str, Table]:
+    """Reflete o schema do banco e retorna um dict de objetos Table.
+
+    Args:
+        engine: Engine SQLAlchemy conectada ao banco.
+
+    Returns:
+        Dicionário ``{nome_tabela: Table}``.
+    """
     metadata = MetaData()
     metadata.reflect(bind=engine)
     return metadata.tables
 
 
+# ── Helper: resolução de cadeia de FK ────────────────────────
+
+
+def _resolve_fk_chain(
+    row: pd.Series,
+    plataforma_map: PlataformaMap,
+    conta_map: FkMap,
+    campanha_map: FkMap,
+    adset_map: FkMap | None = None,
+) -> tuple[int, ...]:
+    """Resolve a cadeia de FKs internas a partir de uma linha do DataFrame
+    de dimensões, descendo do nível plataforma até o nível solicitado.
+
+    Args:
+        row: Linha do DataFrame de dimensões (com colunas ``platform``,
+            ``account_id``, ``campaign_id`` e opcionalmente ``adset_id``).
+        plataforma_map: Mapa ``{nome: id}`` de dim_plataforma.
+        conta_map: Mapa ``{(external_id, plataforma_id): id}`` de dim_conta.
+        campanha_map: Mapa ``{(external_id, conta_id): id}`` de dim_campanha.
+        adset_map: Mapa ``{(external_id, campanha_id): id}`` de dim_adset.
+            Se fornecido, a resolução desce até o nível adset.
+
+    Returns:
+        Tupla de IDs internos resolvidos, na ordem
+        ``(plat_id, conta_id, camp_id)`` ou
+        ``(plat_id, conta_id, camp_id, adset_id)`` quando adset_map é fornecido.
+    """
+    plat_id = plataforma_map[row["platform"]]
+    conta_id = conta_map[(row["account_id"], plat_id)]
+    camp_id = campanha_map[(row["campaign_id"], conta_id)]
+
+    if adset_map is not None:
+        adset_id = adset_map[(row["adset_id"], camp_id)]
+        return (plat_id, conta_id, camp_id, adset_id)
+
+    return (plat_id, conta_id, camp_id)
+
+
 # ── Dimensões ────────────────────────────────────────────────
 
 
-def upsert_dim_plataforma(session, tables, df_dim):
+def upsert_dim_plataforma(
+    session: Session, tables: dict[str, Table], df_dim: pd.DataFrame
+) -> PlataformaMap:
+    """Faz UPSERT na tabela dim_plataforma e retorna o mapa de IDs.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_dim: DataFrame de dimensões com coluna ``platform``.
+
+    Returns:
+        Mapa ``{nome_plataforma: id_interno}``.
+    """
     table = tables["dim_plataforma"]
     platforms = df_dim["platform"].unique()
 
@@ -56,12 +132,28 @@ def upsert_dim_plataforma(session, tables, df_dim):
 
     session.flush()
     rows = session.execute(select(table.c.id, table.c.nome))
-    plataforma_map = {r.nome: r.id for r in rows}
+    plataforma_map: PlataformaMap = {r.nome: r.id for r in rows}
     logger.info("dim_plataforma: %d registros carregados.", len(plataforma_map))
     return plataforma_map
 
 
-def upsert_dim_conta(session, tables, df_dim, plataforma_map):
+def upsert_dim_conta(
+    session: Session,
+    tables: dict[str, Table],
+    df_dim: pd.DataFrame,
+    plataforma_map: PlataformaMap,
+) -> FkMap:
+    """Faz UPSERT na tabela dim_conta e retorna o mapa de IDs.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_dim: DataFrame de dimensões.
+        plataforma_map: Mapa de IDs de dim_plataforma.
+
+    Returns:
+        Mapa ``{(external_id, plataforma_id): id_interno}``.
+    """
     table = tables["dim_conta"]
     df_u = df_dim.drop_duplicates(subset=["account_id", "platform"])
 
@@ -84,12 +176,30 @@ def upsert_dim_conta(session, tables, df_dim, plataforma_map):
 
     session.flush()
     result = session.execute(select(table.c.id, table.c.external_id, table.c.plataforma_id))
-    conta_map = {(r.external_id, r.plataforma_id): r.id for r in result}
+    conta_map: FkMap = {(r.external_id, r.plataforma_id): r.id for r in result}
     logger.info("dim_conta: %d registros carregados.", len(conta_map))
     return conta_map
 
 
-def upsert_dim_campanha(session, tables, df_dim, conta_map, plataforma_map):
+def upsert_dim_campanha(
+    session: Session,
+    tables: dict[str, Table],
+    df_dim: pd.DataFrame,
+    conta_map: FkMap,
+    plataforma_map: PlataformaMap,
+) -> FkMap:
+    """Faz UPSERT na tabela dim_campanha e retorna o mapa de IDs.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_dim: DataFrame de dimensões.
+        conta_map: Mapa de IDs de dim_conta.
+        plataforma_map: Mapa de IDs de dim_plataforma.
+
+    Returns:
+        Mapa ``{(external_id, conta_id): id_interno}``.
+    """
     table = tables["dim_campanha"]
     df_u = df_dim.drop_duplicates(subset=["campaign_id", "account_id", "platform"])
 
@@ -112,12 +222,32 @@ def upsert_dim_campanha(session, tables, df_dim, conta_map, plataforma_map):
 
     session.flush()
     result = session.execute(select(table.c.id, table.c.external_id, table.c.conta_id))
-    campanha_map = {(r.external_id, r.conta_id): r.id for r in result}
+    campanha_map: FkMap = {(r.external_id, r.conta_id): r.id for r in result}
     logger.info("dim_campanha: %d registros carregados.", len(campanha_map))
     return campanha_map
 
 
-def upsert_dim_adset(session, tables, df_dim, campanha_map, conta_map, plataforma_map):
+def upsert_dim_adset(
+    session: Session,
+    tables: dict[str, Table],
+    df_dim: pd.DataFrame,
+    campanha_map: FkMap,
+    conta_map: FkMap,
+    plataforma_map: PlataformaMap,
+) -> FkMap:
+    """Faz UPSERT na tabela dim_adset e retorna o mapa de IDs.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_dim: DataFrame de dimensões.
+        campanha_map: Mapa de IDs de dim_campanha.
+        conta_map: Mapa de IDs de dim_conta.
+        plataforma_map: Mapa de IDs de dim_plataforma.
+
+    Returns:
+        Mapa ``{(external_id, campanha_id): id_interno}``.
+    """
     table = tables["dim_adset"]
     df_u = df_dim.drop_duplicates(
         subset=["adset_id", "campaign_id", "account_id", "platform"]
@@ -125,9 +255,7 @@ def upsert_dim_adset(session, tables, df_dim, campanha_map, conta_map, plataform
 
     rows = []
     for _, r in df_u.iterrows():
-        plat_id = plataforma_map[r["platform"]]
-        conta_id = conta_map[(r["account_id"], plat_id)]
-        camp_id = campanha_map[(r["campaign_id"], conta_id)]
+        _, _, camp_id = _resolve_fk_chain(r, plataforma_map, conta_map, campanha_map)
         rows.append({
             "external_id": r["adset_id"],
             "nome": r["adset_name"],
@@ -144,26 +272,46 @@ def upsert_dim_adset(session, tables, df_dim, campanha_map, conta_map, plataform
 
     session.flush()
     result = session.execute(select(table.c.id, table.c.external_id, table.c.campanha_id))
-    adset_map = {(r.external_id, r.campanha_id): r.id for r in result}
+    adset_map: FkMap = {(r.external_id, r.campanha_id): r.id for r in result}
     logger.info("dim_adset: %d registros carregados.", len(adset_map))
     return adset_map
 
 
-def upsert_dim_anuncio(session, tables, df_dim, adset_map, campanha_map,
-                        conta_map, plataforma_map):
+def upsert_dim_anuncio(
+    session: Session,
+    tables: dict[str, Table],
+    df_dim: pd.DataFrame,
+    adset_map: FkMap,
+    campanha_map: FkMap,
+    conta_map: FkMap,
+    plataforma_map: PlataformaMap,
+) -> FkMap:
+    """Faz UPSERT na tabela dim_anuncio e retorna o mapa de IDs.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_dim: DataFrame de dimensões.
+        adset_map: Mapa de IDs de dim_adset.
+        campanha_map: Mapa de IDs de dim_campanha.
+        conta_map: Mapa de IDs de dim_conta.
+        plataforma_map: Mapa de IDs de dim_plataforma.
+
+    Returns:
+        Mapa ``{(external_id, adset_id): id_interno}``.
+    """
     table = tables["dim_anuncio"]
     df_u = df_dim.drop_duplicates(subset=["ad_id"])
 
     rows = []
     for _, r in df_u.iterrows():
-        plat_id = plataforma_map[r["platform"]]
-        conta_id = conta_map[(r["account_id"], plat_id)]
-        camp_id = campanha_map[(r["campaign_id"], conta_id)]
-        adset_id = adset_map[(r["adset_id"], camp_id)]
+        *_, adset_id_internal = _resolve_fk_chain(
+            r, plataforma_map, conta_map, campanha_map, adset_map
+        )
         rows.append({
             "external_id": r["ad_id"],
             "nome": r["ad_name"],
-            "adset_id": adset_id,
+            "adset_id": adset_id_internal,
         })
 
     if rows:
@@ -176,24 +324,42 @@ def upsert_dim_anuncio(session, tables, df_dim, adset_map, campanha_map,
 
     session.flush()
     result = session.execute(select(table.c.id, table.c.external_id, table.c.adset_id))
-    anuncio_map = {(r.external_id, r.adset_id): r.id for r in result}
+    anuncio_map: FkMap = {(r.external_id, r.adset_id): r.id for r in result}
     logger.info("dim_anuncio: %d registros carregados.", len(anuncio_map))
     return anuncio_map
 
 
-def upsert_dim_tempo(session, tables, dates):
+def upsert_dim_tempo(
+    session: Session,
+    tables: dict[str, Table],
+    dates: np.ndarray,
+) -> TempoMap:
+    """Faz UPSERT na tabela dim_tempo e retorna o mapa de IDs.
+
+    Deriva automaticamente os campos dia, mes, ano, trimestre e dia_semana
+    a partir de cada data.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        dates: Array de objetos ``datetime.date`` únicos.
+
+    Returns:
+        Mapa ``{date: id_interno}``.
+    """
     table = tables["dim_tempo"]
 
-    rows = []
-    for d in dates:
-        rows.append({
+    rows = [
+        {
             "data": d,
             "dia": d.day,
             "mes": d.month,
             "ano": d.year,
             "trimestre": (d.month - 1) // 3 + 1,
             "dia_semana": d.isoweekday(),
-        })
+        }
+        for d in dates
+    ]
 
     if rows:
         stmt = insert(table).values(rows)
@@ -211,7 +377,7 @@ def upsert_dim_tempo(session, tables, dates):
 
     session.flush()
     result = session.execute(select(table.c.id, table.c.data))
-    tempo_map = {r.data: r.id for r in result}
+    tempo_map: TempoMap = {r.data: r.id for r in result}
     logger.info("dim_tempo: %d registros carregados.", len(tempo_map))
     return tempo_map
 
@@ -219,14 +385,35 @@ def upsert_dim_tempo(session, tables, dates):
 # ── Mapa auxiliar ad_id → anuncio_id ─────────────────────────
 
 
-def build_ad_id_map(df_dim, plataforma_map, conta_map, campanha_map,
-                    adset_map, anuncio_map):
-    ad_id_map = {}
+def build_ad_id_map(
+    df_dim: pd.DataFrame,
+    plataforma_map: PlataformaMap,
+    conta_map: FkMap,
+    campanha_map: FkMap,
+    adset_map: FkMap,
+    anuncio_map: FkMap,
+) -> AdIdMap:
+    """Constrói um mapa de conveniência de ad_id externo para anuncio_id interno.
+
+    Percorre a hierarquia completa de FKs para resolver cada anúncio
+    único do DataFrame de dimensões.
+
+    Args:
+        df_dim: DataFrame de dimensões.
+        plataforma_map: Mapa de IDs de dim_plataforma.
+        conta_map: Mapa de IDs de dim_conta.
+        campanha_map: Mapa de IDs de dim_campanha.
+        adset_map: Mapa de IDs de dim_adset.
+        anuncio_map: Mapa de IDs de dim_anuncio.
+
+    Returns:
+        Mapa ``{ad_external_id: anuncio_internal_id}``.
+    """
+    ad_id_map: AdIdMap = {}
     for _, r in df_dim.drop_duplicates(subset=["ad_id"]).iterrows():
-        plat_id = plataforma_map[r["platform"]]
-        conta_id = conta_map[(r["account_id"], plat_id)]
-        camp_id = campanha_map[(r["campaign_id"], conta_id)]
-        adset_id = adset_map[(r["adset_id"], camp_id)]
+        *_, adset_id = _resolve_fk_chain(
+            r, plataforma_map, conta_map, campanha_map, adset_map
+        )
         anuncio_id = anuncio_map[(r["ad_id"], adset_id)]
         ad_id_map[r["ad_id"]] = anuncio_id
     return ad_id_map
@@ -235,7 +422,25 @@ def build_ad_id_map(df_dim, plataforma_map, conta_map, campanha_map,
 # ── Tabela Fato ──────────────────────────────────────────────
 
 
-def upsert_fato_metricas(session, tables, df_fato, ad_id_map, tempo_map):
+def upsert_fato_metricas(
+    session: Session,
+    tables: dict[str, Table],
+    df_fato: pd.DataFrame,
+    ad_id_map: AdIdMap,
+    tempo_map: TempoMap,
+) -> None:
+    """Faz UPSERT na tabela fato_metricas com as métricas diárias.
+
+    Em caso de conflito na chave composta (anuncio_id, tempo_id),
+    atualiza todas as colunas de métricas.
+
+    Args:
+        session: Sessão SQLAlchemy ativa.
+        tables: Dicionário de tabelas refletidas.
+        df_fato: DataFrame com métricas diárias.
+        ad_id_map: Mapa ``{ad_external_id: anuncio_internal_id}``.
+        tempo_map: Mapa ``{date: tempo_internal_id}``.
+    """
     table = tables["fato_metricas"]
 
     rows = []
@@ -266,7 +471,11 @@ def upsert_fato_metricas(session, tables, df_fato, ad_id_map, tempo_map):
 # ── Main ─────────────────────────────────────────────────────
 
 
-def main():
+def main() -> None:
+    """Orquestra a carga completa: lê os CSVs transformados, faz UPSERT
+    nas tabelas de dimensão (respeitando a hierarquia de FKs) e na
+    tabela fato, tudo dentro de uma única transação.
+    """
     engine = get_engine()
     tables = reflect_tables(engine)
 

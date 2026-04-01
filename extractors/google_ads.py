@@ -1,10 +1,9 @@
 import json
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-import os
-
 from google.ads.googleads.client import GoogleAdsClient
 
 load_dotenv()
@@ -15,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-GAQL_DISCOVERY = """
+GAQL_DISCOVERY: str = """
     SELECT
         customer_client.id,
         customer_client.descriptive_name,
@@ -26,7 +25,7 @@ GAQL_DISCOVERY = """
       AND customer_client.manager = FALSE
 """
 
-GAQL_ADS = """
+GAQL_ADS: str = """
     SELECT
         customer.id,
         customer.descriptive_name,
@@ -47,10 +46,18 @@ GAQL_ADS = """
       AND campaign.status = 'ENABLED'
 """
 
-OUTPUT_PATH = Path(__file__).resolve().parent.parent / "temp_google_raw.json"
+OUTPUT_PATH: Path = Path(__file__).resolve().parent.parent / "temp_google_raw.json"
 
 
-def init_client():
+def init_client() -> GoogleAdsClient:
+    """Inicializa o GoogleAdsClient com as credenciais do .env.
+
+    Returns:
+        Instância configurada do GoogleAdsClient.
+
+    Raises:
+        EnvironmentError: Se alguma variável obrigatória estiver ausente.
+    """
     required = [
         "GOOGLE_DEVELOPER_TOKEN",
         "GOOGLE_CLIENT_ID",
@@ -78,14 +85,22 @@ def init_client():
     return client
 
 
-def discover_accounts(client):
+def discover_accounts(client: GoogleAdsClient) -> list[dict]:
+    """Descobre subcontas ativas sob a conta MCC.
+
+    Args:
+        client: Instância autenticada do GoogleAdsClient.
+
+    Returns:
+        Lista de dicts com ``id`` e ``name`` de cada subconta ativa.
+    """
     login_id = os.getenv("GOOGLE_LOGIN_CUSTOMER_ID")
     ga_service = client.get_service("GoogleAdsService")
 
     logger.info("Buscando subcontas ativas via customer_client (MCC: %s)", login_id)
     response = ga_service.search(customer_id=login_id, query=GAQL_DISCOVERY)
 
-    accounts = []
+    accounts: list[dict] = []
     for row in response:
         cc = row.customer_client
         accounts.append({
@@ -97,13 +112,25 @@ def discover_accounts(client):
     return accounts
 
 
-def extract_daily_ads(client, account_id, account_name):
+def extract_daily_ads(
+    client: GoogleAdsClient, account_id: str, account_name: str
+) -> list[dict]:
+    """Extrai métricas do dia anterior a nível de anúncio para uma conta.
+
+    Args:
+        client: Instância autenticada do GoogleAdsClient.
+        account_id: ID numérico da conta Google Ads.
+        account_name: Nome descritivo da conta.
+
+    Returns:
+        Lista de dicts com campos de hierarquia e métricas por anúncio.
+    """
     ga_service = client.get_service("GoogleAdsService")
 
     logger.info("Processando conta: %s (ID: %s)", account_name, account_id)
     response = ga_service.search(customer_id=account_id, query=GAQL_ADS)
 
-    rows = []
+    rows: list[dict] = []
     for row in response:
         rows.append({
             "date": row.segments.date,
@@ -126,23 +153,36 @@ def extract_daily_ads(client, account_id, account_name):
     return rows
 
 
-def save_raw(rows):
+def save_raw(rows: list[dict]) -> None:
+    """Salva a lista de registros brutos em JSON.
+
+    Args:
+        rows: Lista de dicts a serem serializados.
+    """
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
     logger.info("Dados brutos salvos em %s (%d registros)", OUTPUT_PATH, len(rows))
 
 
-def main():
-    client = init_client()
-    accounts = discover_accounts(client)
+def main() -> None:
+    """Orquestra a extração completa do Google Ads: inicializa o client,
+    descobre subcontas ativas e extrai métricas diárias de cada uma.
+    """
+    try:
+        client = init_client()
+        accounts = discover_accounts(client)
 
-    all_rows = []
-    for acc in accounts:
-        rows = extract_daily_ads(client, acc["id"], acc["name"])
-        all_rows.extend(rows)
+        all_rows: list[dict] = []
+        for acc in accounts:
+            rows = extract_daily_ads(client, acc["id"], acc["name"])
+            all_rows.extend(rows)
 
-    save_raw(all_rows)
-    logger.info("Extração concluída. Total geral: %d registros", len(all_rows))
+        save_raw(all_rows)
+        logger.info("Extração concluída. Total geral: %d registros", len(all_rows))
+
+    except Exception:
+        logger.exception("Erro na extração do Google Ads.")
+        raise
 
 
 if __name__ == "__main__":
