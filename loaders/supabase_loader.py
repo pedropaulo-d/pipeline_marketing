@@ -25,6 +25,7 @@ FATO_CSV: Path = BASE_DIR / "temp_fato.csv"
 METRIC_COLS: list[str] = [
     "spend", "impressions", "link_clicks",
     "conversions", "conversion_value", "video_views",
+    "reach", "profile_views", "purchases",
 ]
 
 # Type aliases para os mapas de FK
@@ -429,15 +430,17 @@ def upsert_fato_metricas(
     ad_id_map: AdIdMap,
     tempo_map: TempoMap,
 ) -> None:
-    """Faz UPSERT na tabela fato_metricas com as métricas diárias.
+    """Faz UPSERT na tabela fato_metricas com as metricas diarias.
 
-    Em caso de conflito na chave composta (anuncio_id, tempo_id),
-    atualiza todas as colunas de métricas.
+    Em caso de conflito na chave composta ``(anuncio_id, tempo_id)``,
+    atualiza todas as 9 colunas de metricas: ``spend``, ``impressions``,
+    ``link_clicks``, ``conversions``, ``conversion_value``, ``video_views``,
+    ``reach``, ``profile_views`` e ``purchases``.
 
     Args:
-        session: Sessão SQLAlchemy ativa.
-        tables: Dicionário de tabelas refletidas.
-        df_fato: DataFrame com métricas diárias.
+        session: Sessao SQLAlchemy ativa.
+        tables: Dicionario de tabelas refletidas.
+        df_fato: DataFrame com metricas diarias.
         ad_id_map: Mapa ``{ad_external_id: anuncio_internal_id}``.
         tempo_map: Mapa ``{date: tempo_internal_id}``.
     """
@@ -454,6 +457,9 @@ def upsert_fato_metricas(
             "conversions": int(r["conversions"]),
             "conversion_value": r["conversion_value"],
             "video_views": int(r["video_views"]),
+            "reach": int(r["reach"]),
+            "profile_views": int(r["profile_views"]),
+            "purchases": int(r["purchases"]),
         })
 
     if rows:

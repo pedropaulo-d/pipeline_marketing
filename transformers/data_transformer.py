@@ -18,6 +18,7 @@ OUTPUT_DIM_ADS: Path = BASE_DIR / "temp_dim_ads.csv"
 FATO_COLS: list[str] = [
     "date", "ad_id", "spend", "impressions",
     "link_clicks", "conversions", "conversion_value", "video_views",
+    "reach", "profile_views", "purchases",
 ]
 DIM_COLS: list[str] = [
     "ad_id", "ad_name", "adset_id", "adset_name",
@@ -50,8 +51,10 @@ def _sum_action_values(
 def transform_meta(path: Path) -> pd.DataFrame:
     """Transforma os dados brutos do Meta Ads para o formato padronizado.
 
-    Normaliza nomes de colunas, extrai conversões e video_views das
-    listas ``actions``/``action_values``, e adiciona a coluna ``platform``.
+    Normaliza nomes de colunas, converte ``reach`` (campo de primeiro nivel)
+    para inteiro, extrai ``conversions``, ``video_views``, ``profile_views``
+    e ``purchases`` das listas ``actions``/``action_values``, e adiciona a
+    coluna ``platform``.
 
     Args:
         path: Caminho para o arquivo JSON bruto do Meta.
@@ -84,6 +87,21 @@ def transform_meta(path: Path) -> pd.DataFrame:
         lambda r: _sum_action_values(r.get("actions"), "video_view"), axis=1,
     ).astype(int)
 
+    df["reach"] = pd.to_numeric(df.get("reach", 0), errors="coerce").fillna(0).astype(int)
+
+    df["profile_views"] = df.apply(
+        lambda r: _sum_action_values(r.get("actions"), "onsite_conversion.ig_profile_view"),
+        axis=1,
+    ).astype(int)
+
+    df["purchases"] = df.apply(
+        lambda r: (
+            _sum_action_values(r.get("actions"), "purchase")
+            + _sum_action_values(r.get("actions"), "omni_purchase")
+        ),
+        axis=1,
+    ).astype(int)
+
     df["platform"] = "Meta Ads"
 
     df.drop(columns=["date_stop", "actions", "action_values"], inplace=True, errors="ignore")
@@ -95,8 +113,9 @@ def transform_google(path: Path) -> pd.DataFrame:
     """Transforma os dados brutos do Google Ads para o formato padronizado.
 
     Renomeia colunas para alinhar com o schema unificado, define
-    ``video_views = 0`` (Google não retorna essa métrica neste nível)
-    e adiciona a coluna ``platform``.
+    ``video_views``, ``reach``, ``profile_views`` e ``purchases`` como ``0``
+    (Google nao retorna essas metricas neste nivel de query GAQL) e
+    adiciona a coluna ``platform``.
 
     Args:
         path: Caminho para o arquivo JSON bruto do Google.
@@ -117,6 +136,9 @@ def transform_google(path: Path) -> pd.DataFrame:
     }, inplace=True)
 
     df["video_views"] = 0
+    df["reach"] = 0
+    df["profile_views"] = 0
+    df["purchases"] = 0
     df["platform"] = "Google Ads"
 
     logger.info("Transformação Google concluída.")

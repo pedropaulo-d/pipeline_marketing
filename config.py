@@ -1,8 +1,10 @@
 """Validacao centralizada de variaveis de ambiente e utilitarios de seguranca.
 
-Importar ``settings`` garante que todas as credenciais obrigatorias existam
-antes de qualquer modulo do pipeline ser executado.  Se alguma variavel faltar,
-o processo encerra imediatamente com mensagem clara (sem expor valores).
+A funcao ``validate_env()`` garante que todas as credenciais obrigatorias
+existam antes de qualquer modulo do pipeline ser executado.  Se alguma
+variavel faltar, o processo encerra imediatamente com mensagem clara
+(sem expor valores).  A funcao ``mask()`` oculta parcialmente valores
+sensiveis para uso seguro em logs.
 """
 
 import logging

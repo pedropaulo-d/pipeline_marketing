@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from facebook_business.adobjects.adaccount import AdAccount
@@ -30,6 +31,7 @@ INSIGHT_FIELDS: list[str] = [
     "spend",
     "impressions",
     "inline_link_clicks",
+    "reach",
     "actions",
     "action_values",
 ]
@@ -61,7 +63,7 @@ def init_api() -> None:
     logger.info("API do Meta Ads inicializada.")
 
 
-def _paginate_accounts(cursor) -> dict[str, dict]:
+def _paginate_accounts(cursor: Any) -> dict[str, dict]:
     """Percorre todas as páginas de um cursor de contas e retorna um dict
     sem duplicatas, indexado pelo account_id.
 

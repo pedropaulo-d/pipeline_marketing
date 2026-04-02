@@ -66,5 +66,8 @@ CREATE TABLE fato_metricas (
     conversions         INT NOT NULL DEFAULT 0,
     conversion_value    NUMERIC(14, 4) NOT NULL DEFAULT 0,
     video_views         BIGINT NOT NULL DEFAULT 0,
+    reach               BIGINT NOT NULL DEFAULT 0,
+    profile_views       INT NOT NULL DEFAULT 0,
+    purchases           INT NOT NULL DEFAULT 0,
     UNIQUE (anuncio_id, tempo_id)
 );

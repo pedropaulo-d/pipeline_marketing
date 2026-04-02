@@ -98,7 +98,7 @@ def discover_accounts(client: GoogleAdsClient) -> list[dict]:
     Returns:
         Lista de dicts com ``id`` e ``name`` de cada subconta ativa.
     """
-    login_id = os.getenv("GOOGLE_LOGIN_CUSTOMER_ID")
+    login_id: str = os.getenv("GOOGLE_LOGIN_CUSTOMER_ID", "")
     ga_service = client.get_service("GoogleAdsService")
 
     logger.info("Buscando subcontas ativas via customer_client (MCC: %s)", mask(login_id))
