@@ -515,9 +515,12 @@ def run() -> int:
             logger.info("Carga concluída com sucesso.")
             return len(df_fato)
 
-        except Exception:
+        except Exception as exc:
             session.rollback()
-            logger.exception("Erro durante a carga. Rollback realizado.")
+            logger.error(
+                "Erro durante a carga. Rollback realizado. Tipo: %s",
+                type(exc).__name__,
+            )
             raise
 
 

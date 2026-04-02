@@ -22,6 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pipeline")
 
+from config import validate_env
+
 SEPARATOR: str = "=" * 60
 
 
@@ -158,11 +160,14 @@ def main() -> None:
     logger.info("Período: %s a %s", args.start_date, args.end_date)
     logger.info(SEPARATOR)
 
+    # ── Validação de credenciais ──
+    validate_env()
+
     # ── Extração ──
     try:
         meta_count, google_count = run_extraction(args.start_date, args.end_date)
-    except Exception:
-        logger.exception("FALHA NA EXTRAÇÃO. Pipeline interrompido.")
+    except Exception as exc:
+        logger.error("FALHA NA EXTRAÇÃO. Pipeline interrompido. Erro: %s", type(exc).__name__)
         sys.exit(1)
 
     if meta_count + google_count == 0:
@@ -172,15 +177,15 @@ def main() -> None:
     # ── Transformação ──
     try:
         fato_count, dim_count = run_transformation()
-    except Exception:
-        logger.exception("FALHA NA TRANSFORMAÇÃO. Pipeline interrompido.")
+    except Exception as exc:
+        logger.error("FALHA NA TRANSFORMAÇÃO. Pipeline interrompido. Erro: %s", type(exc).__name__)
         sys.exit(1)
 
     # ── Carga ──
     try:
         loaded = run_load()
-    except Exception:
-        logger.exception("FALHA NA CARGA. Pipeline interrompido.")
+    except Exception as exc:
+        logger.error("FALHA NA CARGA. Pipeline interrompido. Erro: %s", type(exc).__name__)
         sys.exit(1)
 
     # ── Resumo ──

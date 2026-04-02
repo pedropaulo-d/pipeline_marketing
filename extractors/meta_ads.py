@@ -10,6 +10,8 @@ from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.business import Business
 from facebook_business.api import FacebookAdsApi
 
+from config import mask
+
 load_dotenv()
 
 logging.basicConfig(
@@ -102,13 +104,13 @@ def discover_accounts() -> list[dict]:
     business = Business(business_id)
     params = {"limit": 100}
 
-    logger.info("Buscando contas owned do Business ID: %s", business_id)
+    logger.info("Buscando contas owned do Business ID: %s", mask(business_id))
     owned = _paginate_accounts(
         business.get_owned_ad_accounts(fields=ACCOUNT_FIELDS, params=params)
     )
     logger.info("Contas owned encontradas: %d", len(owned))
 
-    logger.info("Buscando contas client do Business ID: %s", business_id)
+    logger.info("Buscando contas client do Business ID: %s", mask(business_id))
     client = _paginate_accounts(
         business.get_client_ad_accounts(fields=ACCOUNT_FIELDS, params=params)
     )
@@ -151,7 +153,7 @@ def extract_daily_ads(
 
     logger.info(
         "Processando conta: %s (ID: %s) — período: %s a %s",
-        account_name, account_id, start_date, end_date,
+        account_name, mask(account_id), start_date, end_date,
     )
     cursor = account.get_insights(fields=INSIGHT_FIELDS, params=params)
 
@@ -162,7 +164,7 @@ def extract_daily_ads(
         row["account_name"] = account_name
         rows.append(row)
 
-    logger.info("Registros extraídos da conta %s: %d", account_id, len(rows))
+    logger.info("Registros extraídos da conta %s: %d", mask(account_id), len(rows))
     return rows
 
 

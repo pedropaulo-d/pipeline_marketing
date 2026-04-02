@@ -1,0 +1,29 @@
+# Credenciais
+.env
+.env_template
+
+# Git
+.git
+.gitignore
+
+# Dados temporarios
+temp_*.json
+temp_*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# IDE / OS
+.vscode/
+.cursor/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Documentacao e CI
+*.md
+.github/

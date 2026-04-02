@@ -8,6 +8,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google.ads.googleads.client import GoogleAdsClient
 
+from config import mask
+
 load_dotenv()
 
 logging.basicConfig(
@@ -99,7 +101,7 @@ def discover_accounts(client: GoogleAdsClient) -> list[dict]:
     login_id = os.getenv("GOOGLE_LOGIN_CUSTOMER_ID")
     ga_service = client.get_service("GoogleAdsService")
 
-    logger.info("Buscando subcontas ativas via customer_client (MCC: %s)", login_id)
+    logger.info("Buscando subcontas ativas via customer_client (MCC: %s)", mask(login_id))
     response = ga_service.search(customer_id=login_id, query=GAQL_DISCOVERY)
 
     accounts: list[dict] = []
@@ -135,7 +137,7 @@ def extract_daily_ads(
 
     logger.info(
         "Processando conta: %s (ID: %s) — período: %s a %s",
-        account_name, account_id, start_date, end_date,
+        account_name, mask(account_id), start_date, end_date,
     )
     response = ga_service.search(customer_id=account_id, query=query)
 
@@ -158,7 +160,7 @@ def extract_daily_ads(
             "conversions_value": row.metrics.conversions_value,
         })
 
-    logger.info("Registros extraídos da conta %s: %d", account_id, len(rows))
+    logger.info("Registros extraídos da conta %s: %d", mask(account_id), len(rows))
     return rows
 
 

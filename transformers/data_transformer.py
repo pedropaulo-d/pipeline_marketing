@@ -154,8 +154,8 @@ def main() -> None:
     """Entry point para execução standalone via CLI."""
     try:
         run()
-    except Exception:
-        logger.exception("Erro na transformação dos dados.")
+    except Exception as exc:
+        logger.error("Erro na transformação dos dados. Tipo: %s", type(exc).__name__)
         raise
 
 
