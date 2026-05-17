@@ -58,3 +58,4 @@ env/
 .DS_Store
 Thumbs.db
 claude.md
+.claude/
