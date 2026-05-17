@@ -46,7 +46,7 @@ Motor ETL containerizado que extrai metricas diarias de campanhas do **Meta Ads*
                  v
       +--------------------+
       |  PostgreSQL        |
-      |  (Star Schema)     |
+      | (Snowflake Schema) |
       |  6 dims + 1 fato   |
       +--------------------+
 ```
@@ -61,7 +61,7 @@ O `main.py` orquestra as tres etapas sequencialmente. Se qualquer etapa falhar, 
 |---|---|
 | **Idempotencia** | UPSERT via `INSERT ... ON CONFLICT DO UPDATE` — reprocessar o mesmo dia nao duplica dados |
 | **Backfill historico** | Argumento `--start-date` / `--end-date` permite carga retroativa de qualquer periodo |
-| **Star Schema** | 6 tabelas de dimensao com FK em cascata + 1 tabela fato com 9 metricas |
+| **Snowflake Schema** | 5 dimensoes normalizadas em cadeia (Plataforma -> Conta -> Campanha -> AdSet -> Anuncio) + dim_tempo + 1 tabela fato com 9 metricas |
 | **Multi-plataforma** | Meta Ads (Insights API com paginacao) e Google Ads (GAQL) unificados em schema comum |
 | **Metricas avancadas** | spend, impressions, link_clicks, conversions, conversion_value, video_views, reach, profile_views, purchases |
 | **Transacao atomica** | Carga de dimensoes + fato em transacao unica com rollback em caso de erro |
@@ -156,7 +156,7 @@ docker compose run --rm etl_app python loaders/supabase_loader.py
 tcc_pipeline_dados/
 |-- config.py                  # Validacao de env vars + mascaramento de logs
 |-- main.py                    # Orquestrador ETL (argparse, interrupcao em cascata)
-|-- init_db.sql                # DDL do Star Schema (7 tabelas)
+|-- init_db.sql                # DDL do Snowflake Schema (7 tabelas)
 |-- Dockerfile                 # Python 3.11-slim, usuario non-root (UID 1000)
 |-- docker-compose.yml         # Servico etl_app com env_file
 |-- .dockerignore              # Exclui .env, .git, temp_* da imagem

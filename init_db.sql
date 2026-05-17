@@ -1,6 +1,9 @@
 -- =============================================
--- Star Schema: Pipeline de Dados de Marketing
+-- Snowflake Schema: Pipeline de Dados de Marketing
 -- =============================================
+-- Dimensoes normalizadas em cadeia (FK entre dimensoes):
+-- Plataforma -> Conta -> Campanha -> AdSet -> Anuncio -> Fato
+-- dim_tempo conecta direto ao fato.
 
 -- Dimensão: Plataforma
 CREATE TABLE dim_plataforma (
