@@ -6,3 +6,7 @@ pandas
 psycopg2-binary
 dbt-core
 dbt-postgres
+
+# Benchmark comparativo row-store x column-store
+duckdb
+pyarrow

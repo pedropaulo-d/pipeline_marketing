@@ -1,0 +1,21 @@
+escala,linhas,consulta,nome,perfil,postgres_ms,duckdb_ms,postgres_min_ms,duckdb_min_ms,vencedor,fator
+10k,9900,Q1,Agregacao total por plataforma,varredura completa,1.7,0.92,1.66,0.82,DuckDB,1.85
+10k,9900,Q2,Serie temporal mensal com metricas derivadas,varredura completa + calculo,4.21,1.79,4.07,1.61,DuckDB,2.36
+10k,9900,Q3,Top 20 campanhas por investimento,agregacao de alta cardinalidade + ordenacao,2.59,3.9,2.41,3.58,PostgreSQL,1.51
+10k,9900,Q4,Janela dos ultimos 7 dias por plataforma,filtro seletivo por periodo,0.48,0.74,0.45,0.69,PostgreSQL,1.53
+10k,9900,Q5,Historico de um anuncio especifico,busca pontual por chave,0.2,0.94,0.17,0.94,PostgreSQL,4.63
+100k,99540,Q1,Agregacao total por plataforma,varredura completa,11.15,2.42,10.81,2.28,DuckDB,4.61
+100k,99540,Q2,Serie temporal mensal com metricas derivadas,varredura completa + calculo,24.13,3.26,23.61,3.16,DuckDB,7.39
+100k,99540,Q3,Top 20 campanhas por investimento,agregacao de alta cardinalidade + ordenacao,34.68,7.73,32.79,7.2,DuckDB,4.49
+100k,99540,Q4,Janela dos ultimos 7 dias por plataforma,filtro seletivo por periodo,1.03,0.89,1.02,0.86,DuckDB,1.15
+100k,99540,Q5,Historico de um anuncio especifico,busca pontual por chave,0.3,1.26,0.27,1.17,PostgreSQL,4.26
+1M,999000,Q1,Agregacao total por plataforma,varredura completa,56.37,4.19,54.27,3.99,DuckDB,13.46
+1M,999000,Q2,Serie temporal mensal com metricas derivadas,varredura completa + calculo,160.86,5.85,154.4,5.48,DuckDB,27.51
+1M,999000,Q3,Top 20 campanhas por investimento,agregacao de alta cardinalidade + ordenacao,384.27,13.77,382.12,13.08,DuckDB,27.91
+1M,999000,Q4,Janela dos ultimos 7 dias por plataforma,filtro seletivo por periodo,3.28,1.05,3.16,0.91,DuckDB,3.13
+1M,999000,Q5,Historico de um anuncio especifico,busca pontual por chave,0.82,2.95,0.61,2.7,PostgreSQL,3.59
+10M,9998244,Q1,Agregacao total por plataforma,varredura completa,502.33,21.73,483.38,20.91,DuckDB,23.11
+10M,9998244,Q2,Serie temporal mensal com metricas derivadas,varredura completa + calculo,1256.18,25.41,1215.2,24.75,DuckDB,49.43
+10M,9998244,Q3,Top 20 campanhas por investimento,agregacao de alta cardinalidade + ordenacao,5337.56,82.35,3895.75,79.66,DuckDB,64.81
+10M,9998244,Q4,Janela dos ultimos 7 dias por plataforma,filtro seletivo por periodo,10.02,1.32,9.04,1.22,DuckDB,7.59
+10M,9998244,Q5,Historico de um anuncio especifico,busca pontual por chave,1.91,9.56,1.84,9.1,PostgreSQL,5.0
