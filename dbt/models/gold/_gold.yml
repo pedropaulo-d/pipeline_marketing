@@ -1,0 +1,123 @@
+version: 2
+
+models:
+  - name: dim_plataforma
+    description: >
+      Dimensao Plataforma — topo da hierarquia. SCD Tipo 0: o nome da
+      plataforma nao muda, entao nao ha versionamento.
+    columns:
+      - name: plataforma_sk
+        tests: [unique, not_null]
+      - name: nome
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Meta Ads', 'Google Ads']
+
+  - name: dim_conta
+    description: Dimensao Conta de anuncios, versionada em SCD Tipo 2.
+    columns:
+      - name: conta_sk
+        description: Chave substituta — unica por versao.
+        tests: [unique, not_null]
+      - name: conta_nk
+        description: Chave natural — estavel entre versoes, logo NAO e unica.
+        tests: [not_null]
+      - name: plataforma_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_plataforma')
+              field: plataforma_sk
+      - name: valido_de
+        tests: [not_null]
+      - name: valido_ate
+        tests: [not_null]
+
+  - name: dim_campanha
+    description: Dimensao Campanha, versionada em SCD Tipo 2.
+    columns:
+      - name: campanha_sk
+        tests: [unique, not_null]
+      - name: campanha_nk
+        tests: [not_null]
+      - name: conta_nk
+        description: FK logica para a chave NATURAL de dim_conta.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_conta')
+              field: conta_nk
+      - name: valido_de
+        tests: [not_null]
+
+  - name: dim_adset
+    description: Dimensao Conjunto de Anuncios, versionada em SCD Tipo 2.
+    columns:
+      - name: adset_sk
+        tests: [unique, not_null]
+      - name: adset_nk
+        tests: [not_null]
+      - name: campanha_nk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_campanha')
+              field: campanha_nk
+      - name: valido_de
+        tests: [not_null]
+
+  - name: dim_anuncio
+    description: >
+      Dimensao Anuncio, versionada em SCD Tipo 2. E a ela que o fato se liga,
+      resolvendo a versao vigente na data da metrica.
+    columns:
+      - name: anuncio_sk
+        tests: [unique, not_null]
+      - name: anuncio_nk
+        tests: [not_null]
+      - name: adset_nk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_adset')
+              field: adset_nk
+      - name: valido_de
+        tests: [not_null]
+      - name: valido_ate
+        tests: [not_null]
+
+  - name: dim_tempo
+    description: Dimensao Tempo com atributos pre-calculados.
+    columns:
+      - name: tempo_sk
+        tests: [unique, not_null]
+      - name: data
+        tests: [unique, not_null]
+      - name: trimestre
+        tests:
+          - accepted_values:
+              values: [1, 2, 3, 4]
+              quote: false
+
+  - name: fato_metricas
+    description: >
+      Metricas diarias de performance por anuncio. Grao: um anuncio por dia.
+      Aponta para a VERSAO do anuncio vigente na data da metrica.
+    columns:
+      - name: anuncio_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_anuncio')
+              field: anuncio_sk
+      - name: tempo_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_tempo')
+              field: tempo_sk
+      - name: spend
+        tests: [not_null]
+      - name: impressions
+        tests: [not_null]

@@ -33,23 +33,83 @@ _REQUIRED_VARS: dict[str, list[str]] = {
         "GOOGLE_REFRESH_TOKEN",
         "GOOGLE_LOGIN_CUSTOMER_ID",
     ],
-    "Supabase": [
-        "SUPABASE_DB_URL",
-    ],
 }
 
+# Variaveis alternativas: basta uma delas estar definida.
+# DW_DB_URL aponta para o Data Warehouse (local ou Supabase); SUPABASE_DB_URL
+# permanece aceita por compatibilidade com a configuracao original.
+_DB_URL_VARS: list[str] = ["DW_DB_URL", "SUPABASE_DB_URL"]
 
-def validate_env() -> None:
-    """Valida que todas as variaveis de ambiente obrigatorias estao definidas.
+
+def get_db_url() -> str | None:
+    """Retorna a URL de conexao do Data Warehouse.
+
+    Returns:
+        Primeiro valor definido entre ``DW_DB_URL`` e ``SUPABASE_DB_URL``,
+        ou ``None`` se nenhuma estiver preenchida.
+    """
+    for var in _DB_URL_VARS:
+        value = os.getenv(var)
+        if value:
+            return value
+    return None
+
+
+def dbt_env() -> dict[str, str]:
+    """Traduz a URL do Data Warehouse em variaveis de ambiente do dbt.
+
+    O ``profiles.yml`` le ``DBT_HOST``, ``DBT_PORT``, ``DBT_USER``,
+    ``DBT_PASSWORD`` e ``DBT_DBNAME``. Derivar esses valores de
+    ``DW_DB_URL`` mantem uma unica fonte de verdade para a conexao: mudar a
+    URL move o pipeline inteiro, Python e dbt, para o mesmo banco.
+
+    Returns:
+        Mapa de variaveis de ambiente para injetar no processo do dbt.
+        Vazio se a URL nao estiver definida (o dbt cai nos defaults).
+    """
+    from urllib.parse import unquote, urlparse
+
+    db_url = get_db_url()
+    if not db_url:
+        return {}
+
+    parsed = urlparse(db_url)
+    env: dict[str, str] = {}
+    if parsed.hostname:
+        env["DBT_HOST"] = parsed.hostname
+    if parsed.port:
+        env["DBT_PORT"] = str(parsed.port)
+    if parsed.username:
+        env["DBT_USER"] = unquote(parsed.username)
+    if parsed.password:
+        env["DBT_PASSWORD"] = unquote(parsed.password)
+    if parsed.path and parsed.path != "/":
+        env["DBT_DBNAME"] = parsed.path.lstrip("/")
+    return env
+
+
+def validate_env(groups: list[str] | None = None) -> None:
+    """Valida que as variaveis de ambiente obrigatorias estao definidas.
+
+    Args:
+        groups: Grupos de credenciais a validar (ex: ``["Meta Ads"]``).
+            Se ``None``, valida todos. A URL do banco e sempre exigida.
 
     Raises:
         SystemExit: Se alguma variavel estiver ausente.
     """
+    selected = _REQUIRED_VARS if groups is None else {
+        g: _REQUIRED_VARS[g] for g in groups if g in _REQUIRED_VARS
+    }
+
     missing: list[str] = []
-    for group, var_names in _REQUIRED_VARS.items():
+    for group, var_names in selected.items():
         for var in var_names:
             if not os.getenv(var):
                 missing.append(f"  - {var} ({group})")
+
+    if not get_db_url():
+        missing.append(f"  - {' ou '.join(_DB_URL_VARS)} (Data Warehouse)")
 
     if missing:
         logger.error(

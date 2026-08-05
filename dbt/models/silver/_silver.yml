@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_meta_ads
+    description: >
+      Meta Ads tipado, com as metricas de `actions`/`action_values`
+      desempacotadas e deduplicado pelo snapshot mais recente de cada dia.
+    columns:
+      - name: data
+        tests: [not_null]
+      - name: anuncio_external_id
+        tests: [not_null]
+      - name: spend
+        tests: [not_null]
+
+  - name: stg_google_ads
+    description: >
+      Google Ads tipado, com a nomenclatura alinhada ao vocabulario comum
+      (ad_group vira adset, cost vira spend).
+    columns:
+      - name: data
+        tests: [not_null]
+      - name: anuncio_external_id
+        tests: [not_null]
+      - name: spend
+        tests: [not_null]
+
+  - name: stg_ads_unified
+    description: >
+      Uniao das duas plataformas com as surrogate keys da hierarquia.
+      Grao esperado: um anuncio por dia — verificado pelo teste singular
+      `tests/assert_grao_unico_silver.sql`.
+    columns:
+      - name: plataforma
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Meta Ads', 'Google Ads']
+      - name: anuncio_nk
+        description: Chave natural do anuncio — estavel entre renomeacoes.
+        tests: [not_null]
+      - name: data
+        tests: [not_null]

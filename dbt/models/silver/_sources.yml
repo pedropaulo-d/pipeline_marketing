@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Camada bronze — payload bruto das APIs, append-only. Populada pelo
+      `loaders/bronze_loader.py`, fora do dbt.
+    schema: bronze
+    tables:
+      - name: raw_ads
+        description: Um registro por linha retornada pela API, sem transformacao.
+        columns:
+          - name: source
+            description: Plataforma de origem.
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['meta_ads', 'google_ads']
+          - name: reference_date
+            description: Dia a que a metrica se refere.
+            tests:
+              - not_null
+          - name: extracted_at
+            description: Momento da extracao — define qual snapshot vence.
+            tests:
+              - not_null
+          - name: payload
+            description: JSON original devolvido pela API.
+            tests:
+              - not_null
+
+      - name: ingestion_log
+        description: Auditoria das cargas na bronze.
+        columns:
+          - name: batch_id
+            tests:
+              - unique
+              - not_null

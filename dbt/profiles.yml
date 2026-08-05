@@ -1,0 +1,16 @@
+# Conexao do dbt com o Data Warehouse.
+# Os defaults apontam para o servico `db` do docker-compose; as variaveis de
+# ambiente permitem apontar para outro Postgres (ex: Supabase) sem editar
+# este arquivo.
+tcc_marketing:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'db') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_USER', 'etl') }}"
+      password: "{{ env_var('DBT_PASSWORD', 'etl') }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'marketing_dw') }}"
+      schema: public
+      threads: 4

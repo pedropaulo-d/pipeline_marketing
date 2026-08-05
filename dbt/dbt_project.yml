@@ -1,0 +1,23 @@
+name: 'tcc_marketing'
+version: '1.0.0'
+config-version: 2
+
+profile: 'tcc_marketing'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  tcc_marketing:
+    # Silver: limpeza e tipagem, 1:1 com a fonte. Views — o custo de
+    # recomputar e irrelevante neste volume e o dado fica sempre fresco.
+    silver:
+      +materialized: view
+      +schema: silver
+    # Gold: modelo dimensional consumido pelo BI. Tabelas materializadas.
+    gold:
+      +materialized: table
+      +schema: gold

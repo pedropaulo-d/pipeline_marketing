@@ -1,6 +1,6 @@
 import datetime
 import logging
-import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 from sqlalchemy import Engine, MetaData, Table, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+
+# Permite execucao tanto como script quanto como modulo importado.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 load_dotenv()
 
@@ -36,19 +39,26 @@ AdIdMap = dict[str, int]
 
 
 def get_engine() -> Engine:
-    """Cria uma engine SQLAlchemy a partir da variável SUPABASE_DB_URL.
+    """Cria uma engine SQLAlchemy apontando para o Data Warehouse.
+
+    A URL vem de ``DW_DB_URL`` (Postgres local do compose ou Supabase) com
+    fallback para ``SUPABASE_DB_URL``.
 
     Returns:
-        Engine conectada ao banco Supabase.
+        Engine conectada ao Data Warehouse.
 
     Raises:
-        EnvironmentError: Se SUPABASE_DB_URL não estiver definida no .env.
+        EnvironmentError: Se nenhuma das variáveis estiver definida.
     """
     from sqlalchemy import create_engine
 
-    db_url = os.getenv("SUPABASE_DB_URL")
+    from config import get_db_url
+
+    db_url = get_db_url()
     if not db_url:
-        raise EnvironmentError("Variável SUPABASE_DB_URL é obrigatória no .env")
+        raise EnvironmentError(
+            "Defina DW_DB_URL (ou SUPABASE_DB_URL) com a URL do Data Warehouse."
+        )
     return create_engine(db_url)
 
 

@@ -148,13 +148,29 @@ def transform_google(path: Path) -> pd.DataFrame:
 def run() -> tuple[int, int]:
     """Executa a transformação completa e gera os CSVs de dimensão e fato.
 
+    Processa apenas as plataformas cujo arquivo bruto existe — o pipeline
+    pode ter sido executado com ``--platforms`` restrito a uma delas.
+
     Returns:
         Tupla ``(total_fato, total_dim)`` com a contagem de registros gerados.
-    """
-    df_meta = transform_meta(META_RAW)
-    df_google = transform_google(GOOGLE_RAW)
 
-    df = pd.concat([df_meta, df_google], ignore_index=True)
+    Raises:
+        FileNotFoundError: Se nenhum arquivo bruto estiver disponível.
+    """
+    frames: list[pd.DataFrame] = []
+
+    for path, transform in ((META_RAW, transform_meta), (GOOGLE_RAW, transform_google)):
+        if path.exists():
+            frames.append(transform(path))
+        else:
+            logger.warning("Arquivo bruto ausente, plataforma ignorada: %s", path.name)
+
+    if not frames:
+        raise FileNotFoundError(
+            "Nenhum arquivo bruto encontrado. Execute a extração antes da transformação."
+        )
+
+    df = pd.concat(frames, ignore_index=True)
     logger.info("DataFrames concatenados. Total: %d registros", len(df))
 
     # --- Tabela Fato ---
