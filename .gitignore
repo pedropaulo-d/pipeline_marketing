@@ -2,6 +2,16 @@
 # Segurança e Credenciais
 # ========================
 .env
+.env.bak
+
+# ========================
+# dbt
+# ========================
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+logs/
 
 # ========================
 # Dados Temporários e Logs
@@ -14,6 +24,9 @@ temp_google_raw.json
 # (Opcional) Se for salvar arquivos CSV/JSON futuros de transformação
 *.csv
 /data/
+
+# Excecao: os resultados do benchmark sao evidencia experimental do TCC.
+!benchmark/resultados/*.csv
 
 # ========================
 # Python
@@ -59,3 +72,12 @@ env/
 Thumbs.db
 claude.md
 .claude/
+
+# ========================
+# Benchmark
+# ========================
+# Os dados sinteticos sao volumosos e reprodutiveis pelo gerador (semente fixa).
+# Ja os resultados SAO versionados: constituem a evidencia experimental do TCC.
+benchmark/dados/
+benchmark/*.duckdb
+benchmark/*.duckdb.wal
