@@ -6,13 +6,13 @@
 -- dim_tempo conecta direto ao fato.
 
 -- Dimensão: Plataforma
-CREATE TABLE dim_plataforma (
+CREATE TABLE IF NOT EXISTS dim_plataforma (
     id          SERIAL PRIMARY KEY,
     nome        VARCHAR(50) NOT NULL UNIQUE
 );
 
 -- Dimensão: Conta
-CREATE TABLE dim_conta (
+CREATE TABLE IF NOT EXISTS dim_conta (
     id              SERIAL PRIMARY KEY,
     external_id     VARCHAR(100) NOT NULL,
     nome            VARCHAR(255) NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE dim_conta (
 );
 
 -- Dimensão: Campanha
-CREATE TABLE dim_campanha (
+CREATE TABLE IF NOT EXISTS dim_campanha (
     id              SERIAL PRIMARY KEY,
     external_id     VARCHAR(100) NOT NULL,
     nome            VARCHAR(255) NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE dim_campanha (
 );
 
 -- Dimensão: Conjunto de Anúncios (AdSet)
-CREATE TABLE dim_adset (
+CREATE TABLE IF NOT EXISTS dim_adset (
     id              SERIAL PRIMARY KEY,
     external_id     VARCHAR(100) NOT NULL,
     nome            VARCHAR(255) NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE dim_adset (
 );
 
 -- Dimensão: Anúncio (Ad)
-CREATE TABLE dim_anuncio (
+CREATE TABLE IF NOT EXISTS dim_anuncio (
     id              SERIAL PRIMARY KEY,
     external_id     VARCHAR(100) NOT NULL,
     nome            VARCHAR(255) NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE dim_anuncio (
 );
 
 -- Dimensão: Tempo
-CREATE TABLE dim_tempo (
+CREATE TABLE IF NOT EXISTS dim_tempo (
     id          SERIAL PRIMARY KEY,
     data        DATE NOT NULL UNIQUE,
     dia         SMALLINT NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE dim_tempo (
 );
 
 -- Tabela Fato: Métricas de Performance Diária
-CREATE TABLE fato_metricas (
+CREATE TABLE IF NOT EXISTS fato_metricas (
     id                  SERIAL PRIMARY KEY,
     anuncio_id          INT NOT NULL REFERENCES dim_anuncio(id) ON DELETE RESTRICT,
     tempo_id            INT NOT NULL REFERENCES dim_tempo(id) ON DELETE RESTRICT,

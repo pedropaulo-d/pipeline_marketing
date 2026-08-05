@@ -1,7 +1,42 @@
 services:
+  # Data Warehouse local — alternativa ao Supabase para desenvolvimento e
+  # demonstracao. O schema (init_db.sql) e aplicado automaticamente na
+  # primeira subida, quando o volume de dados ainda esta vazio.
+  db:
+    image: postgres:16-alpine
+    container_name: tcc_dw
+    environment:
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: etl
+      POSTGRES_DB: marketing_dw
+    ports:
+      - "5433:5432"   # 5433 no host para nao conflitar com Postgres local
+    # O Docker da 64 MB de /dev/shm por padrao. O PostgreSQL usa memoria
+    # compartilhada para consultas paralelas e VACUUM; em tabelas grandes
+    # (benchmark de 10M linhas) isso estoura com "No space left on device".
+    shm_size: 1gb
+    volumes:
+      - dw_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl -d marketing_dw"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   etl_app:
     build: .
     env_file:
       - .env
+    environment:
+      # Sobrescreve o .env: por padrao o pipeline aponta para o DW local.
+      # Para carregar no Supabase, use `DW_DB_URL=$SUPABASE_DB_URL docker compose run ...`
+      DW_DB_URL: ${DW_DB_URL:-postgresql://etl:etl@db:5432/marketing_dw}
     volumes:
       - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dw_data:
