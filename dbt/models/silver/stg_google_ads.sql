@@ -6,9 +6,19 @@
     vocabulario comum e explicitar as metricas que a plataforma nao fornece
     neste nivel de consulta.
 
-    `reach`, `video_views`, `profile_views` e `purchases` ficam em zero: nao
-    e ausencia de dado, e ausencia de suporte da API neste grao. A distincao
-    esta documentada e e verificavel na silver.
+    `reach`, `profile_views` e `purchases` ficam em zero: nao e ausencia de
+    dado, e ausencia de suporte da API neste grao. A distincao esta
+    documentada e e verificavel na silver.
+
+    `video_views` passou a ser extraido, de metrics.video_trueview_views.
+    Lotes da bronze anteriores a essa mudanca nao trazem a chave no payload e
+    caem no coalesce -> 0; reextrair o periodo cria um snapshot novo, que
+    vence a deduplicacao por recencia e preenche o valor real.
+
+    ATENCAO — a coluna e comum, a definicao nao. O Google conta visualizacao
+    TrueView (30 segundos, video completo ou interacao); o Meta conta a partir
+    de 3 segundos. O valor e valido dentro de cada plataforma e comparavel ao
+    longo do tempo, mas somar ou dividir uma pela outra nao tem significado.
 */
 
 with bruto as (
@@ -60,10 +70,10 @@ select
     -- informacao real da fonte.
     coalesce((payload->>'conversions')::numeric, 0)        as conversions,
     coalesce((payload->>'conversions_value')::numeric, 0)  as conversion_value,
+    coalesce((payload->>'video_trueview_views')::bigint, 0) as video_views,
 
     -- Nao fornecidas pela GAQL neste nivel
     0::bigint                                           as reach,
-    0::bigint                                           as video_views,
     0::int                                              as profile_views,
     0::int                                              as purchases,
 

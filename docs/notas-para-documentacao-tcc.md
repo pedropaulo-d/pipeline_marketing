@@ -3,7 +3,7 @@
 Arquivo de trabalho. Reúne fatos, números medidos, decisões com justificativa e
 achados do desenvolvimento, organizados pela estrutura típica de um TCC.
 
-**Última atualização:** 05/08/2026
+**Última atualização:** 06/08/2026
 
 ---
 
@@ -58,7 +58,7 @@ formalmente, em nível somente-leitura.
 
 ### 2.1 Volume de dados
 
-📊 Números verificados em 05/08/2026:
+📊 Números verificados em 06/08/2026:
 
 | Métrica | Valor |
 |---|---|
@@ -67,15 +67,20 @@ formalmente, em nível somente-leitura.
 | Registros por dia (as duas plataformas) | ~300 |
 | Projeção anual | ~110 mil linhas |
 | Projeção para 5 anos de histórico | < 600 mil linhas |
-| Linhas na tabela fato (5 dias carregados) | 1.672 |
-| Linhas na camada bronze (8 lotes acumulados) | 5.761 |
-| Tamanho do banco completo | 16 MB |
-| Tamanho da camada bronze | 6,2 MB |
+| Linhas na tabela fato (5 dias carregados) | 1.677 |
+| Linhas na camada bronze (16 lotes acumulados) | 10.168 |
+| Tamanho das camadas bronze + silver + gold | 10,3 MB |
+| Tamanho da camada bronze | 9,4 MB |
 | Tamanho da tabela fato (gold) | 296 kB |
 | Tempo de extração — Meta (87 contas) | ~2 minutos |
+| Tempo de extração — Google (64 subcontas) | ~100 segundos |
 | Tempo de transformação + testes (dbt) | ~3 segundos |
 | Modelos dbt | 10 (3 views silver, 7 tabelas gold) |
-| Testes de dados automatizados | 73 |
+| Testes de dados automatizados | 75 |
+
+⚠️ O schema `public` do mesmo banco guarda a tabela do benchmark (seção 5.6),
+cerca de 1,2 GB. Não confundir com o tamanho do armazém: o pipeline em si ocupa
+os 10,3 MB acima.
 
 **Este é o dado mais importante do trabalho para justificar escolhas de
 arquitetura.** Ver seção 4.1.
@@ -89,18 +94,26 @@ perdido entre abril e agosto (seção 5.3).
 
 ### 2.3 Resultado analítico consolidado
 
-📊 Agregado dos 5 dias, extraído da camada gold:
+📊 Agregado dos 5 dias, extraído da camada gold em 06/08/2026:
 
 | Plataforma | Linhas | Investimento | Impressões | Cliques | Conversões | CTR | CPC | CPA |
 |---|---|---|---|---|---|---|---|---|
-| Meta Ads | 727 | R$ 9.345,30 | 893.378 | 7.405 | 250,00 | 0,83% | R$ 1,26 | R$ 37,38 |
-| Google Ads | 1.051 | R$ 12.449,89 | 117.012 | 5.134 | 405,29 | 4,39% | R$ 2,42 | R$ 30,72 |
+| Meta Ads | 666 | R$ 8.210,07 | 827.932 | 6.989 | 228,00 | 0,84% | R$ 1,17 | R$ 36,01 |
+| Google Ads | 1.011 | R$ 12.006,66 | 114.193 | 4.989 | 383,79 | 4,37% | R$ 2,41 | R$ 31,28 |
 
 Esta tabela é o **resultado que demonstra o objetivo geral**: a comparação entre
 plataformas só é possível porque os dois modelos foram unificados. Vale comentar
 no texto o contraste de perfil: o Meta entrega volume de impressões muito maior
 com CTR baixo (mídia de descoberta, interruptiva), enquanto o Google entrega
 menos impressões com CTR cinco vezes maior (mídia de intenção, o usuário buscou).
+
+🛑 **Esta tabela substitui uma versão anterior com números inflados em ~7,8%**
+(Meta R$ 9.345,30, Google R$ 12.449,89, 1.778 linhas). A causa está na seção
+5.9: a consulta juntava as dimensões versionadas pela chave natural sem
+resolver a versão vigente, e cada entidade renomeada multiplicava as linhas do
+fato. **Se algum texto já redigido citar os valores antigos, precisa ser
+corrigido.** A soma das linhas por plataforma tem de fechar com o total do fato
+(1.677) — é a verificação de um segundo que denuncia o erro.
 
 ⚠️ A comparação de CPA entre plataformas tem ressalva metodológica: as
 plataformas contam conversões com modelos de atribuição diferentes. Não é
@@ -123,8 +136,17 @@ carga via `INSERT ... ON CONFLICT` em PostgreSQL. Arquivos intermediários
 bruto íntegro em PostgreSQL (bronze) → transformações em SQL declarativo com
 dbt (silver → gold).
 
-O caminho antigo foi mantido no código para permitir validação por comparação
-(seção 6.1).
+O caminho antigo foi mantido no código enquanto durou a validação por
+comparação (seção 6.1) e **removido em 06/08/2026**, quando o projeto passou a
+ter uma arquitetura só. O código permanece no histórico do versionamento.
+
+**Formulação para o texto:** manter as duas implementações em paralelo foi um
+instrumento de validação com prazo, não uma decisão de arquitetura. Enquanto
+coexistiam, o pipeline tinha dois caminhos com semânticas diferentes escrevendo
+no mesmo banco — a fato do ETL e a fato da gold, com números que divergiam por
+motivo legítimo (seção 5.2). Uma vez cumprida a função de validar, manter o
+caminho antigo passaria a ser passivo: código sem uso, um schema paralelo no
+armazém e a chance de alguém consultar a tabela errada numa apresentação.
 
 ### 3.2 Camadas
 
@@ -377,6 +399,12 @@ convertia cada linha com `int()`, que trunca.
 O modelo original descartava cerca de 1% das conversões da plataforma, de forma
 silenciosa. A coluna passou a ser numérica na camada gold.
 
+ℹ️ Em 06/08 o total do Google subiu para 383,79 na reextração do mesmo período:
+são +3,50 conversões creditadas retroativamente pela janela de atribuição, não
+alteração de método. A comparação acima continua válida como medida da
+diferença entre truncar e não truncar; para citar no texto, use o par de
+valores medido no mesmo instante.
+
 **Valor argumentativo:** demonstra como uma escolha aparentemente inócua de tipo
 de dado (inteiro para "contagem de conversões") introduz erro sistemático quando
 o domínio não corresponde ao pressuposto do modelo.
@@ -421,8 +449,8 @@ o registro de correções.
 ### 5.5 Perfis distintos das plataformas
 
 🔍 Os dados consolidados evidenciam comportamentos diferentes: o Meta entrega
-volume de impressões cerca de sete vezes maior com CTR de 0,83%, enquanto o
-Google entrega menos impressões com CTR de 4,39%. É a diferença esperada entre
+volume de impressões cerca de sete vezes maior com CTR de 0,84%, enquanto o
+Google entrega menos impressões com CTR de 4,37%. É a diferença esperada entre
 mídia de descoberta e mídia de intenção, e o pipeline permite demonstrá-la
 quantitativamente — o que sustenta o objetivo geral do trabalho.
 
@@ -502,6 +530,138 @@ sobre a tabela inteira produziria conclusão pré-determinada.
   do investimento, correlação entre métricas, cardinalidades calibradas pelo
   dado real), mas continuam sendo uma aproximação.
 
+### 5.7 Filtro por estado atual apaga dado histórico
+
+🔍 **Segundo achado metodológico forte.** Mesma família do 5.1: um erro que
+nenhum teste de estrutura poderia detectar, revelado por comparação numérica.
+
+**Contexto.** A consulta ao Google Ads filtrava por campanhas com status
+`ENABLED`. O filtro parece inofensivo — "traga só o que está ativo" — e estava
+na primeira versão do extrator desde março.
+
+**O problema.** O status é um atributo **mutável e do presente**; as métricas
+são de um **dia passado**. Ao reextrair 01–04/08/2026 em 06/08, as campanhas
+pausadas nesse intervalo deixaram de ser retornadas — junto com o investimento
+que elas de fato realizaram naqueles dias.
+
+**Consequência, e é aqui que a arquitetura amplifica o erro.** A camada silver
+deduplica adotando o snapshot mais recente de cada dia. Um lote menor não
+convive com o anterior: ele o substitui. A reextração, que existe justamente
+para *corrigir* dado histórico, **apagou** R$ 210,57 de investimento real de
+04/08 — uma campanha inteira, 284 impressões, que já estavam corretamente
+carregadas no armazém.
+
+📊 Efeito medido sobre o período 01–04/08:
+
+| Lote | Linhas | Investimento | Impressões |
+|---|---:|---:|---:|
+| Extração original (05/08) | 836 | R$ 9.791,28 | 104.523 |
+| Reextração com o filtro (06/08) | 840 | R$ 9.580,70 | 104.272 |
+| Reextração sem o filtro (06/08) | 841 | R$ 9.791,26 | 104.556 |
+
+**Por que a contagem de linhas não denunciou.** Este é o detalhe que dá força
+ao achado: no mesmo dia em que a campanha desapareceu, cinco anúncios novos
+passaram a aparecer. O total do dia **subiu** de 250 para 254 linhas enquanto
+o dado era perdido. Qualquer monitoramento por volume de lote — a defesa
+intuitiva — teria dado sinal verde. Só a comparação no grão do anúncio revela
+a subtração.
+
+**Correção.** O filtro foi removido. Sem ele, a consulta retorna apenas
+anúncios com entrega no período, que é o critério correto: quem gastou naquele
+dia estava ativo naquele dia. A verificação passou a ser automatizada no teste
+`assert_reextracao_nao_perde_gasto`, que compara os dois snapshots mais
+recentes de cada dia no grão do anúncio e alerta quando um anúncio com gasto
+desaparece. Severidade de alerta, não de erro: desaparecer pode ser legítimo
+(anúncio excluído da conta); o teste não decide se está errado, obriga a olhar.
+
+**Lição a registrar no texto:** em séries históricas, filtrar pelo estado atual
+de uma entidade mutável reescreve o passado. O filtro precisa incidir sobre o
+que era verdade na data do fato — ou não incidir. Vale para qualquer campo
+mutável da fonte usado como critério de seleção, em qualquer API de terceiros.
+
+**Ligação com o resto do trabalho:** a camada bronze append-only foi o que
+tornou o diagnóstico possível. Os dois lotes coexistiam na tabela bruta, então
+a comparação entre eles foi uma consulta SQL. Se o pipeline sobrescrevesse o
+dado, a perda seria silenciosa e irrecuperável — argumento direto a favor da
+decisão da seção 4.4.
+
+### 5.8 Divergência de definição sob nome comum de métrica
+
+🔍 Ao fechar a lacuna de `video_views` do Google, o campo `metrics.video_views`
+não existia mais na versão 25 da API; o sucessor é `metrics.video_trueview_views`.
+A substituição não é apenas de nome:
+
+| Plataforma | O que conta como visualização |
+|---|---|
+| Meta | A partir de 3 segundos de exibição |
+| Google (TrueView) | 30 segundos, vídeo completo ou interação com o anúncio |
+
+📊 No período carregado, o Meta registra cerca de 19 mil visualizações por dia
+contra cerca de 500 do Google. A ordem de grandeza da diferença é em parte real
+(mix de mídia distinto) e em parte artefato de definição — e não há como separar
+as duas contribuições a partir do dado.
+
+**Decisão tomada:** a métrica ocupa a mesma coluna no modelo dimensional, com a
+ressalva documentada no modelo `stg_google_ads`. Preencher com zero seria pior:
+afirmaria ausência de visualizações onde há dado real. A série de cada
+plataforma é válida e comparável ao longo do tempo; a soma entre plataformas
+não tem significado.
+
+**Valor argumentativo:** unificar plataformas num vocabulário comum é o objetivo
+do trabalho, mas nome igual não implica definição igual. O ponto merece parágrafo
+próprio na discussão sobre integração de fontes heterogêneas — é uma limitação
+conceitual, não de implementação, e nenhuma engenharia a resolve.
+
+### 5.9 SCD Tipo 2 altera a semântica do `JOIN`
+
+🔍 **Terceiro achado da mesma família — e o mais insidioso**, porque não produz
+erro nenhum: produz um número plausível, maior que o verdadeiro.
+
+**Contexto.** Com dimensões versionadas, uma entidade renomeada passa a ter
+duas linhas na dimensão, com intervalos de validade disjuntos. A chave natural
+(`_nk`) é estável entre versões — é isso que a torna útil para ligar a
+hierarquia sem cascatear versões.
+
+**O erro.** Juntar o fato à dimensão pela chave natural, sem restringir à
+versão vigente na data do fato, multiplica cada linha do fato pelo número de
+versões da entidade. O `JOIN` deixa de ser 1:1 e vira 1:N — silenciosamente,
+porque o resultado continua sendo uma tabela com colunas plausíveis.
+
+📊 Medido sobre o armazém em 06/08/2026, com apenas 3 entidades renomeadas
+entre 180 campanhas, 337 conjuntos e 57 contas:
+
+| Rota de consulta | Linhas | Investimento total |
+|---|---:|---:|
+| Agregado direto do fato (correto) | 1.677 | R$ 20.216,73 |
+| `JOIN` pela chave natural sem resolver versão | 1.783 | R$ 21.795,17 |
+
+Três renomeações inflaram o investimento total em **7,8%**. O erro cresce com
+o histórico: quanto mais o armazém acumula versões, maior a distorção.
+
+**Como foi detectado:** ao recalcular a tabela de resultados consolidados
+(seção 2.3) e notar que a soma das linhas por plataforma não fechava com o
+total da tabela fato. A verificação é trivial e deve virar rotina.
+
+**Forma correta:** a versão se resolve pela data do fato.
+
+```sql
+join gold.dim_adset s
+  on  s.adset_nk = a.adset_nk
+  and t.data between s.valido_de and s.valido_ate
+```
+
+**Lição a registrar no texto:** SCD Tipo 2 não é uma decisão apenas de
+modelagem — é uma decisão que altera o contrato de consulta do armazém. Toda
+consulta passa a ter a obrigação de declarar em que instante do tempo está
+olhando. Um modelo dimensional versionado consultado como se não fosse
+versionado devolve números errados sem sinalizar nada.
+
+⚠️ **Consequência prática para o TCC:** qualquer número já extraído do armazém
+por essa rota precisa ser recalculado antes de entrar no texto. A tabela da
+seção 2.3 já foi corrigida.
+
+---
+
 ## 6. Validação e evidências
 
 ### 6.1 Paridade entre implementações
@@ -516,9 +676,17 @@ Google, explicada e justificada na seção 5.2 como correção.
 Este procedimento é o que detectou o erro da seção 5.1 e deve ser descrito na
 metodologia como técnica de validação de migração.
 
+ℹ️ A comparação foi refeita em 06/08 sobre o período 01–04/08, já com a
+cobertura de visualizações de vídeo: linhas, investimento, impressões, cliques
+e visualizações **idênticos** nas duas implementações; conversões do Google
+283,00 (ETL, truncado) contra 287,29 (ELT) — a mesma divergência da seção 5.2,
+reproduzida. Em seguida o caminho ETL foi removido do projeto. As medidas
+acima são o registro final da paridade; reproduzi-las exige recuperar o código
+do histórico do versionamento.
+
 ### 6.2 Testes automatizados
 
-📊 73 testes executados a cada build:
+📊 75 testes executados a cada build:
 
 | Categoria | O que verifica |
 |---|---|
@@ -529,13 +697,26 @@ metodologia como técnica de validação de migração.
 | Grão | Nenhuma combinação (anúncio, dia) se repete |
 | Sanidade | Nenhuma métrica de mídia é negativa |
 | Consistência SCD | Intervalos de validade não se sobrepõem; exatamente uma versão corrente por entidade |
+| Regressão entre lotes | Nenhum anúncio com gasto desaparece entre o snapshot anterior e o mais recente do mesmo dia (seção 5.7) |
+
+O último é de severidade **alerta**, não erro: um anúncio pode legitimamente
+sumir da fonte. A distinção entre "o pipeline deve parar" e "alguém precisa
+olhar" é ela própria uma decisão de projeto que vale mencionar no texto.
 
 ### 6.3 Idempotência
 
 Verificada empiricamente: executar o pipeline repetidamente sobre o mesmo
-período mantém a tabela fato em 1.672 linhas, com zero duplicações no grão. A
-camada bronze cresce a cada execução — comportamento esperado e desejado, já que
-ela registra o histórico de extrações.
+período mantém a tabela fato no mesmo grão, com zero duplicações. A camada
+bronze cresce a cada execução — comportamento esperado e desejado, já que ela
+registra o histórico de extrações.
+
+⚠️ **Precisão necessária no texto:** idempotência aqui significa "não duplica",
+não "produz o número idêntico". A reextração de 06/08 devolveu 1.677 linhas
+onde havia 1.672, e o investimento do Google variou dois centavos. As causas
+são legítimas e distintas — anúncios novos com entrega tardia, cliques
+invalidados pela plataforma, conversões creditadas retroativamente. Confundir
+os dois sentidos de idempotência levaria a apresentar a variação como falha,
+quando ela é o comportamento correto diante de uma fonte que muda o passado.
 
 **Formulação para o texto:** a idempotência é o que torna possível o
 reprocessamento seguro, e o reprocessamento seguro é o que torna possível
@@ -549,12 +730,17 @@ corrigir dados históricos sem duplicá-los.
 sobre uma limitação não declarada é falha.
 
 1. **Cobertura desigual de métricas.** A consulta ao Google Ads não retorna
-   alcance, visualizações de vídeo, visualizações de perfil nem compras no nível
-   consultado. As colunas ficam zeradas para a plataforma. É ausência de suporte
-   na consulta, não ausência de dado — e a distinção precisa estar no texto para
-   não induzir leitura errada das comparações.
-   ❓ Correção parcial identificada: `metrics.video_views` existe na linguagem de
-   consulta do Google e não está sendo extraído.
+   alcance, visualizações de perfil nem compras no nível consultado. As colunas
+   ficam zeradas para a plataforma. É ausência de suporte na consulta, não
+   ausência de dado — e a distinção precisa estar no texto para não induzir
+   leitura errada das comparações.
+   ✅ Fechada em parte: visualizações de vídeo passaram a ser extraídas em
+   06/08. Mas a lacuna trocou de natureza em vez de sumir — a definição da
+   métrica difere entre as plataformas (seção 5.8), então a coluna deixou de
+   ser incomparável por estar vazia e passou a ser incomparável por medir
+   coisas diferentes. O dia 07/04/2026 permanece zerado por decisão: reextraí-lo
+   traria os nomes atuais para uma data passada e destruiria as três versões
+   SCD Tipo 2 do armazém, que é a evidência da seção 4.5.
 2. **SCD Tipo 2 limitado pela granularidade da extração** — detecta renomeações
    entre extrações, não no instante em que ocorrem (seção 4.5).
 3. **Materialização full-refresh** — a camada gold é reconstruída integralmente
@@ -660,6 +846,9 @@ Research, por exemplo):
 | 05/08/2026 | Restabelecimento do acesso; Data Warehouse local containerizado |
 | 05/08/2026 | Migração para ELT em camadas com dbt; detecção do erro de união |
 | 05/08/2026 | Implementação de SCD Tipo 2 e da pseudonimização |
+| 05/08/2026 | Benchmark row-store × column-store |
+| 06/08/2026 | Cobertura de visualizações de vídeo do Google; detecção do filtro por status e da inflação por versão de dimensão |
+| 06/08/2026 | Remoção do caminho ETL — o projeto passa a ter uma arquitetura só |
 
 ---
 
@@ -671,8 +860,15 @@ Research, por exemplo):
 - **Não apresentar a comparação de CPA entre plataformas** sem a ressalva de
   atribuição.
 - **Não omitir o erro da seção 5.1.** Ele é o achado mais forte do trabalho:
-  demonstra rigor metodológico e produz uma lição generalizável.
-- **Números desta nota são de 05/08/2026** e mudarão conforme novas cargas.
-  Reconferir antes da versão final.
+  demonstra rigor metodológico e produz uma lição generalizável. As seções 5.7
+  e 5.9 formam a mesma família e sustentam um argumento único: **erro de
+  conteúdo não dispara alarme** — três vezes, por três mecanismos diferentes,
+  o pipeline produziu números errados com todos os testes verdes.
+- **Não citar a tabela antiga da seção 2.3.** Os valores foram corrigidos em
+  06/08; a versão anterior estava inflada em 7,8% (seção 5.9).
+- **Não somar visualizações de vídeo entre plataformas** (seção 5.8).
+- **Números desta nota são de 06/08/2026** e mudarão conforme novas cargas.
+  Reconferir antes da versão final — e sempre pela rota de consulta correta:
+  a soma das linhas por plataforma tem de fechar com o total da tabela fato.
 - O nome da agência e dos clientes **não deve aparecer** no texto publicado,
   ainda que apareça neste arquivo de trabalho.

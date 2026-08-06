@@ -29,6 +29,19 @@ GAQL_DISCOVERY: str = """
       AND customer_client.manager = FALSE
 """
 
+# NAO filtrar por `campaign.status`: o status e o de HOJE, mas as metricas sao
+# do dia consultado. Filtrar por 'ENABLED' faz a reextracao de um periodo
+# passado perder as linhas das campanhas pausadas desde entao — e, como a
+# silver adota o snapshot mais recente, o gasto ja carregado seria apagado do
+# DW. Medido: uma campanha pausada levava consigo R$ 210,57 de 04/08/2026.
+# Sem filtro, so retornam anuncios com entrega no periodo, que e o criterio
+# correto: quem gastou naquele dia estava ativo naquele dia.
+#
+# `metrics.video_trueview_views` e o sucessor de `metrics.video_views`, que
+# deixou de existir na v25 da API. A definicao NAO equivale a do Meta: o Google
+# conta a visualizacao TrueView (30s, video completo ou interacao), enquanto o
+# Meta conta a partir de 3 segundos. Somar as duas plataformas nessa metrica
+# produz um numero sem significado — ver ressalva em stg_google_ads.sql.
 GAQL_ADS_TEMPLATE: str = """
     SELECT
         customer.id,
@@ -44,10 +57,10 @@ GAQL_ADS_TEMPLATE: str = """
         metrics.clicks,
         metrics.cost_micros,
         metrics.conversions,
-        metrics.conversions_value
+        metrics.conversions_value,
+        metrics.video_trueview_views
     FROM ad_group_ad
     WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
-      AND campaign.status = 'ENABLED'
 """
 
 OUTPUT_PATH: Path = Path(__file__).resolve().parent.parent / "temp_google_raw.json"
@@ -158,6 +171,7 @@ def extract_daily_ads(
             "cost": row.metrics.cost_micros / 1_000_000,
             "conversions": row.metrics.conversions,
             "conversions_value": row.metrics.conversions_value,
+            "video_trueview_views": row.metrics.video_trueview_views,
         })
 
     logger.info("Registros extraídos da conta %s: %d", mask(account_id), len(rows))

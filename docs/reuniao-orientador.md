@@ -48,14 +48,15 @@ flowchart LR
 | Camada bronze | ✅ JSONB append-only + log de ingestão |
 | Camada silver | ✅ 3 views dbt, dedup por recência |
 | Camada gold | ✅ Snowflake Schema materializado por dbt |
-| Testes de dados | ✅ 65 testes dbt passando |
+| Testes de dados | ✅ 75 testes dbt passando |
 | Data Warehouse | ✅ PostgreSQL 16 em container |
 | Orquestração | ⬜ não existe |
 
 > [!success] Arquitetura ELT implementada em 05/08
 > Migrado de ETL (pandas + CSVs temporários) para **bronze → silver → gold**
-> com dbt. O caminho antigo continua disponível em `--mode etl` para
-> comparação. Projeto detalhado em [[arquitetura-elt]].
+> com dbt. O caminho antigo foi mantido em `--mode etl` até a paridade ser
+> validada e **removido em 06/08**: o projeto tem uma arquitetura só. O código
+> continua no histórico do git. Projeto detalhado em [[arquitetura-elt]].
 
 ### Dados carregados
 
@@ -255,13 +256,13 @@ descartava silenciosamente ~1% das conversões (376 contra 380,29 reais).
 
 - **Sem orquestração** — `main.py` roda em sequência, sem retry.
 - **Sem SCD Tipo 2** — renomear campanha sobrescreve o histórico na gold. A bronze preserva os nomes antigos, então a implementação futura é possível sem perda de dado.
-- **Cobertura desigual de métricas** — a query GAQL do Google não retorna `reach`, `video_views` nem `purchases` nesse nível; as colunas ficam zeradas para a plataforma e distorcem comparação direta.
+- **Cobertura desigual de métricas** — a query GAQL do Google não retorna `reach` nem `purchases` nesse nível; as colunas ficam zeradas para a plataforma e distorcem comparação direta. `video_views` passou a ser extraído em 06/08, mas com definição diferente da do Meta (TrueView de 30s contra 3s), o que impede somar as duas plataformas nessa métrica.
 - **Materialização full-refresh** — a gold é reconstruída inteira a cada execução. Adequado a 1,7 mil linhas, insuficiente em outra ordem de grandeza.
 - **Integridade referencial mais fraca** — as FKs do banco viraram testes `relationships`, que detectam violação após a materialização em vez de impedi-la na escrita.
 
 ### Resolvidas em 05/08
 
-- ~~Sem testes automatizados~~ → 65 testes dbt
+- ~~Sem testes automatizados~~ → 75 testes dbt
 - ~~Sem camada raw preservada~~ → bronze append-only
 - ~~Sem observabilidade~~ → `bronze.ingestion_log`
 - ~~Reprocessar exige chamar a API~~ → todas as camadas reconstroem a partir da bronze
@@ -292,4 +293,4 @@ descartava silenciosamente ~1% das conversões (376 contra 380,29 reais).
 | `README.md` | visão geral e comandos |
 | `docs/der.md` | diagrama entidade-relacionamento |
 | `docs/queries_demo.sql` | queries analíticas + prova de idempotência |
-| `init_db.sql` | DDL do Snowflake Schema |
+| `sql/bronze/init_bronze.sql` | DDL da camada bronze (silver e gold nascem do dbt) |

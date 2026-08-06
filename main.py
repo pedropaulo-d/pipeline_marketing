@@ -1,4 +1,8 @@
-"""Orquestrador do pipeline ETL (Extração → Transformação → Carga).
+"""Orquestrador do pipeline ELT (Extração → Bronze → Transformação com dbt).
+
+O dado bruto vai integro para a camada bronze e todas as transformações
+acontecem no banco, materializadas e testadas pelo dbt. Nenhuma etapa
+transforma dado em Python.
 
 Uso:
     docker compose run --rm etl_app python main.py --start-date 2026-03-30 --end-date 2026-03-31
@@ -34,6 +38,12 @@ SEPARATOR: str = "=" * 60
 PLATFORMS: dict[str, str] = {
     "meta": "Meta Ads",
     "google": "Google Ads",
+}
+
+# Plataforma → identificador da fonte na camada bronze.
+BRONZE_SOURCES: dict[str, str] = {
+    "meta": "meta_ads",
+    "google": "google_ads",
 }
 
 
@@ -73,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     parser = argparse.ArgumentParser(
-        description="Pipeline ETL: Meta/Google Ads → Supabase",
+        description="Pipeline ELT: Meta/Google Ads → bronze → silver → gold",
     )
     parser.add_argument(
         "--start-date",
@@ -94,16 +104,6 @@ def parse_args() -> argparse.Namespace:
             "Pula a extração e reprocessa os arquivos brutos já existentes "
             "(temp_meta_raw.json / temp_google_raw.json). Útil para "
             "demonstrar transformação e carga sem consumir a API."
-        ),
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["elt", "etl"],
-        default="elt",
-        help=(
-            "Arquitetura a executar. 'elt' (default): bronze (JSONB bruto) → "
-            "silver → gold via dbt, com testes de dados. 'etl': caminho "
-            "original, transformação em pandas e carga direta no schema public."
         ),
     )
     parser.add_argument(
@@ -174,41 +174,12 @@ def run_extraction(
     return counts
 
 
-def run_transformation() -> tuple[int, int]:
-    """Executa a transformação dos dados brutos em CSVs padronizados.
-
-    Returns:
-        Tupla ``(registros_fato, registros_dim)``.
-    """
-    from transformers import data_transformer
-
-    logger.info(SEPARATOR)
-    logger.info("ETAPA 2/3: TRANSFORMAÇÃO")
-    logger.info(SEPARATOR)
-
-    return data_transformer.run()
-
-
-def run_load() -> int:
-    """Executa a carga dos CSVs no Data Warehouse (caminho ETL).
-
-    Returns:
-        Quantidade de registros carregados na tabela fato.
-    """
-    from loaders import supabase_loader
-
-    logger.info(SEPARATOR)
-    logger.info("ETAPA 3/3: CARGA (Data Warehouse)")
-    logger.info(SEPARATOR)
-
-    return supabase_loader.run()
-
-
-# ── Caminho ELT (bronze → silver → gold) ─────────────────────
-
-
-def run_bronze() -> int:
+def run_bronze(sources: list[str] | None = None) -> int:
     """Carrega os arquivos brutos na camada bronze, sem transformar.
+
+    Args:
+        sources: Fontes da bronze a carregar. ``None`` carrega todas — o caso
+            de ``--skip-extract``, em que os arquivos em disco são a entrada.
 
     Returns:
         Quantidade de registros inseridos.
@@ -219,7 +190,7 @@ def run_bronze() -> int:
     logger.info("ETAPA 2/3: CARGA BRONZE (dado bruto imutável)")
     logger.info(SEPARATOR)
 
-    return bronze_loader.run()
+    return bronze_loader.run(sources)
 
 
 def run_dbt() -> None:
@@ -261,12 +232,12 @@ def run_dbt() -> None:
 
 
 def main() -> None:
-    """Orquestra o pipeline ETL completo com interrupção em caso de falha."""
+    """Orquestra o pipeline ELT completo com interrupção em caso de falha."""
     args = parse_args()
     t0 = time.time()
 
     logger.info(SEPARATOR)
-    logger.info("PIPELINE INICIADO — modo %s", args.mode.upper())
+    logger.info("PIPELINE INICIADO — bronze → silver → gold")
     logger.info("Período: %s a %s", args.start_date, args.end_date)
     logger.info(SEPARATOR)
 
@@ -294,38 +265,25 @@ def main() -> None:
             logger.warning("Nenhum registro extraído. Pipeline interrompido.")
             sys.exit(0)
 
-    if args.mode == "elt":
-        # ── Carga bruta na bronze ──
-        try:
-            bronze_count = run_bronze()
-        except Exception as exc:
-            logger.error("FALHA NA CARGA BRONZE. Pipeline interrompido. Erro: %s", type(exc).__name__)
-            sys.exit(1)
+    # ── Carga bruta na bronze ──
+    # Com --platforms restrito, só a fonte recém-extraída entra: o arquivo
+    # bruto da outra plataforma pode ter sobrado de uma execução anterior.
+    fontes = (
+        None if args.skip_extract
+        else [BRONZE_SOURCES[p] for p in args.platforms]
+    )
+    try:
+        bronze_count = run_bronze(fontes)
+    except Exception as exc:
+        logger.error("FALHA NA CARGA BRONZE. Pipeline interrompido. Erro: %s", type(exc).__name__)
+        sys.exit(1)
 
-        # ── Transformação no banco + testes de dados ──
-        try:
-            run_dbt()
-        except Exception as exc:
-            logger.error("FALHA NO DBT. Pipeline interrompido. Erro: %s", exc)
-            sys.exit(1)
-
-        resultado = f"Bronze={bronze_count}"
-    else:
-        # ── Transformação em pandas ──
-        try:
-            fato_count, dim_count = run_transformation()
-        except Exception as exc:
-            logger.error("FALHA NA TRANSFORMAÇÃO. Pipeline interrompido. Erro: %s", type(exc).__name__)
-            sys.exit(1)
-
-        # ── Carga ──
-        try:
-            loaded = run_load()
-        except Exception as exc:
-            logger.error("FALHA NA CARGA. Pipeline interrompido. Erro: %s", type(exc).__name__)
-            sys.exit(1)
-
-        resultado = f"Fato={fato_count} | Dim={dim_count} | Carregados={loaded}"
+    # ── Transformação no banco + testes de dados ──
+    try:
+        run_dbt()
+    except Exception as exc:
+        logger.error("FALHA NO DBT. Pipeline interrompido. Erro: %s", exc)
+        sys.exit(1)
 
     # ── Resumo ──
     elapsed = time.time() - t0
@@ -335,8 +293,8 @@ def main() -> None:
         else " | ".join(f"{p}={n}" for p, n in counts.items())
     )
     logger.info(SEPARATOR)
-    logger.info("PIPELINE CONCLUÍDO COM SUCESSO (%.1fs) — modo %s", elapsed, args.mode.upper())
-    logger.info("Resumo: %s | %s", extraidos, resultado)
+    logger.info("PIPELINE CONCLUÍDO COM SUCESSO (%.1fs)", elapsed)
+    logger.info("Resumo: %s | Bronze=%d", extraidos, bronze_count)
     logger.info(SEPARATOR)
 
 

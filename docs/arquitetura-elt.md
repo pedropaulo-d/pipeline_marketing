@@ -9,7 +9,12 @@ tags:
 
 # Arquitetura ELT — bronze → silver → gold
 
-Implementada em 05/08/2026, convivendo com o pipeline ETL original.
+Implementada em 05/08/2026. Conviveu com o pipeline ETL original até 06/08,
+quando o caminho legado foi removido e o projeto passou a ter uma arquitetura
+só. As medições de paridade desta nota foram feitas enquanto os dois
+coexistiam; o código do ETL permanece no histórico do git e pode ser
+restaurado com
+`git checkout f8d5ca2 -- transformers/ loaders/supabase_loader.py init_db.sql`.
 
 ## Por que mudou
 
@@ -140,13 +145,22 @@ Três campanhas foram renomeadas entre abril e agosto nos dados reais:
 Consultando o investimento por dia, cada data exibe o nome vigente à época —
 o relatório de abril não é mais reescrito pela renomeação de agosto.
 
-`dim_campanha` passou a ter 180 linhas para 177 entidades; `dim_adset`, 337
-para 334; `dim_conta`, 58 para 57. A diferença são exatamente as versões.
+Em 06/08, `dim_campanha` tem 183 linhas para 180 entidades; `dim_adset`, 340
+para 337; `dim_conta`, 58 para 57. A diferença são exatamente as versões.
 
-Dois testes garantem a consistência do versionamento:
+Três testes garantem a consistência do versionamento:
 `assert_scd2_sem_sobreposicao` (intervalos não se sobrepõem, o que duplicaria
-métricas no join) e `assert_scd2_uma_versao_atual` (exatamente uma versão
-corrente por entidade).
+métricas no join), `assert_scd2_uma_versao_atual` (exatamente uma versão
+corrente por entidade) e `assert_join_dimensional_nao_infla` (a travessia da
+hierarquia devolve exatamente uma linha por linha do fato).
+
+> [!warning] O versionamento muda o contrato de consulta
+> Juntar o fato à dimensão pela chave natural **sem** a cláusula de validade
+> transforma o `join` em 1:N e infla os agregados sem produzir erro algum. Com
+> apenas 3 entidades renomeadas, o investimento total sobe 7,8% — de
+> R$ 20.216,73 para R$ 21.795,17. O erro já contaminou a tabela de resultados
+> consolidados do trabalho, corrigida em 06/08. Toda consulta ao armazém passa
+> a ter a obrigação de declarar em que instante do tempo está olhando.
 
 ## O que se ganhou e o que se perdeu
 
@@ -154,7 +168,7 @@ corrente por entidade).
 |---|---|---|
 | Reprocessar sem API | ❌ | ✅ |
 | Histórico do dado bruto | ❌ | ✅ append-only |
-| Testes de dados | ❌ | ✅ 73 testes |
+| Testes de dados | ❌ | ✅ 75 testes |
 | Histórico de renomeações | ❌ SCD Tipo 1 | ✅ SCD Tipo 2 |
 | Lineage documentado | ❌ | ✅ gerado pelo dbt |
 | Auditoria de execuções | ❌ | ✅ `ingestion_log` |
@@ -206,9 +220,6 @@ docker compose run --rm etl_app python main.py
 # Reprocessar sem consumir a API
 docker compose run --rm etl_app python main.py --skip-extract
 
-# Caminho ETL original, para comparação
-docker compose run --rm etl_app python main.py --mode etl
-
 # Só as transformações e testes
 docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt build
 
@@ -223,6 +234,16 @@ docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt doc
 - **Materialização full-refresh** — a gold é reconstruída inteira a cada
   execução. Adequado ao volume atual (~1,7 mil linhas); exigiria modelos
   incrementais em outra ordem de grandeza.
-- **Cobertura desigual de métricas** — `reach`, `video_views`,
-  `profile_views` e `purchases` continuam zerados para o Google, por
-  limitação da consulta GAQL nesse nível.
+- **Cobertura desigual de métricas** — `reach`, `profile_views` e `purchases`
+  continuam zerados para o Google, por limitação da consulta GAQL nesse nível.
+  `video_views` deixou de ser zero em 06/08, mas com uma ressalva: o valor vem
+  de `metrics.video_trueview_views`, que conta visualização de 30 segundos,
+  vídeo completo ou interação — enquanto o Meta conta a partir de 3 segundos.
+  A coluna é comum, a definição não. Comparar as duas plataformas nessa métrica
+  não tem significado; a série de cada uma isoladamente tem.
+- **Filtro por status atual em consulta histórica** — corrigido em 06/08, mas
+  vale como lição registrada. A GAQL filtrava `campaign.status = 'ENABLED'`,
+  comparando o status de hoje com métricas de um dia passado. Reextrair um
+  período perdia as campanhas pausadas desde então e, como a silver adota o
+  snapshot mais recente, o gasto já carregado era apagado do DW. O teste
+  `assert_reextracao_nao_perde_gasto` passou a vigiar essa classe de perda.

@@ -176,19 +176,38 @@ def load_source(
     return len(linhas)
 
 
-def run() -> int:
-    """Carrega todos os arquivos brutos disponiveis na camada bronze.
+def run(sources: list[str] | None = None) -> int:
+    """Carrega os arquivos brutos disponiveis na camada bronze.
+
+    Args:
+        sources: Fontes a carregar (``meta_ads`` e/ou ``google_ads``). Quando
+            ``None``, carrega todas. Restringir importa numa execucao de uma
+            plataforma so: o arquivo bruto da outra pode ter sobrado de uma
+            execucao anterior e seria reingerido como lote novo, inflando a
+            bronze com uma copia de dado ja carregado.
 
     Returns:
         Total de registros inseridos.
+
+    Raises:
+        ValueError: Se alguma fonte informada for desconhecida.
     """
+    selecionadas = list(SOURCES) if sources is None else sources
+    invalidas = set(selecionadas) - set(SOURCES)
+    if invalidas:
+        raise ValueError(
+            f"Fonte desconhecida: {', '.join(sorted(invalidas))}. "
+            f"Valores aceitos: {', '.join(SOURCES)}."
+        )
+
     engine = get_engine()
     ensure_schema(engine)
 
     total = 0
     with Session(engine) as session:
         try:
-            for source, cfg in SOURCES.items():
+            for source in selecionadas:
+                cfg = SOURCES[source]
                 # batch_id por fonte — cada arquivo e uma unidade de carga.
                 batch_id = uuid.uuid4()
                 total += load_source(

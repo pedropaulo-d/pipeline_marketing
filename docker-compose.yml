@@ -1,7 +1,7 @@
 services:
-  # Data Warehouse local — alternativa ao Supabase para desenvolvimento e
-  # demonstracao. O schema (init_db.sql) e aplicado automaticamente na
-  # primeira subida, quando o volume de dados ainda esta vazio.
+  # Data Warehouse local. Nao ha DDL de inicializacao: no ELT o schema nasce
+  # do proprio pipeline — `bronze_loader` aplica o DDL da bronze e o dbt
+  # materializa silver e gold. Um banco vazio basta.
   db:
     image: postgres:16-alpine
     container_name: tcc_dw
@@ -17,7 +17,6 @@ services:
     shm_size: 1gb
     volumes:
       - dw_data:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U etl -d marketing_dw"]
       interval: 5s
