@@ -1,0 +1,1382 @@
+[
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "23000011001",
+    "ad_name": "Anuncio Demo 1-1-1",
+    "spend": "379.93",
+    "impressions": "12472",
+    "inline_link_clicks": "147",
+    "reach": "7592"
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001102",
+    "ad_name": "Anuncio Demo 1-1-2",
+    "spend": "416.39",
+    "impressions": "9443",
+    "inline_link_clicks": "221",
+    "reach": "8032",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "0"
+      },
+      {
+        "action_type": "video_view",
+        "value": "687"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "21"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "192"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "437.81"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001103",
+    "ad_name": "Anuncio Demo 1-1-3",
+    "spend": "380.77",
+    "impressions": "831",
+    "inline_link_clicks": "13",
+    "reach": "565",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "3"
+      },
+      {
+        "action_type": "video_view",
+        "value": "169"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "10"
+      },
+      {
+        "action_type": "purchase",
+        "value": "4"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "196"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "461.36"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001201",
+    "ad_name": "Anuncio Demo 1-2-1",
+    "spend": "763.43",
+    "impressions": "4741",
+    "inline_link_clicks": "75",
+    "reach": "3060",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "5"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1072"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "31"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "35"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "735.75"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001202",
+    "ad_name": "Anuncio Demo 1-2-2",
+    "spend": "83.62",
+    "impressions": "6630",
+    "inline_link_clicks": "46",
+    "reach": "5836",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "3"
+      },
+      {
+        "action_type": "video_view",
+        "value": "317"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "19"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "108"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1004.58"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001203",
+    "ad_name": "Anuncio Demo 1-2-3",
+    "spend": "210.57",
+    "impressions": "16802",
+    "inline_link_clicks": "432",
+    "reach": "14840",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "12"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1513"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "11"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "371"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "45.90"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002101",
+    "ad_name": "Anuncio Demo 2-1-1",
+    "spend": "785.18",
+    "impressions": "7434",
+    "inline_link_clicks": "98",
+    "reach": "6680",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "4"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1351"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "39"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "487"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "584.72"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002102",
+    "ad_name": "Anuncio Demo 2-1-2",
+    "spend": "318.42",
+    "impressions": "10399",
+    "inline_link_clicks": "193",
+    "reach": "9526",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "0"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2273"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "26"
+      },
+      {
+        "action_type": "purchase",
+        "value": "4"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "112"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "361.64"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002103",
+    "ad_name": "Anuncio Demo 2-1-3",
+    "spend": "763.70",
+    "impressions": "816",
+    "inline_link_clicks": "26",
+    "reach": "703",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "12"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1387"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "22"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "296"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1906.43"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002201",
+    "ad_name": "Anuncio Demo 2-2-1",
+    "spend": "40.62",
+    "impressions": "1255",
+    "inline_link_clicks": "11",
+    "reach": "961",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "0"
+      },
+      {
+        "action_type": "video_view",
+        "value": "703"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "34"
+      },
+      {
+        "action_type": "purchase",
+        "value": "3"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "413"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1936.39"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002202",
+    "ad_name": "Anuncio Demo 2-2-2",
+    "spend": "524.23",
+    "impressions": "16823",
+    "inline_link_clicks": "450",
+    "reach": "15400",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "4"
+      },
+      {
+        "action_type": "video_view",
+        "value": "583"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "19"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "3"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "413.88"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-01",
+    "date_stop": "2026-01-01",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002203",
+    "ad_name": "Anuncio Demo 2-2-3",
+    "spend": "577.46",
+    "impressions": "19234",
+    "inline_link_clicks": "28",
+    "reach": "17934",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "4"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1799"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "24"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "2"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1070.28"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "23000011001",
+    "ad_name": "Anuncio Demo 1-1-1",
+    "spend": "842.88",
+    "impressions": "3132",
+    "inline_link_clicks": "49",
+    "reach": "2787",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "5"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2005"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "0"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "115"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "641.18"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001102",
+    "ad_name": "Anuncio Demo 1-1-2",
+    "spend": "660.71",
+    "impressions": "6095",
+    "inline_link_clicks": "24",
+    "reach": "5247",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "7"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2767"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "14"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "140"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "354.75"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001103",
+    "ad_name": "Anuncio Demo 1-1-3",
+    "spend": "557.10",
+    "impressions": "18870",
+    "inline_link_clicks": "424",
+    "reach": "13496",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "12"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2612"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "29"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "337"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1410.02"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001201",
+    "ad_name": "Anuncio Demo 1-2-1",
+    "spend": "541.44",
+    "impressions": "16090",
+    "inline_link_clicks": "81",
+    "reach": "10221",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "2"
+      },
+      {
+        "action_type": "video_view",
+        "value": "878"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "8"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "214"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1120.20"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001202",
+    "ad_name": "Anuncio Demo 1-2-2",
+    "spend": "209.01",
+    "impressions": "16661",
+    "inline_link_clicks": "342",
+    "reach": "10635",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "10"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2567"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "38"
+      },
+      {
+        "action_type": "purchase",
+        "value": "4"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "458"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "767.85"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001203",
+    "ad_name": "Anuncio Demo 1-2-3",
+    "spend": "132.62",
+    "impressions": "15881",
+    "inline_link_clicks": "409",
+    "reach": "9708",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "5"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2531"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "11"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "371"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "407.66"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002101",
+    "ad_name": "Anuncio Demo 2-1-1",
+    "spend": "870.49",
+    "impressions": "2814",
+    "inline_link_clicks": "11",
+    "reach": "1922",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "1"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1828"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "3"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "35"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1452.51"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002102",
+    "ad_name": "Anuncio Demo 2-1-2",
+    "spend": "571.26",
+    "impressions": "3791",
+    "inline_link_clicks": "83",
+    "reach": "3154",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "7"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2884"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "34"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "254"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1067.05"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002201",
+    "ad_name": "Anuncio Demo 2-2-1",
+    "spend": "606.06",
+    "impressions": "1120",
+    "inline_link_clicks": "10",
+    "reach": "733",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "1"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2587"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "23"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "107"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "433.45"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-02",
+    "date_stop": "2026-01-02",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[LEADS] [DEMO] [FORM] 01/01/2026",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002202",
+    "ad_name": "Anuncio Demo 2-2-2",
+    "spend": "477.29",
+    "impressions": "17600",
+    "inline_link_clicks": "122",
+    "reach": "11741",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "12"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1724"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "34"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "408"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "457.79"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "23000011001",
+    "ad_name": "Anuncio Demo 1-1-1",
+    "spend": "221.12",
+    "impressions": "1854",
+    "inline_link_clicks": "23",
+    "reach": "1273",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "1"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2793"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "2"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "44"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1594.02"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001102",
+    "ad_name": "Anuncio Demo 1-1-2",
+    "spend": "320.95",
+    "impressions": "19047",
+    "inline_link_clicks": "409",
+    "reach": "14624",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "0"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2363"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "40"
+      },
+      {
+        "action_type": "purchase",
+        "value": "2"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "289"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "428.96"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000010101",
+    "adset_name": "Conjunto Demo 1-1",
+    "ad_id": "1200000001103",
+    "ad_name": "Anuncio Demo 1-1-3",
+    "spend": "632.29",
+    "impressions": "7015",
+    "inline_link_clicks": "89",
+    "reach": "4633",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "12"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2303"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "17"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "220"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "385.36"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[Leads] [Demo] [Form] - 010126",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001201",
+    "ad_name": "Anuncio Demo 1-2-1",
+    "spend": "561.69",
+    "impressions": "14146",
+    "inline_link_clicks": "49",
+    "reach": "10627",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "7"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1644"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "30"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "184"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "876.16"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[Leads] [Demo] [Form] - 010126",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001202",
+    "ad_name": "Anuncio Demo 1-2-2",
+    "spend": "331.33",
+    "impressions": "16618",
+    "inline_link_clicks": "95",
+    "reach": "14348",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "4"
+      },
+      {
+        "action_type": "video_view",
+        "value": "1817"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "6"
+      },
+      {
+        "action_type": "purchase",
+        "value": "3"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "170"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1450.71"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000001",
+    "account_name": "Conta Demo 1",
+    "campaign_id": "1200000010002",
+    "campaign_name": "[Leads] [Demo] [Form] - 010126",
+    "adset_id": "1200000010102",
+    "adset_name": "Conjunto Demo 1-2",
+    "ad_id": "1200000001203",
+    "ad_name": "Anuncio Demo 1-2-3",
+    "spend": "164.22",
+    "impressions": "15327",
+    "inline_link_clicks": "140",
+    "reach": "9850",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "7"
+      },
+      {
+        "action_type": "video_view",
+        "value": "280"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "40"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "466"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1722.27"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002101",
+    "ad_name": "Anuncio Demo 2-1-1",
+    "spend": "852.71",
+    "impressions": "7257",
+    "inline_link_clicks": "58",
+    "reach": "4918",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "9"
+      },
+      {
+        "action_type": "video_view",
+        "value": "389"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "38"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "342"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1697.86"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020001",
+    "campaign_name": "[VENDAS] [DEMO] [CONV] 1",
+    "adset_id": "1200000020101",
+    "adset_name": "Conjunto Demo 2-1",
+    "ad_id": "1200000002102",
+    "ad_name": "Anuncio Demo 2-1-2",
+    "spend": "475.09",
+    "impressions": "12309",
+    "inline_link_clicks": "144",
+    "reach": "7415",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "3"
+      },
+      {
+        "action_type": "video_view",
+        "value": "854"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "5"
+      },
+      {
+        "action_type": "purchase",
+        "value": "1"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "400"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "353.57"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[Leads] [Demo] [Form] - 010126",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002201",
+    "ad_name": "Anuncio Demo 2-2-1",
+    "spend": "881.65",
+    "impressions": "3618",
+    "inline_link_clicks": "89",
+    "reach": "2626",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "11"
+      },
+      {
+        "action_type": "video_view",
+        "value": "2493"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "35"
+      },
+      {
+        "action_type": "purchase",
+        "value": "0"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "110"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1902.98"
+      }
+    ]
+  },
+  {
+    "date_start": "2026-01-03",
+    "date_stop": "2026-01-03",
+    "account_id": "900000002",
+    "account_name": "Conta Demo 2",
+    "campaign_id": "1200000020002",
+    "campaign_name": "[Leads] [Demo] [Form] - 010126",
+    "adset_id": "1200000020102",
+    "adset_name": "Conjunto Demo 2-2",
+    "ad_id": "1200000002202",
+    "ad_name": "Anuncio Demo 2-2-2",
+    "spend": "364.69",
+    "impressions": "17878",
+    "inline_link_clicks": "42",
+    "reach": "13308",
+    "actions": [
+      {
+        "action_type": "lead",
+        "value": "7"
+      },
+      {
+        "action_type": "video_view",
+        "value": "530"
+      },
+      {
+        "action_type": "onsite_conversion.ig_profile_view",
+        "value": "13"
+      },
+      {
+        "action_type": "purchase",
+        "value": "4"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "41"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "lead",
+        "value": "1277.80"
+      }
+    ]
+  }
+]

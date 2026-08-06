@@ -16,9 +16,11 @@ logs/
 # ========================
 # Dados Temporários e Logs
 # ========================
-# Ignora os arquivos brutos que testamos agora
-temp_meta_raw.json
-temp_google_raw.json
+# Dado bruto real das APIs — nunca versionar (contas de clientes reais).
+# A barra inicial ancora a regra na raiz: sem ela o padrao casava tambem
+# tests/fixtures/temp_meta_raw.json e excluia a fixture sintetica em silencio.
+/temp_meta_raw.json
+/temp_google_raw.json
 *.log
 
 # (Opcional) Se for salvar arquivos CSV/JSON futuros de transformação
