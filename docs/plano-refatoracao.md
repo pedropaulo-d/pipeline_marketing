@@ -4,13 +4,47 @@ data: 2026-08-06
 tags:
   - tcc
   - refatoracao
-status: proposto
+status: em execucao — Fase 0 concluida
 ---
 
 # Plano de refatoração
 
 Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 `e4577a9`). Cada fase é independente e verificável isoladamente.
+
+---
+
+## ▶️ Retomada — leia isto primeiro
+
+**Onde paramos:** Fase 0 concluída e commitada em 06/08/2026 (`18b85df`). Árvore
+limpa, nada em andamento, nenhum trabalho pela metade.
+
+**Primeiro comando ao retomar** — confirma que o armazém continua no estado
+congelado antes de qualquer mudança:
+
+```bash
+docker compose up -d db
+docker compose run --rm etl_app python scripts/verificar_paridade.py verificar
+```
+
+Esperado: `PARIDADE OK — 1677 linhas no fato`. Se divergir, **investigue antes
+de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
+propósito), ou algo mudou sozinho.
+
+**Próximo passo:** Fase 1 (registro único de plataformas). É a de maior ganho e
+não depende de nenhuma das decisões pendentes.
+
+**Bloqueios:** as decisões D1 e D2 (no fim deste documento) continuam abertas
+com o usuário. D1 bloqueia a Fase 2, D2 bloqueia a Fase 6. **Perguntar antes de
+executar essas duas fases** — as demais estão liberadas.
+
+**Contexto que não está no código:** o dado real de 01–04/08 vive em
+`temp_meta_raw.json` / `temp_google_raw.json` na raiz, que são gitignored. São
+eles que permitem `--skip-extract`. Se sumirem, o replay do Python se perde
+(a bronze no banco continua íntegra e `dbt build` sozinho reconstrói silver e
+gold). Para testar código sem eles, use `scripts/gerar_fixture.py`.
+
+---
 
 ## O diagnóstico
 
