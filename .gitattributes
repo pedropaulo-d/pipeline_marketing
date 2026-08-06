@@ -1,0 +1,7 @@
+# Terminadores de linha
+#
+# O repositorio e consumido por containers Linux via bind mount (dbt, psql,
+# python). CRLF na arvore quebra shebang de script e polui o diff inteiro
+# quando o projeto troca de Windows para WSL. `eol=lf` fixa LF no checkout
+# em qualquer plataforma, nao so na normalizacao do indice.
+* text=auto eol=lf
