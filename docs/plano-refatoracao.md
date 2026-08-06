@@ -321,7 +321,7 @@ qualquer ordem, uma por commit.
 
 | Fase | Status | Commit | Paridade |
 |---|---|---|---|
-| 0 | ✅ concluída | `a6a8755` | golden congelado |
+| 0 | ✅ concluída | `18b85df` | golden congelado |
 | 1 | ⬜ pendente | | |
 | 2 | ⬜ pendente | | |
 | 3 | ⬜ pendente | | |
