@@ -10,24 +10,31 @@
 -- negocio reais, e nao apenas que "os dados entraram no banco".
 -- =====================================================================
 --
--- ATENCAO AO PERCORRER A HIERARQUIA
+-- COMO PERCORRER A HIERARQUIA: NAO PERCORRA
 --
 -- As dimensoes sao SCD Tipo 2: uma entidade renomeada tem mais de uma
 -- linha, cada uma valida num intervalo. A chave natural (`_nk`) e estavel
 -- entre versoes — por isso liga a hierarquia, e por isso NAO basta para o
 -- join. Sem a clausula de validade o join vira 1:N e infla os agregados
 -- sem produzir erro nenhum. Medido em 06/08/2026: 3 entidades renomeadas
--- inflaram o investimento total em 7,8%.
+-- inflaram o investimento total em 7,8%, e o numero errado chegou a entrar
+-- na tabela de resultados do TCC.
 --
--- A forma correta aparece em todas as queries abaixo:
+-- Por isso a travessia foi feita uma vez, certa, em
+-- `gold.vw_metricas_completas`. Ela expoe o fato com os nomes de toda a
+-- hierarquia ja resolvidos na versao vigente na data, no mesmo grao
+-- (1 anuncio x 1 dia). Consultar o armazem passou a ser:
 --
---     JOIN gold.dim_campanha c
---       ON  c.campanha_nk = s.campanha_nk
---       AND t.data BETWEEN c.valido_de AND c.valido_ate
+--     SELECT plataforma, sum(spend) FROM gold.vw_metricas_completas
+--     GROUP BY plataforma;
 --
--- Verificacao de um segundo: a soma das linhas por plataforma tem de
--- fechar com o total de gold.fato_metricas. O teste dbt
--- `assert_join_dimensional_nao_infla` automatiza essa conferencia.
+-- Sem join a escrever, nao ha clausula de validade para esquecer. As
+-- queries abaixo usam a view; as dimensoes cruas aparecem so na query 7,
+-- que existe justamente para exibir o versionamento.
+--
+-- Verificacao de um segundo: a contagem da view tem de fechar com
+-- gold.fato_metricas. O teste dbt `assert_join_dimensional_nao_infla`
+-- automatiza essa conferencia.
 -- =====================================================================
 
 
@@ -53,29 +60,20 @@ ORDER BY 1;
 -- 2. Comparativo entre plataformas — a pergunta que motiva o projeto
 --    (unificar Meta e Google numa mesma base comparavel)
 -- ---------------------------------------------------------------------
-SELECT p.nome                                              AS plataforma,
+SELECT plataforma,
        count(*)                                            AS linhas,
-       round(sum(f.spend), 2)                              AS investimento,
-       sum(f.impressions)                                  AS impressoes,
-       sum(f.link_clicks)                                  AS cliques,
-       round(sum(f.conversions), 2)                        AS conversoes,
-       round(100.0 * sum(f.link_clicks)
-             / NULLIF(sum(f.impressions), 0), 2)           AS ctr_pct,
-       round(sum(f.spend)
-             / NULLIF(sum(f.link_clicks), 0), 2)           AS cpc,
-       round(sum(f.spend)
-             / NULLIF(sum(f.conversions), 0), 2)           AS cpa
-FROM gold.fato_metricas f
-JOIN gold.dim_tempo      t  ON t.tempo_sk = f.tempo_sk
-JOIN gold.dim_anuncio    a  ON a.anuncio_sk = f.anuncio_sk
-JOIN gold.dim_adset      s  ON s.adset_nk = a.adset_nk
-                           AND t.data BETWEEN s.valido_de AND s.valido_ate
-JOIN gold.dim_campanha   c  ON c.campanha_nk = s.campanha_nk
-                           AND t.data BETWEEN c.valido_de AND c.valido_ate
-JOIN gold.dim_conta      co ON co.conta_nk = c.conta_nk
-                           AND t.data BETWEEN co.valido_de AND co.valido_ate
-JOIN gold.dim_plataforma p  ON p.plataforma_sk = co.plataforma_sk
-GROUP BY p.nome
+       round(sum(spend), 2)                                AS investimento,
+       sum(impressions)                                    AS impressoes,
+       sum(link_clicks)                                    AS cliques,
+       round(sum(conversions), 2)                          AS conversoes,
+       round(100.0 * sum(link_clicks)
+             / NULLIF(sum(impressions), 0), 2)             AS ctr_pct,
+       round(sum(spend)
+             / NULLIF(sum(link_clicks), 0), 2)             AS cpc,
+       round(sum(spend)
+             / NULLIF(sum(conversions), 0), 2)             AS cpa
+FROM gold.vw_metricas_completas
+GROUP BY plataforma
 ORDER BY investimento DESC;
 
 -- Ressalva metodologica para a defesa: o CPA nao e comparavel de igual
@@ -84,28 +82,25 @@ ORDER BY investimento DESC;
 
 
 -- ---------------------------------------------------------------------
--- 3. Top 10 campanhas por investimento — percorre a hierarquia completa
---    do Snowflake Schema (5 niveis de dimensao)
+-- 3. Top 10 campanhas por investimento — a hierarquia completa do
+--    Snowflake Schema (5 niveis) ja resolvida pela view
+--
+--    Agrupa por NOME, nao pela chave natural — e o que faz sentido para um
+--    relatorio de gestor, e mantem esta demonstracao com a mesma saida de
+--    antes da view. Uma campanha renomeada no periodo aparece em duas
+--    linhas, uma por nome vigente; para consolidar as versoes numa linha
+--    so, agrupe por `campanha_nk` e traga o nome com max().
 -- ---------------------------------------------------------------------
-SELECT p.nome                                              AS plataforma,
-       co.nome                                             AS conta,
-       c.nome                                              AS campanha,
-       round(sum(f.spend), 2)                              AS investimento,
-       sum(f.impressions)                                  AS impressoes,
-       sum(f.link_clicks)                                  AS cliques,
-       round(100.0 * sum(f.link_clicks)
-             / NULLIF(sum(f.impressions), 0), 2)           AS ctr_pct
-FROM gold.fato_metricas f
-JOIN gold.dim_tempo      t  ON t.tempo_sk = f.tempo_sk
-JOIN gold.dim_anuncio    a  ON a.anuncio_sk = f.anuncio_sk
-JOIN gold.dim_adset      s  ON s.adset_nk = a.adset_nk
-                           AND t.data BETWEEN s.valido_de AND s.valido_ate
-JOIN gold.dim_campanha   c  ON c.campanha_nk = s.campanha_nk
-                           AND t.data BETWEEN c.valido_de AND c.valido_ate
-JOIN gold.dim_conta      co ON co.conta_nk = c.conta_nk
-                           AND t.data BETWEEN co.valido_de AND co.valido_ate
-JOIN gold.dim_plataforma p  ON p.plataforma_sk = co.plataforma_sk
-GROUP BY p.nome, co.nome, c.nome
+SELECT plataforma,
+       conta_nome                                          AS conta,
+       campanha_nome                                       AS campanha,
+       round(sum(spend), 2)                                AS investimento,
+       sum(impressions)                                    AS impressoes,
+       sum(link_clicks)                                    AS cliques,
+       round(100.0 * sum(link_clicks)
+             / NULLIF(sum(impressions), 0), 2)             AS ctr_pct
+FROM gold.vw_metricas_completas
+GROUP BY plataforma, conta_nome, campanha_nome
 ORDER BY investimento DESC
 LIMIT 10;
 
@@ -151,24 +146,15 @@ HAVING count(*) > 1;
 --    TrueView (30s, video completo ou interacao) contra os 3s do Meta —
 --    a coluna e comum, a definicao nao. Nao somar entre plataformas.
 -- ---------------------------------------------------------------------
-SELECT p.nome                                        AS plataforma,
+SELECT plataforma,
        count(*)                                      AS linhas,
-       count(*) FILTER (WHERE f.reach > 0)           AS com_reach,
-       count(*) FILTER (WHERE f.video_views > 0)     AS com_video_views,
-       count(*) FILTER (WHERE f.conversions > 0)     AS com_conversoes,
-       count(*) FILTER (WHERE f.purchases > 0)       AS com_compras
-FROM gold.fato_metricas f
-JOIN gold.dim_tempo      t  ON t.tempo_sk = f.tempo_sk
-JOIN gold.dim_anuncio    a  ON a.anuncio_sk = f.anuncio_sk
-JOIN gold.dim_adset      s  ON s.adset_nk = a.adset_nk
-                           AND t.data BETWEEN s.valido_de AND s.valido_ate
-JOIN gold.dim_campanha   c  ON c.campanha_nk = s.campanha_nk
-                           AND t.data BETWEEN c.valido_de AND c.valido_ate
-JOIN gold.dim_conta      co ON co.conta_nk = c.conta_nk
-                           AND t.data BETWEEN co.valido_de AND co.valido_ate
-JOIN gold.dim_plataforma p  ON p.plataforma_sk = co.plataforma_sk
-GROUP BY p.nome
-ORDER BY p.nome;
+       count(*) FILTER (WHERE reach > 0)             AS com_reach,
+       count(*) FILTER (WHERE video_views > 0)       AS com_video_views,
+       count(*) FILTER (WHERE conversions > 0)       AS com_conversoes,
+       count(*) FILTER (WHERE purchases > 0)         AS com_compras
+FROM gold.vw_metricas_completas
+GROUP BY plataforma
+ORDER BY plataforma;
 
 
 -- ---------------------------------------------------------------------

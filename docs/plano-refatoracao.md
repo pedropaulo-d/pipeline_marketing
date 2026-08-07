@@ -16,9 +16,9 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 5 concluída em 07/08/2026, **ainda não commitada**.
-Commitadas no mesmo dia: Fases 1 a 4 (`b5f8f40`, `101165a`, `a05c6b6`,
-`20c8dc3`); Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 6 concluída em 07/08/2026, **ainda não commitada**.
+Commitadas no mesmo dia: Fases 1 a 5 (`b5f8f40`, `101165a`, `a05c6b6`,
+`20c8dc3`, `9382683`); Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -35,9 +35,8 @@ Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4)
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 6 — a view `gold.vw_metricas_completas` (D2 já
-decidida). É a de maior valor na defesa: transforma a armadilha da travessia
-SCD2 em erro impossível. Depois 8 e a 9 opcional.
+**Próximo passo:** Fase 7 (orquestração no `main.py`), seguindo a ordem
+numérica. Depois a 8 e a 9 opcional.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -515,6 +514,9 @@ uma melhoria real na forma de falhar.
 
 ## Fase 6 — A travessia da hierarquia (a lição dos 7,8%)
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, agora com **82**
+testes dbt.
+
 A travessia correta das 5 dimensões, com a cláusula de validade em cada nível,
 está escrita **4 vezes**: três em `queries_demo.sql` (queries 2, 3 e 6) e uma
 em `assert_join_dimensional_nao_infla.sql`. Todo consumidor futuro precisa
@@ -530,6 +532,55 @@ vw_metricas_completas group by plataforma` e **não têm como errar**.
 documentada em erro impossível. Também é a mais defensável na banca — o
 argumento "documentei a pegadinha" é fraco perto de "tornei o caminho errado
 inacessível". Decidida como view em 07/08/2026 (D2, fechada).
+
+### O que foi entregue
+
+`dbt/models/gold/vw_metricas_completas.sql`, materializada como view. Expõe o
+fato com tempo, hierarquia (chave natural **e** nome, em cada nível) e as 9
+métricas, no mesmo grão — 1 anúncio × 1 dia.
+
+Consumidores migrados:
+
+| Onde | Antes | Depois |
+|---|---|---|
+| `queries_demo.sql` 2, 3 e 6 | 6 joins cada, 4 com cláusula de validade | `from gold.vw_metricas_completas` |
+| `assert_join_dimensional_nao_infla` | reimplementava a travessia e verificava **a própria cópia** | verifica a view, que é o que os consumidores usam |
+
+O teste mudou de alvo, e isso é mais do que cosmético: antes ele afirmava que
+*uma* travessia estava correta enquanto as outras três seguiam sem guarda.
+Agora existe uma travessia e é ela que o teste protege.
+
+### A exceção deliberada
+
+`scripts/verificar_paridade.py` **continua com a travessia escrita à mão**, e
+isso é intencional — está comentado no arquivo para ninguém "consertar".
+
+Ele é o oráculo da rede de segurança: o valor dele está em ser uma segunda
+implementação, independente, que precisa concordar com a primeira. Se lesse a
+view, um erro na view viraria um erro no verificador, a divergência deixaria de
+ser detectável e o golden passaria a validar a si mesmo. É o único lugar do
+repositório onde duplicar é o certo.
+
+### Verificação
+
+- A view reproduz a travessia manual **exatamente**: `except` nos dois sentidos
+  sobre os agregados por plataforma e dia → **0 divergências**. 1677 linhas na
+  view, 1677 no fato, R$ 20.216,73 de investimento total — o valor correto, não
+  o inflado de R$ 21.795,17.
+- 82 testes dbt (76 + 6 do contrato da view no `_gold.yml`).
+- `queries_demo.sql` roda inteiro. A saída da query 3 foi comparada linha a
+  linha com a versão anterior: **idêntica**.
+- `PARIDADE OK — 1677 linhas`.
+
+### Um ajuste de rota durante a fase
+
+Na primeira escrita, a query 3 passou a agrupar por `campanha_nk` em vez de
+pelo nome — tecnicamente melhor, porque consolida as versões de uma campanha
+renomeada numa linha só. Mas isso **muda a saída de uma query de demonstração**
+que pode estar citada na monografia, e a regra da refatoração é não mudar
+número. Revertido para o agrupamento por nome, com o critério alternativo
+registrado em comentário. A troca de fonte para a view ficou sendo a única
+mudança.
 
 ---
 
@@ -658,7 +709,7 @@ qualquer ordem, uma por commit.
 | 3 | ✅ concluída | | OK — 1677 linhas |
 | 4 | ✅ concluída | | OK — 1677 linhas |
 | 5 | ✅ concluída | | OK — 1677 linhas |
-| 6 | ⬜ pendente | | |
+| 6 | ✅ concluída | | OK — 1677 linhas |
 | 7 | ⬜ pendente | | |
 | 8 | ⬜ pendente | | |
 | 9 | ⬜ pendente | | |

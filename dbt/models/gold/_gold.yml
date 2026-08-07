@@ -121,3 +121,25 @@ models:
         tests: [not_null]
       - name: impressions
         tests: [not_null]
+
+  - name: vw_metricas_completas
+    description: >
+      Visao de consumo: a travessia das 5 dimensoes feita uma vez, com a
+      clausula de validade SCD2 em cada nivel versionado. Mesmo grao do fato
+      (1 anuncio x 1 dia), com os nomes da hierarquia ja resolvidos na versao
+      vigente na data. Existe para que ninguem precise escrever esses joins —
+      esquecer uma clausula de validade infla os agregados sem erro algum.
+      A igualdade de contagem com o fato e afirmada por
+      assert_join_dimensional_nao_infla.
+    columns:
+      - name: data
+        tests: [not_null]
+      - name: plataforma
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Meta Ads', 'Google Ads']
+      - name: anuncio_nk
+        tests: [not_null]
+      - name: spend
+        tests: [not_null]

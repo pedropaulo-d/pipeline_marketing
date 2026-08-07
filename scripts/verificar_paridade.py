@@ -52,6 +52,14 @@ _METRICAS: list[str] = [
 # Travessia da hierarquia resolvendo a versao vigente pela data do fato.
 # A clausula de validade em cada nivel NAO e opcional: sem ela o join vira
 # 1:N e infla os agregados. Ver `assert_join_dimensional_nao_infla`.
+#
+# NAO SUBSTITUIR por `from gold.vw_metricas_completas`. Desde a Fase 6 essa
+# view e a travessia oficial e todos os consumidores usam ela — este script e
+# a excecao deliberada. Ele e o oraculo da rede de seguranca: seu valor esta em
+# ser uma SEGUNDA implementacao, independente, que precisa concordar com a
+# primeira. Se passasse a ler a view, um erro na view viraria um erro no
+# verificador e a divergencia deixaria de ser detectavel — o golden validaria
+# a si mesmo. E o unico lugar do repositorio onde duplicar e o certo.
 _TRAVESSIA: str = """
     from gold.fato_metricas f
     join gold.dim_tempo t

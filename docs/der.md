@@ -170,6 +170,22 @@ analiticas sem recomputar a partir da coluna `data`.
 | `dim_anuncio` -> `fato_metricas` | 1:N | `anuncio_sk` |
 | `dim_tempo` -> `fato_metricas` | 1:N | `tempo_sk` |
 
+## Camada de consumo
+
+`gold.vw_metricas_completas` (view) percorre essa hierarquia uma vez, com a
+clausula de validade em cada nivel versionado, e expoe o fato com todos os
+nomes ja resolvidos na versao vigente na data. Mesmo grao do fato: 1 anuncio x
+1 dia.
+
+Ela existe porque a tabela de cardinalidades acima e uma armadilha para quem
+consulta: as ligacoes marcadas com "+ validade" produzem 1:N se a clausula for
+esquecida, e o resultado continua parecendo correto — so maior. Medido em
+06/08/2026: 7,8% de inflacao no investimento total.
+
+**Consulte a view, nao as dimensoes.** O acesso direto as dimensoes so se
+justifica para inspecionar o versionamento em si (ver query 7 de
+[`queries_demo.sql`](queries_demo.sql)).
+
 ## Integridade referencial
 
 **Nao ha foreign keys no banco.** As tabelas da gold sao materializadas pelo
