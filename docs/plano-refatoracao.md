@@ -281,16 +281,18 @@ continuam tardios — hoje moram em `Plataforma.extrair()`.
 `scripts/anonimizar_dataset.py` e `scripts/gerar_fixture.py` passaram a tirar
 os nomes dos arquivos brutos do registro em vez de montá-los à mão.
 
-### A armadilha que entrou no lugar da nº 8
+### A armadilha que entrou no lugar da nº 8 — e foi eliminada depois
 
-A instalação editável do setuptools grava o mapeamento dos **módulos de topo**
-em site-packages no momento do build. Criar `foo.py` na raiz e importá-lo sem
-`docker compose build etl_app` dá `ModuleNotFoundError` mesmo com o arquivo
-presente, porque o bind mount não atualiza esse mapeamento. Arquivo novo dentro
-de pacote já declarado (`extractors/`, `loaders/`, `benchmark/`) funciona sem
-rebuild — aí o mapeamento é por diretório. Medido nos dois casos, não deduzido.
-É um custo menor que o anterior: falha alto e claro no primeiro import, em vez
-de silenciosamente.
+A instalação editável do setuptools, no modo padrão, grava o mapeamento dos
+**módulos de topo** em site-packages no momento do build. Criar `foo.py` na
+raiz e importá-lo sem `docker compose build etl_app` dava `ModuleNotFoundError`
+mesmo com o arquivo presente. Arquivo novo dentro de pacote já declarado
+funcionava — aí o mapeamento é por diretório. Medido nos dois casos.
+
+**Resolvida em 07/08, depois do plano fechar** (ver seção final). O modo
+`editable_mode=compat` grava um `.pth` com `/app` em vez do mapeamento
+congelado, e a raiz inteira entra no `sys.path`. A troca eliminou a armadilha
+sem reintroduzir nenhum `sys.path.insert`.
 
 ### Verificação
 
@@ -844,14 +846,50 @@ qualquer ordem, uma por commit.
 | 0 | ✅ concluída | `18b85df` | golden congelado |
 | 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
 | 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
-| 3 | ✅ concluída | | OK — 1677 linhas |
-| 4 | ✅ concluída | | OK — 1677 linhas |
-| 5 | ✅ concluída | | OK — 1677 linhas |
-| 6 | ✅ concluída | | OK — 1677 linhas |
-| 7 | ✅ concluída | | OK — 1677 linhas |
-| 8 | ✅ concluída | | n/a — fora do pipeline |
-| 9 | ✅ concluída | | OK — 1677 linhas |
+| 3 | ✅ concluída | `a05c6b6` | OK — 1677 linhas |
+| 4 | ✅ concluída | `20c8dc3` | OK — 1677 linhas |
+| 5 | ✅ concluída | `9382683` | OK — 1677 linhas |
+| 6 | ✅ concluída | `2b20c99` | OK — 1677 linhas |
+| 7 | ✅ concluída | `ad02ae9` | OK — 1677 linhas |
+| 8 | ✅ concluída | `ca6fad6` | n/a — fora do pipeline |
+| 9 | ✅ concluída | `422abcc` | OK — 1677 linhas |
 
 **Plano concluído.** As nove fases foram executadas em 06–07/08/2026, cada uma
 verificada contra o golden. O número não mudou uma vez: `1677 linhas` do
 início ao fim. A bateria de testes dbt foi de 75 para 83.
+
+## Depois do plano — a última armadilha
+
+A Fase 2 trocou a armadilha do `sys.path.insert` por outra menor: no modo
+padrão, a instalação editável do setuptools grava em site-packages um
+dicionário `nome -> arquivo` resolvido no build, então módulo novo na raiz só
+era encontrado depois de `docker compose build etl_app`.
+
+Investigado em 07/08, depois do plano fechar. **A causa era o modo, não o
+mecanismo.** Com `--config-settings editable_mode=compat`, o que vai para
+site-packages é um `.pth` de uma linha contendo `/app` — a raiz inteira entra
+no `sys.path` e arquivo novo funciona na hora, sem rebuild e sem
+`sys.path.insert`.
+
+**Verificação:** o `.pth` gravado passou de um finder com `MAPPING` congelado
+para o conteúdo literal `/app`; um módulo criado na raiz **depois** do build
+importa normalmente; imports a partir de `/tmp` continuam funcionando para
+`config`, `plataformas`, `loaders`, `extractors` e `benchmark`; pipeline
+completo com 83 testes, `python -m extractors.meta_ads --help`,
+`verificar_paridade` rodado de outro diretório, fixture regenerada sem diff e
+`PARIDADE OK — 1677 linhas`.
+
+**O risco que sobra e como está coberto.** `editable_mode=compat` é uma opção
+de transição do setuptools e pode ser removida numa versão futura (nenhum aviso
+de depreciação na versão atual — verificado no build). Se isso acontecer, o
+substituto não depende de setuptools nenhum e está escrito no Dockerfile:
+
+```dockerfile
+RUN echo /app > /usr/local/lib/python3.11/site-packages/tcc_pipeline.pth
+```
+
+Esse é o mecanismo mais antigo e estável do empacotamento Python. O plano de
+contingência custa uma linha.
+
+Com isso, **nenhuma das armadilhas tocadas pela refatoração ficou em aberto** —
+a de nº 8 deixou de existir em vez de ser trocada por outra.
