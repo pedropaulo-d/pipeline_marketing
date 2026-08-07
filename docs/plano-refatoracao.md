@@ -16,8 +16,8 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 2 concluída em 07/08/2026, **ainda não commitada**.
-Fase 1 commitada no mesmo dia (`b5f8f40`), Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 2 concluída e commitada em 07/08/2026 (`101165a`).
+Fase 1 no mesmo dia (`b5f8f40`), Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -495,7 +495,7 @@ qualquer ordem, uma por commit.
 |---|---|---|---|
 | 0 | ✅ concluída | `18b85df` | golden congelado |
 | 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
-| 2 | ✅ concluída | | OK — 1677 linhas |
+| 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
 | 3 | ⬜ pendente | | |
 | 4 | ⬜ pendente | | |
 | 5 | ⬜ pendente | | |
