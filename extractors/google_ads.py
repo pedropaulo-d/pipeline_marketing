@@ -1,14 +1,12 @@
-import argparse
-import json
 import logging
 import os
-from datetime import datetime, timedelta
-from pathlib import Path
+from functools import partial
 
 from google.ads.googleads.client import GoogleAdsClient
 
-from config import configurar_logging, mask
-from plataformas import PLATAFORMAS
+from config import mask, validate_env
+from extractors.comum import executar_cli, executar_extracao
+from plataformas import PLATAFORMAS, Plataforma
 
 logger = logging.getLogger(__name__)
 
@@ -57,33 +55,18 @@ GAQL_ADS_TEMPLATE: str = """
     WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
 """
 
-# Vem do registro, e nao de um literal repetido aqui: e exatamente o caminho
-# que o bronze_loader vai ler depois.
-OUTPUT_PATH: Path = PLATAFORMAS["google"].arquivo_bruto
+PLATAFORMA: Plataforma = PLATAFORMAS["google"]
 
 
 def init_client() -> GoogleAdsClient:
     """Inicializa o GoogleAdsClient com as credenciais do .env.
 
+    As credenciais já foram conferidas por ``validate_env`` em ``run``, que é a
+    única fonte da lista de variáveis obrigatórias.
+
     Returns:
         Instância configurada do GoogleAdsClient.
-
-    Raises:
-        EnvironmentError: Se alguma variável obrigatória estiver ausente.
     """
-    required = [
-        "GOOGLE_DEVELOPER_TOKEN",
-        "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_REFRESH_TOKEN",
-        "GOOGLE_LOGIN_CUSTOMER_ID",
-    ]
-    missing = [v for v in required if not os.getenv(v)]
-    if missing:
-        raise EnvironmentError(
-            f"Variáveis obrigatórias ausentes no .env: {', '.join(missing)}"
-        )
-
     config = {
         "developer_token": os.getenv("GOOGLE_DEVELOPER_TOKEN"),
         "client_id": os.getenv("GOOGLE_CLIENT_ID"),
@@ -174,17 +157,6 @@ def extract_daily_ads(
     return rows
 
 
-def save_raw(rows: list[dict]) -> None:
-    """Salva a lista de registros brutos em JSON.
-
-    Args:
-        rows: Lista de dicts a serem serializados.
-    """
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
-    logger.info("Dados brutos salvos em %s (%d registros)", OUTPUT_PATH, len(rows))
-
-
 def run(start_date: str, end_date: str) -> int:
     """Executa a extração completa do Google Ads para o período informado.
 
@@ -194,34 +166,27 @@ def run(start_date: str, end_date: str) -> int:
 
     Returns:
         Quantidade total de registros extraídos.
+
+    Raises:
+        SystemExit: Se alguma credencial obrigatória estiver ausente.
     """
+    validate_env(groups=[PLATAFORMA.nome])
     client = init_client()
-    accounts = discover_accounts(client)
 
-    all_rows: list[dict] = []
-    for acc in accounts:
-        rows = extract_daily_ads(client, acc["id"], acc["name"], start_date, end_date)
-        all_rows.extend(rows)
-
-    save_raw(all_rows)
-    logger.info("Extração Google concluída. Total: %d registros", len(all_rows))
-    return len(all_rows)
-
-
-def _parse_args() -> argparse.Namespace:
-    """Parseia argumentos de linha de comando para período de extração."""
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    parser = argparse.ArgumentParser(description="Extrator Google Ads")
-    parser.add_argument("--start-date", default=yesterday, help="Data inicial (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default=yesterday, help="Data final (YYYY-MM-DD)")
-    return parser.parse_args()
+    # O ``client`` e o unico estado que a casca comum nao conhece; `partial`
+    # fixa ele e devolve as assinaturas que `executar_extracao` espera.
+    return executar_extracao(
+        PLATAFORMA,
+        descobrir_contas=partial(discover_accounts, client),
+        extrair_conta=partial(extract_daily_ads, client),
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def main() -> None:
     """Entry point para execução standalone via CLI."""
-    configurar_logging()
-    args = _parse_args()
-    run(args.start_date, args.end_date)
+    executar_cli(PLATAFORMA, run)
 
 
 if __name__ == "__main__":

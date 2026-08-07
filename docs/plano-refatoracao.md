@@ -16,8 +16,9 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 2 concluída e commitada em 07/08/2026 (`101165a`).
-Fase 1 no mesmo dia (`b5f8f40`), Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 3 concluída em 07/08/2026, **ainda não commitada** —
+fecha o bloco 1–3. Commitadas: Fase 2 (`101165a`) e Fase 1 (`b5f8f40`) no mesmo
+dia, Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -34,10 +35,9 @@ Esperado: `PARIDADE OK — 1677 linhas no fato`. Se divergir, **investigue antes
 de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 3 (contrato comum dos extratores), que fecha o bloco
-1–3. Atenção ao aviso do próprio plano: unificar só a casca (`save_raw`, o CLI
-e o laço de `run`). `discover_accounts` e `extract_daily_ads` continuam
-separadas — as duas APIs são genuinamente diferentes.
+**Próximo passo:** as fases 4, 5, 6 e 8 são independentes entre si e podem ir
+em qualquer ordem, uma por commit. A 6 (view da travessia) é a de maior valor
+na defesa; a 8 é a mais isolada e barata.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -304,6 +304,9 @@ de silenciosamente.
 
 ## Fase 3 — Extratores: contrato comum
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
+passando.
+
 `meta_ads.py` e `google_ads.py` duplicam a estrutura inteira: `save_raw`,
 `_parse_args`, `main`, e o esqueleto de `run` (init → discover → loop →
 save). São ~50 linhas quase idênticas em cada.
@@ -322,6 +325,73 @@ paginação por cursor no Meta, GAQL no Google. `discover_accounts` e
 
 Três listas para manter em sincronia. Alvo: `config.validate_env()` é a única
 fonte; os extratores chamam e confiam.
+
+### O que foi entregue
+
+`extractors/comum.py`, com a casca e só a casca:
+
+| Função | Substitui |
+|---|---|
+| `salvar_bruto(plataforma, linhas)` | os dois `save_raw`, que só diferiam no `OUTPUT_PATH` |
+| `executar_extracao(plataforma, descobrir_contas, extrair_conta, ...)` | o esqueleto de `run`: percorrer contas, acumular, salvar, logar o total |
+| `_parse_args(plataforma)` | os dois `_parse_args`, que só diferiam na descrição |
+| `executar_cli(plataforma, run)` | os dois `main()` |
+
+Cada extrator ficou com o que é genuinamente seu — `init`, `discover_accounts`,
+`extract_daily_ads` — mais um `run` que valida, inicializa e delega:
+
+```python
+def run(start_date: str, end_date: str) -> int:
+    validate_env(groups=[PLATAFORMA.nome])
+    client = init_client()
+    return executar_extracao(
+        PLATAFORMA,
+        descobrir_contas=partial(discover_accounts, client),
+        extrair_conta=partial(extract_daily_ads, client),
+        start_date=start_date, end_date=end_date,
+    )
+```
+
+O `client` do Google é o único estado que a casca não conhece. `functools.partial`
+o fixa e devolve exatamente as assinaturas que `executar_extracao` espera —
+alternativa a passar o client para dentro da casca, que a obrigaria a saber que
+uma das duas plataformas tem client e a outra não.
+
+**Validação de credenciais.** As três listas viraram uma: `validate_env` é
+chamada no início de cada `run` e os `init` passaram a confiar. Os `if not
+all([...])` e o `missing = [v for v in required...]` saíram, junto com a lista
+de 5 variáveis repetida em `google_ads.init_client`. Ganho colateral: a
+mensagem agora nomeia **todas** as variáveis ausentes de uma vez, com o grupo
+de cada uma, em vez de estourar na primeira.
+
+### O que deliberadamente não foi unificado
+
+`discover_accounts` e `extract_daily_ads` continuam separadas. O Meta pagina por
+cursor sobre `owned` + `client` e filtra por status de conta; o Google roda GAQL
+sobre `customer_client` no MCC. Uma função só para os dois casos precisaria de
+um `if plataforma` dentro — que é a duplicação disfarçada de abstração.
+
+### Verificação
+
+Como exercitar `run` de verdade custaria uma chamada real de API (e
+sobrescreveria os arquivos brutos que sustentam o `--skip-extract`), a casca foi
+testada com dublês:
+
+- `executar_extracao` com 2 contas falsas: confere as 4 chamadas de
+  `extrair_conta` com os argumentos certos, o acúmulo e o conteúdo gravado.
+- `meta_ads.run`: a ordem observada é `init → discover → extract:111 →
+  extract:222`, com o resultado no caminho do registro.
+- `google_ads.run`: o mesmo objeto `client` chega intacto a `discover_accounts`
+  **e** a `extract_daily_ads` — o que valida o `partial`.
+- `Plataforma.extrair()` delega para o `run` do módulo resolvido por importlib.
+- Credencial ausente (`META_ACCESS_TOKEN=`) → `SystemExit(1)` com
+  `- META_ACCESS_TOKEN (Meta Ads)`.
+- `python -m extractors.meta_ads --help` e o do Google seguem funcionando.
+- `main.py --skip-extract`, 75 testes dbt, `PARIDADE OK — 1677 linhas`.
+
+**Sobre o tamanho:** os dois extratores perderam 118 linhas e ganharam 46; a
+casca comum tem 103. O total ficou praticamente igual — o ganho não é volume, é
+existir **uma** definição de cada coisa em vez de duas que podem divergir.
 
 ---
 
@@ -496,7 +566,7 @@ qualquer ordem, uma por commit.
 | 0 | ✅ concluída | `18b85df` | golden congelado |
 | 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
 | 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
-| 3 | ⬜ pendente | | |
+| 3 | ✅ concluída | | OK — 1677 linhas |
 | 4 | ⬜ pendente | | |
 | 5 | ⬜ pendente | | |
 | 6 | ⬜ pendente | | |

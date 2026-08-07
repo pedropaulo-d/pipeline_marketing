@@ -1,17 +1,14 @@
-import argparse
-import json
 import logging
 import os
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.business import Business
 from facebook_business.api import FacebookAdsApi
 
-from config import configurar_logging, mask
-from plataformas import PLATAFORMAS
+from config import mask, validate_env
+from extractors.comum import executar_cli, executar_extracao
+from plataformas import PLATAFORMAS, Plataforma
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +31,20 @@ ACCOUNT_FIELDS: list[str] = ["account_id", "name", "account_status"]
 
 ACCOUNT_STATUS_ACTIVE: int = 1
 
-# Vem do registro, e nao de um literal repetido aqui: e exatamente o caminho
-# que o bronze_loader vai ler depois.
-OUTPUT_PATH: Path = PLATAFORMAS["meta"].arquivo_bruto
+PLATAFORMA: Plataforma = PLATAFORMAS["meta"]
 
 
 def init_api() -> None:
     """Inicializa a API do Meta Ads com as credenciais do .env.
 
-    Raises:
-        EnvironmentError: Se META_APP_ID, META_APP_SECRET ou
-            META_ACCESS_TOKEN não estiverem definidas.
+    As credenciais já foram conferidas por ``validate_env`` em ``run``, que é a
+    única fonte da lista de variáveis obrigatórias.
     """
-    app_id = os.getenv("META_APP_ID")
-    app_secret = os.getenv("META_APP_SECRET")
-    access_token = os.getenv("META_ACCESS_TOKEN")
-
-    if not all([app_id, app_secret, access_token]):
-        raise EnvironmentError(
-            "Variáveis META_APP_ID, META_APP_SECRET e META_ACCESS_TOKEN são obrigatórias no .env"
-        )
-
-    FacebookAdsApi.init(app_id, app_secret, access_token)
+    FacebookAdsApi.init(
+        os.getenv("META_APP_ID"),
+        os.getenv("META_APP_SECRET"),
+        os.getenv("META_ACCESS_TOKEN"),
+    )
     logger.info("API do Meta Ads inicializada.")
 
 
@@ -91,14 +80,8 @@ def discover_accounts() -> list[dict]:
 
     Returns:
         Lista de dicts com ``id``, ``name`` e ``status`` de cada conta ativa.
-
-    Raises:
-        EnvironmentError: Se META_BUSINESS_ID não estiver definida.
     """
-    business_id = os.getenv("META_BUSINESS_ID")
-    if not business_id:
-        raise EnvironmentError("Variável META_BUSINESS_ID é obrigatória no .env")
-
+    business_id = os.getenv("META_BUSINESS_ID", "")
     business = Business(business_id)
     params = {"limit": 100}
 
@@ -166,17 +149,6 @@ def extract_daily_ads(
     return rows
 
 
-def save_raw(rows: list[dict]) -> None:
-    """Salva a lista de registros brutos em JSON.
-
-    Args:
-        rows: Lista de dicts a serem serializados.
-    """
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
-    logger.info("Dados brutos salvos em %s (%d registros)", OUTPUT_PATH, len(rows))
-
-
 def run(start_date: str, end_date: str) -> int:
     """Executa a extração completa do Meta Ads para o período informado.
 
@@ -186,34 +158,25 @@ def run(start_date: str, end_date: str) -> int:
 
     Returns:
         Quantidade total de registros extraídos.
+
+    Raises:
+        SystemExit: Se alguma credencial obrigatória estiver ausente.
     """
+    validate_env(groups=[PLATAFORMA.nome])
     init_api()
-    accounts = discover_accounts()
 
-    all_rows: list[dict] = []
-    for acc in accounts:
-        rows = extract_daily_ads(acc["id"], acc["name"], start_date, end_date)
-        all_rows.extend(rows)
-
-    save_raw(all_rows)
-    logger.info("Extração Meta concluída. Total: %d registros", len(all_rows))
-    return len(all_rows)
-
-
-def _parse_args() -> argparse.Namespace:
-    """Parseia argumentos de linha de comando para período de extração."""
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    parser = argparse.ArgumentParser(description="Extrator Meta Ads")
-    parser.add_argument("--start-date", default=yesterday, help="Data inicial (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default=yesterday, help="Data final (YYYY-MM-DD)")
-    return parser.parse_args()
+    return executar_extracao(
+        PLATAFORMA,
+        descobrir_contas=discover_accounts,
+        extrair_conta=extract_daily_ads,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def main() -> None:
     """Entry point para execução standalone via CLI."""
-    configurar_logging()
-    args = _parse_args()
-    run(args.start_date, args.end_date)
+    executar_cli(PLATAFORMA, run)
 
 
 if __name__ == "__main__":

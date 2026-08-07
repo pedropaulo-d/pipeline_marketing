@@ -202,6 +202,7 @@ tcc_pipeline_dados/
 |-- requirements.txt           # Dependencias Python (inclui dbt-postgres)
 |
 |-- extractors/
+|   |-- comum.py               # Casca comum: salvar bruto, laco de contas, CLI
 |   |-- meta_ads.py            # Extrator Meta Ads (Insights API + paginacao)
 |   |-- google_ads.py          # Extrator Google Ads (GAQL)
 |
