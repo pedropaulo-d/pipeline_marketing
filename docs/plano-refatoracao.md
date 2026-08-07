@@ -16,9 +16,10 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 7 concluída em 07/08/2026, **ainda não commitada**.
-Commitadas no mesmo dia: Fases 1 a 6 (`b5f8f40`, `101165a`, `a05c6b6`,
-`20c8dc3`, `9382683`, `2b20c99`); Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 8 concluída em 07/08/2026, **ainda não commitada**.
+Commitadas no mesmo dia: Fases 1 a 7 (`b5f8f40`, `101165a`, `a05c6b6`,
+`20c8dc3`, `9382683`, `2b20c99`, `ad02ae9`); Fase 0 em 06/08 (`18b85df`).
+**Só resta a Fase 9, que é opcional.**
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -35,9 +36,10 @@ Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4)
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 8 (`_write_to_env` duplicado nos dois scripts de
-OAuth) — isolada e barata. Depois a Fase 9, que é opcional e a única do plano
-que acrescenta conceito em vez de remover duplicação.
+**Próximo passo:** decidir se a Fase 9 entra. Ela é a única do plano que
+**acrescenta conceito** em vez de remover duplicação — um teste que confronte
+os campos extraídos com os campos lidos pela silver. Não é dívida existente;
+é cobertura nova. Se ficar de fora, o plano está encerrado.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -640,6 +642,8 @@ decisão de segurança por simetria estética.
 
 ## Fase 8 — `scripts/`: `_write_to_env` duplicado
 
+✅ **Concluída em 07/08/2026.**
+
 `oauth_manual.py` e `generate_google_refresh_token.py` têm duas
 implementações quase idênticas da mesma função — e elas **já divergiram**: a
 do `generate_` verifica se o `.env` existe antes de escrever, a do
@@ -651,6 +655,45 @@ convergência acidental.
 
 Alvo: `scripts/_env_utils.py` com uma implementação. Manter os dois scripts —
 um é o fallback do outro quando o servidor local não funciona.
+
+✅ **Concluída em 07/08/2026.**
+
+### O que foi entregue
+
+`scripts/_env_utils.py` com duas funções:
+
+- `gravar_refresh_token(token)` — substitui a linha no `.env` preservando o
+  resto, com backup. A implementação que ficou é a **defensiva**: confere se o
+  arquivo existe e sai com mensagem clara. A outra estourava
+  `FileNotFoundError` no meio do fluxo, **depois do token já emitido** — o pior
+  momento possível, porque obriga a refazer a autorização.
+- `ler_credenciais_oauth()` — os dois scripts também duplicavam a leitura de
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, com mensagens de erro diferentes.
+  Não estava listada no plano, mas é a mesma duplicação no mesmo par de
+  arquivos. Ficou a mensagem mais útil das duas, que ensina a recriar o OAuth
+  Client.
+
+Os dois scripts continuam existindo, como o plano pedia.
+
+**Sobre o import:** `from _env_utils import ...`, como módulo irmão. Estes
+scripts rodam como `python scripts/<nome>.py`, então o próprio diretório é o
+`sys.path[0]` — não depende da instalação editável, o que importa porque o
+`generate_` roda no **host**, fora do container, onde o projeto não está
+instalado.
+
+### Verificação
+
+Exercitada em diretório temporário, sem tocar no `.env` real:
+
+- Substitui a linha existente e preserva as demais.
+- Acrescenta a variável quando ela não existe.
+- Backup criado como `.env.bak` e **não** `.env.env.bak` — a armadilha nº 4,
+  agora afirmada por asserção em vez de comentário.
+- `.env` ausente → `SystemExit` com `Arquivo nao encontrado: ...`, que é
+  exatamente a divergência que existia entre as duas cópias.
+- Nenhum `.env.bak` apareceu na raiz do projeto: o `.env` real ficou intacto.
+- 82 testes dbt e `PARIDADE OK — 1677 linhas` (os scripts de OAuth não fazem
+  parte do pipeline, mas a conferência é barata).
 
 ---
 
@@ -755,5 +798,5 @@ qualquer ordem, uma por commit.
 | 5 | ✅ concluída | | OK — 1677 linhas |
 | 6 | ✅ concluída | | OK — 1677 linhas |
 | 7 | ✅ concluída | | OK — 1677 linhas |
-| 8 | ⬜ pendente | | |
+| 8 | ✅ concluída | | n/a — fora do pipeline |
 | 9 | ⬜ pendente | | |

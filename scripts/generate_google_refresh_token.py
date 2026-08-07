@@ -16,14 +16,9 @@ autorizacao. Por isso o fluxo forca ``prompt="consent"`` — sem isso, uma conta
 que ja autorizou o app antes recebe apenas um access token temporario.
 """
 
-import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / ".env"
+from _env_utils import gravar_refresh_token, ler_credenciais_oauth
 
 # Escopo unico da API do Google Ads — cobre leitura e escrita; o que limita as
 # operacoes e o papel do usuario dentro do Google Ads, nao o escopo.
@@ -34,17 +29,7 @@ CALLBACK_PORT = 8081
 
 
 def main() -> None:
-    load_dotenv(ENV_PATH)
-
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
-    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-
-    if not client_id or not client_secret:
-        sys.exit(
-            "GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET precisam estar no .env.\n"
-            "Se voce nao os tem mais, crie um OAuth Client do tipo 'Desktop app'\n"
-            "em https://console.cloud.google.com/apis/credentials"
-        )
+    client_id, client_secret = ler_credenciais_oauth()
 
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -83,7 +68,7 @@ def main() -> None:
         )
 
     token = credentials.refresh_token
-    _write_to_env(token)
+    gravar_refresh_token(token)
 
     print()
     print("=" * 68)
@@ -95,39 +80,6 @@ def main() -> None:
     print("  docker compose run --rm etl_app python main.py \\")
     print("    --platforms google --start-date 2026-08-01 --end-date 2026-08-01")
     print("=" * 68)
-
-
-def _write_to_env(token: str) -> None:
-    """Substitui a linha GOOGLE_REFRESH_TOKEN no .env, preservando o resto.
-
-    Grava um backup em ``.env.bak`` antes de alterar. Escrever direto evita o
-    erro mais comum do processo: colar o valor errado manualmente.
-
-    Args:
-        token: Refresh token recem-emitido pelo Google.
-    """
-    if not ENV_PATH.exists():
-        sys.exit(f"Arquivo nao encontrado: {ENV_PATH}")
-
-    original = ENV_PATH.read_text(encoding="utf-8")
-    # with_name, nao with_suffix: ".env" nao tem stem separavel e o
-    # with_suffix produziria ".env.env.bak", que escapa do .gitignore.
-    backup = ENV_PATH.with_name(ENV_PATH.name + ".bak")
-    backup.write_text(original, encoding="utf-8")
-
-    linhas = original.splitlines()
-    encontrou = False
-    for i, linha in enumerate(linhas):
-        if linha.strip().startswith("GOOGLE_REFRESH_TOKEN"):
-            linhas[i] = f"GOOGLE_REFRESH_TOKEN={token}"
-            encontrou = True
-            break
-
-    if not encontrou:
-        linhas.append(f"GOOGLE_REFRESH_TOKEN={token}")
-
-    ENV_PATH.write_text("\n".join(linhas) + "\n", encoding="utf-8")
-    print(f"\n.env atualizado (backup em {ENV_PATH.name}.bak)")
 
 
 if __name__ == "__main__":

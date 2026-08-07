@@ -12,17 +12,12 @@ Passo 2 — trocar o code pelo refresh token (grava no .env):
 """
 
 import json
-import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / ".env"
+from _env_utils import gravar_refresh_token, ler_credenciais_oauth
 
 SCOPE = "https://www.googleapis.com/auth/adwords"
 # Precisa ser identico no passo 1 e no passo 2 — o Google valida o par.
@@ -32,23 +27,9 @@ AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
 
-def _credentials() -> tuple[str, str]:
-    """Le client_id e client_secret do .env.
-
-    Returns:
-        Tupla ``(client_id, client_secret)``.
-    """
-    load_dotenv(ENV_PATH)
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
-    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        sys.exit("GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET precisam estar no .env")
-    return client_id, client_secret
-
-
 def print_url() -> None:
     """Monta e imprime a URL de autorizacao."""
-    client_id, _ = _credentials()
+    client_id, _ = ler_credenciais_oauth()
 
     params = urllib.parse.urlencode({
         "client_id": client_id,
@@ -87,7 +68,7 @@ def exchange(code: str) -> None:
     Args:
         code: Authorization code copiado da barra de enderecos.
     """
-    client_id, client_secret = _credentials()
+    client_id, client_secret = ler_credenciais_oauth()
 
     # O navegador url-encoda a barra do code ("4/0A..." vira "4%2F0A...").
     code = urllib.parse.unquote(code.strip())
@@ -123,7 +104,7 @@ def exchange(code: str) -> None:
             "e refaca o passo 1."
         )
 
-    _write_to_env(token)
+    gravar_refresh_token(token)
 
     print()
     print("=" * 70)
@@ -131,30 +112,6 @@ def exchange(code: str) -> None:
     print(f"  identificacao (ultimos 6 chars): ...{token[-6:]}")
     print(f"  tamanho: {len(token)} caracteres")
     print("=" * 70)
-
-
-def _write_to_env(token: str) -> None:
-    """Substitui a linha GOOGLE_REFRESH_TOKEN no .env, com backup.
-
-    Args:
-        token: Refresh token recem-emitido.
-    """
-    original = ENV_PATH.read_text(encoding="utf-8")
-    # with_name, nao with_suffix: ".env" nao tem stem separavel e o
-    # with_suffix produziria ".env.env.bak", que escapa do .gitignore.
-    backup = ENV_PATH.with_name(ENV_PATH.name + ".bak")
-    backup.write_text(original, encoding="utf-8")
-
-    linhas = original.splitlines()
-    for i, linha in enumerate(linhas):
-        if linha.strip().startswith("GOOGLE_REFRESH_TOKEN"):
-            linhas[i] = f"GOOGLE_REFRESH_TOKEN={token}"
-            break
-    else:
-        linhas.append(f"GOOGLE_REFRESH_TOKEN={token}")
-
-    ENV_PATH.write_text("\n".join(linhas) + "\n", encoding="utf-8")
-    print(f"\n.env atualizado (backup em {ENV_PATH.name}.bak)")
 
 
 def main() -> None:
