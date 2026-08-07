@@ -15,7 +15,7 @@
 
 select
     a.anuncio_sk,
-    md5(u.data::text) as tempo_sk,
+    {{ chave_tempo('u.data') }} as tempo_sk,
 
     u.spend,
     u.impressions,

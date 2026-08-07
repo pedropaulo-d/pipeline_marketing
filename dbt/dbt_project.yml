@@ -10,6 +10,16 @@ test-paths: ["tests"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+# Dimensoes com versionamento SCD Tipo 2, no formato [modelo, chave natural].
+# Fonte unica da lista: era repetida nos dois testes de consistencia SCD2, que
+# precisavam ser editados juntos a cada dimensao nova.
+vars:
+  dimensoes_scd2:
+    - ["dim_conta", "conta_nk"]
+    - ["dim_campanha", "campanha_nk"]
+    - ["dim_adset", "adset_nk"]
+    - ["dim_anuncio", "anuncio_nk"]
+
 models:
   tcc_marketing:
     # Silver: limpeza e tipagem, 1:1 com a fonte. Views — o custo de

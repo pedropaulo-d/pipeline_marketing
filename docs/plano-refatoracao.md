@@ -16,9 +16,9 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 4 concluída em 07/08/2026, **ainda não commitada**.
-Commitadas no mesmo dia: Fase 3 (`a05c6b6`), Fase 2 (`101165a`) e Fase 1
-(`b5f8f40`); Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 5 concluída em 07/08/2026, **ainda não commitada**.
+Commitadas no mesmo dia: Fases 1 a 4 (`b5f8f40`, `101165a`, `a05c6b6`,
+`20c8dc3`); Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -35,8 +35,9 @@ Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4)
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 5 (derivação de chave duplicada na gold), seguindo a
-ordem numérica. Depois 6, 8 e a 9 opcional.
+**Próximo passo:** Fase 6 — a view `gold.vw_metricas_completas` (D2 já
+decidida). É a de maior valor na defesa: transforma a armadilha da travessia
+SCD2 em erro impossível. Depois 8 e a 9 opcional.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -461,6 +462,9 @@ não protege contra a armadilha nº 5 — que é sobre posição.
 
 ## Fase 5 — Gold: derivação de chave duplicada
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 76 testes dbt. O item
+5.3 mudou de forma: ver abaixo.
+
 | Item | Onde | Problema |
 |---|---|---|
 | 5.1 | `dim_tempo.sql:16` e `fato_metricas.sql:26` | `md5(data::text)` escrito nos dois. Mudar a fórmula da chave num só lugar quebra o join sem erro de sintaxe |
@@ -469,6 +473,43 @@ não protege contra a armadilha nº 5 — que é sobre posição.
 
 Alvos: macro `chave_tempo(coluna)` para 5.1; `vars:` no `dbt_project.yml` para
 5.2; remover 5.3.
+
+### O que foi entregue
+
+**5.1 — macro `chave_tempo(coluna)`.** Usada por `dim_tempo` (`chave_tempo('data')`)
+e por `fato_metricas` (`chave_tempo('u.data')`). Confirmado no SQL compilado que
+os dois lados produzem a mesma expressão: `md5(data::text)` e `md5(u.data::text)`.
+A partir daqui a fórmula da chave não tem como divergir entre quem a gera e quem
+aponta para ela.
+
+**5.2 — var `dimensoes_scd2` no `dbt_project.yml`.** A lista `[modelo, chave
+natural]` das quatro dimensões versionadas saiu de dentro dos dois testes.
+Dimensão nova entra num lugar só e passa a ser coberta pelos dois.
+
+**5.3 — o item não era executável como escrito.** `schema` é **propriedade
+obrigatória** do adapter Postgres: removê-lo do `profiles.yml` faz o dbt abortar
+com `Credentials in profile "tcc_marketing", target "dev" invalid: 'schema' is a
+required property`. Verificado, não deduzido.
+
+Em vez de manter `public`, o valor virou `sem_schema_customizado`. O raciocínio:
+o campo é um fallback que hoje nunca é usado — todo modelo declara `+schema` e o
+override de `generate_schema_name` devolve o nome exato. Mas se um modelo futuro
+esquecer o `+schema`, cair em `public` seria **silencioso**, porque o schema
+existe e ainda guarda a tabela do benchmark; cair num nome obviamente errado
+torna o objeto órfão visível de imediato. Trocou-se uma remoção impossível por
+uma melhoria real na forma de falhar.
+
+### Verificação
+
+- 76 testes dbt passando.
+- **Controle negativo da var:** removendo `dim_anuncio` de `dimensoes_scd2`, o
+  SQL compilado de `assert_scd2_uma_versao_atual` passa a cobrir só três
+  dimensões; restaurando, volta a cobrir as quatro. (Primeira tentativa deste
+  controle usou `dbt parse`, que só monta o manifesto e não regrava o SQL
+  compilado — o arquivo lido era do build anterior. Refeito com `dbt compile`.)
+- Nenhum schema órfão criado no banco: continuam apenas `bronze`, `silver`,
+  `gold` e `public`.
+- `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`.
 
 ---
 
@@ -616,7 +657,7 @@ qualquer ordem, uma por commit.
 | 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
 | 3 | ✅ concluída | | OK — 1677 linhas |
 | 4 | ✅ concluída | | OK — 1677 linhas |
-| 5 | ⬜ pendente | | |
+| 5 | ✅ concluída | | OK — 1677 linhas |
 | 6 | ⬜ pendente | | |
 | 7 | ⬜ pendente | | |
 | 8 | ⬜ pendente | | |

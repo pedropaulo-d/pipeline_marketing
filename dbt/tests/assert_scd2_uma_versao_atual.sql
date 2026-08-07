@@ -4,14 +4,12 @@
     indicaria falha no fechamento das versoes anteriores.
 
     Passa quando nao retorna linhas.
+
+    A lista vem da var `dimensoes_scd2` no dbt_project.yml — dimensao nova
+    entra la e os dois testes de SCD2 passam a cobri-la juntos.
 */
 
-{% set dimensoes = [
-    ('dim_conta',    'conta_nk'),
-    ('dim_campanha', 'campanha_nk'),
-    ('dim_adset',    'adset_nk'),
-    ('dim_anuncio',  'anuncio_nk')
-] %}
+{% set dimensoes = var('dimensoes_scd2') %}
 
 {% for modelo, nk in dimensoes %}
 select

@@ -12,5 +12,12 @@ tcc_marketing:
       user: "{{ env_var('DBT_USER', 'etl') }}"
       password: "{{ env_var('DBT_PASSWORD', 'etl') }}"
       dbname: "{{ env_var('DBT_DBNAME', 'marketing_dw') }}"
-      schema: public
+      # Schema de fallback, exigido pelo adapter mas nunca usado: todo modelo
+      # declara `+schema` (silver/gold) no dbt_project.yml e o override de
+      # `generate_schema_name` devolve esse nome exato. O valor era `public`,
+      # sobra do ETL legado; se um modelo esquecer o `+schema`, cair em
+      # `public` seria silencioso — o schema existe e ainda guarda a tabela do
+      # benchmark. Com este nome, o objeto orfao aparece no lugar errado de
+      # forma obvia, em vez de se misturar com dado real.
+      schema: sem_schema_customizado
       threads: 4

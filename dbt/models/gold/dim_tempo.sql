@@ -14,7 +14,7 @@ with datas as (
 )
 
 select
-    md5(data::text)                     as tempo_sk,
+    {{ chave_tempo('data') }}           as tempo_sk,
     data,
     extract(day     from data)::smallint as dia,
     extract(month   from data)::smallint as mes,
