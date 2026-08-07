@@ -16,9 +16,8 @@ import argparse
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta
 
-from config import configurar_logging
+from config import configurar_logging, ontem
 from plataformas import Plataforma
 
 logger = logging.getLogger(__name__)
@@ -84,10 +83,10 @@ def _parse_args(plataforma: Plataforma) -> argparse.Namespace:
     Returns:
         Namespace com ``start_date`` e ``end_date``.
     """
-    ontem = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    padrao = ontem()
     parser = argparse.ArgumentParser(description=f"Extrator {plataforma.nome}")
-    parser.add_argument("--start-date", default=ontem, help="Data inicial (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default=ontem, help="Data final (YYYY-MM-DD)")
+    parser.add_argument("--start-date", default=padrao, help="Data inicial (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=padrao, help="Data final (YYYY-MM-DD)")
     return parser.parse_args()
 
 

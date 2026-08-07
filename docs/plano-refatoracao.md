@@ -16,9 +16,9 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 6 concluída em 07/08/2026, **ainda não commitada**.
-Commitadas no mesmo dia: Fases 1 a 5 (`b5f8f40`, `101165a`, `a05c6b6`,
-`20c8dc3`, `9382683`); Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 7 concluída em 07/08/2026, **ainda não commitada**.
+Commitadas no mesmo dia: Fases 1 a 6 (`b5f8f40`, `101165a`, `a05c6b6`,
+`20c8dc3`, `9382683`, `2b20c99`); Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -35,8 +35,9 @@ Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4)
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 7 (orquestração no `main.py`), seguindo a ordem
-numérica. Depois a 8 e a 9 opcional.
+**Próximo passo:** Fase 8 (`_write_to_env` duplicado nos dois scripts de
+OAuth) — isolada e barata. Depois a Fase 9, que é opcional e a única do plano
+que acrescenta conceito em vez de remover duplicação.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -586,11 +587,54 @@ mudança.
 
 ## Fase 7 — `main.py`: orquestração
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 82 testes dbt.
+
 | Item | Onde | Problema |
 |---|---|---|
 | 7.1 | `main.py:250-286` | Três blocos `try/except` de forma idêntica: chama, loga "FALHA NA X", `sys.exit(1)`. Alvo: helper `executar_etapa(nome, funcao)` |
 | 7.2 | `run_extraction:157`, `run_bronze:222`, `run_dbt:208` | Os rótulos `ETAPA 1/3`, `2/3`, `3/3` hardcoded em três funções. Adicionar uma etapa exige renumerar tudo à mão |
 | 7.3 | `main.py:73` | `yesterday` recalculado no parse; `meta_ads.py:209` e `google_ads.py:216` recalculam o mesmo default |
+
+### O que foi entregue
+
+**7.2 — registro `ETAPAS`.** Uma tupla com as três etapas na ordem de execução,
+desempacotada em constantes (`ETAPA_EXTRACAO`, `ETAPA_BRONZE`, `ETAPA_DBT`). O
+helper `_cabecalho` deriva a numeração dela: `ETAPA {posicao}/{len(ETAPAS)}`.
+Acrescentar uma etapa deixou de exigir renumerar rótulos à mão em três funções.
+
+**7.1 — `executar_etapa(etapa, funcao, ...)`.** Substitui os três `try/except`
+idênticos em forma. As funções `run_extraction`, `run_bronze` e `run_dbt`
+perderam o log de cabeçalho, que passou para o helper — elas voltaram a fazer
+só o trabalho delas.
+
+**7.3 — `config.ontem()`.** O default de período era recalculado no parser do
+`main.py` e no dos extratores (que a Fase 3 já tinha reduzido de dois para um).
+Agora os dois derivam da mesma função.
+
+### Uma diferença que parecia inconsistência e não era
+
+Os três blocos `try/except` não eram exatamente iguais: extração e bronze
+registravam `type(exc).__name__`, enquanto o dbt registrava `exc` inteiro.
+
+Isso é deliberado e foi preservado como parâmetro `detalhar_erro`, com o
+default no lado conservador. Mensagens de exceção de SDK de API podem carregar
+token ou payload, e log não é lugar de segredo. Só a etapa do dbt detalha,
+porque a mensagem dela é nossa (`RuntimeError` com o código de saída) e não
+passa por credencial. Unificar os três "por consistência" teria trocado uma
+decisão de segurança por simetria estética.
+
+### Verificação
+
+- Rótulos na execução real: `ETAPA 1/3`, `2/3`, `3/3`, na ordem.
+- **Numeração derivada:** acrescentando uma quarta etapa em memória, os
+  cabeçalhos passam a `1/4 … 4/4` sozinhos.
+- **Caminho de falha:** com `DW_DB_URL` apontando para host inexistente, a
+  etapa da bronze sai com código 1 e registra
+  `FALHA NA ETAPA CARGA BRONZE ... Erro: OperationalError`. A senha colocada na
+  URL de teste **não aparece em nenhuma linha do log** (0 ocorrências).
+- `config.ontem()`, o default do `main.py` e o dos extratores devolvem a mesma
+  data.
+- `PARIDADE OK — 1677 linhas`, 82 testes dbt.
 
 ---
 
@@ -710,6 +754,6 @@ qualquer ordem, uma por commit.
 | 4 | ✅ concluída | | OK — 1677 linhas |
 | 5 | ✅ concluída | | OK — 1677 linhas |
 | 6 | ✅ concluída | | OK — 1677 linhas |
-| 7 | ⬜ pendente | | |
+| 7 | ✅ concluída | | OK — 1677 linhas |
 | 8 | ⬜ pendente | | |
 | 9 | ⬜ pendente | | |

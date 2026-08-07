@@ -7,7 +7,7 @@ transforma dado em Python.
 Uso:
     docker compose run --rm etl_app python main.py --start-date 2026-03-30 --end-date 2026-03-31
 
-Sem argumentos, extrai apenas o dia anterior (yesterday).
+Sem argumentos, extrai apenas o dia anterior.
 """
 
 import argparse
@@ -16,10 +16,12 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
+from typing import TypeVar
 
-from config import configurar_logging, dbt_env, validate_env
+from config import configurar_logging, dbt_env, ontem, validate_env
 from plataformas import PLATAFORMAS, chaves
 
 logger = logging.getLogger("pipeline")
@@ -27,6 +29,18 @@ logger = logging.getLogger("pipeline")
 BASE_DIR: Path = Path(__file__).resolve().parent
 
 SEPARATOR: str = "=" * 60
+
+T = TypeVar("T")
+
+# Etapas do pipeline, na ordem de execucao. A numeracao dos logs ("ETAPA 2/3")
+# e derivada desta tupla: acrescentar uma etapa deixa de exigir renumerar os
+# rotulos a mao em cada funcao.
+ETAPAS: tuple[str, ...] = (
+    "EXTRAÇÃO",
+    "CARGA BRONZE (dado bruto imutável)",
+    "TRANSFORMAÇÃO dbt (silver → gold) + TESTES",
+)
+ETAPA_EXTRACAO, ETAPA_BRONZE, ETAPA_DBT = ETAPAS
 
 
 # ── Validação de argumentos ──────────────────────────────────
@@ -62,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     Raises:
         SystemExit: Se start_date > end_date.
     """
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    padrao = ontem()
 
     parser = argparse.ArgumentParser(
         description="Pipeline ELT: Meta/Google Ads → bronze → silver → gold",
@@ -70,14 +84,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--start-date",
         type=_valid_date,
-        default=yesterday,
-        help="Data inicial (YYYY-MM-DD). Default: yesterday.",
+        default=padrao,
+        help="Data inicial (YYYY-MM-DD). Default: ontem.",
     )
     parser.add_argument(
         "--end-date",
         type=_valid_date,
-        default=yesterday,
-        help="Data final (YYYY-MM-DD). Default: yesterday.",
+        default=padrao,
+        help="Data final (YYYY-MM-DD). Default: ontem.",
     )
     # Os nomes de arquivo e a lista de plataformas saem do registro: a ajuda
     # da CLI nunca fica dessincronizada do que o pipeline realmente aceita.
@@ -127,6 +141,61 @@ def parse_args() -> argparse.Namespace:
 # ── Execução das etapas ──────────────────────────────────────
 
 
+def _cabecalho(etapa: str, detalhe: str = "") -> None:
+    """Registra o cabeçalho numerado de uma etapa.
+
+    Args:
+        etapa: Um dos valores de :data:`ETAPAS`.
+        detalhe: Texto opcional acrescentado ao rótulo.
+    """
+    posicao = ETAPAS.index(etapa) + 1
+    rotulo = f"ETAPA {posicao}/{len(ETAPAS)}: {etapa}"
+    if detalhe:
+        rotulo = f"{rotulo}  {detalhe}"
+
+    logger.info(SEPARATOR)
+    logger.info(rotulo)
+    logger.info(SEPARATOR)
+
+
+def executar_etapa(
+    etapa: str,
+    funcao: Callable[[], T],
+    detalhe: str = "",
+    detalhar_erro: bool = False,
+) -> T:
+    """Executa uma etapa do pipeline, abortando o processo se ela falhar.
+
+    Os três blocos ``try/except`` da orquestração eram idênticos em forma:
+    chamar, registrar a falha, sair com código 1.
+
+    Args:
+        etapa: Um dos valores de :data:`ETAPAS`.
+        funcao: Chamada sem argumentos que executa a etapa.
+        detalhe: Texto opcional para o cabeçalho.
+        detalhar_erro: Se ``True``, registra a mensagem da exceção; se
+            ``False`` (default), apenas o tipo. O default é conservador de
+            propósito — mensagens de erro de SDK de API podem carregar token
+            ou payload, e log não é lugar de segredo (ver ``config.mask``).
+            Só a etapa do dbt detalha, porque a mensagem dela é nossa e
+            informativa.
+
+    Returns:
+        O que ``funcao`` retornar.
+
+    Raises:
+        SystemExit: Código 1 se a etapa levantar qualquer exceção.
+    """
+    _cabecalho(etapa, detalhe)
+
+    try:
+        return funcao()
+    except Exception as exc:
+        motivo = exc if detalhar_erro else type(exc).__name__
+        logger.error("FALHA NA ETAPA %s. Pipeline interrompido. Erro: %s", etapa, motivo)
+        sys.exit(1)
+
+
 def run_extraction(
     start_date: str, end_date: str, platforms: list[str]
 ) -> dict[str, int]:
@@ -140,10 +209,6 @@ def run_extraction(
     Returns:
         Mapa ``{plataforma: registros_extraidos}``.
     """
-    logger.info(SEPARATOR)
-    logger.info("ETAPA 1/3: EXTRAÇÃO  (período: %s a %s)", start_date, end_date)
-    logger.info(SEPARATOR)
-
     counts: dict[str, int] = {}
 
     # O despacho percorre o registro em vez de um `if` por plataforma. O import
@@ -168,10 +233,6 @@ def run_bronze(sources: list[str] | None = None) -> int:
     """
     from loaders import bronze_loader
 
-    logger.info(SEPARATOR)
-    logger.info("ETAPA 2/3: CARGA BRONZE (dado bruto imutável)")
-    logger.info(SEPARATOR)
-
     return bronze_loader.run(sources)
 
 
@@ -181,10 +242,6 @@ def run_dbt() -> None:
     Raises:
         RuntimeError: Se o dbt terminar com código de saída diferente de zero.
     """
-    logger.info(SEPARATOR)
-    logger.info("ETAPA 3/3: TRANSFORMAÇÃO dbt (silver → gold) + TESTES")
-    logger.info(SEPARATOR)
-
     dbt_dir = BASE_DIR / "dbt"
     env = {**os.environ, **dbt_env()}
 
@@ -231,16 +288,14 @@ def main() -> None:
     # ── Extração ──
     counts: dict[str, int] = {}
     if args.skip_extract:
-        logger.info(SEPARATOR)
-        logger.info("ETAPA 1/3: EXTRAÇÃO IGNORADA (--skip-extract)")
+        _cabecalho(ETAPA_EXTRACAO, "IGNORADA (--skip-extract)")
         logger.info("Reprocessando os arquivos brutos já existentes.")
-        logger.info(SEPARATOR)
     else:
-        try:
-            counts = run_extraction(args.start_date, args.end_date, args.platforms)
-        except Exception as exc:
-            logger.error("FALHA NA EXTRAÇÃO. Pipeline interrompido. Erro: %s", type(exc).__name__)
-            sys.exit(1)
+        counts = executar_etapa(
+            ETAPA_EXTRACAO,
+            lambda: run_extraction(args.start_date, args.end_date, args.platforms),
+            detalhe=f"(período: {args.start_date} a {args.end_date})",
+        )
 
         if sum(counts.values()) == 0:
             logger.warning("Nenhum registro extraído. Pipeline interrompido.")
@@ -253,18 +308,12 @@ def main() -> None:
         None if args.skip_extract
         else [PLATAFORMAS[p].fonte_bronze for p in args.platforms]
     )
-    try:
-        bronze_count = run_bronze(fontes)
-    except Exception as exc:
-        logger.error("FALHA NA CARGA BRONZE. Pipeline interrompido. Erro: %s", type(exc).__name__)
-        sys.exit(1)
+    bronze_count = executar_etapa(ETAPA_BRONZE, lambda: run_bronze(fontes))
 
     # ── Transformação no banco + testes de dados ──
-    try:
-        run_dbt()
-    except Exception as exc:
-        logger.error("FALHA NO DBT. Pipeline interrompido. Erro: %s", exc)
-        sys.exit(1)
+    # Única etapa com `detalhar_erro`: a mensagem do RuntimeError é nossa e
+    # diz o código de saída do dbt, sem risco de vazar credencial.
+    executar_etapa(ETAPA_DBT, run_dbt, detalhar_erro=True)
 
     # ── Resumo ──
     elapsed = time.time() - t0

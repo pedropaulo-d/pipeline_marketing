@@ -10,6 +10,7 @@ sensiveis para uso seguro em logs.
 import logging
 import os
 import sys
+from datetime import datetime, timedelta
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
@@ -53,6 +54,19 @@ _REQUIRED_VARS: dict[str, list[str]] = {
 # DW_DB_URL aponta para o Data Warehouse (local ou Supabase); SUPABASE_DB_URL
 # permanece aceita por compatibilidade com a configuracao original.
 _DB_URL_VARS: list[str] = ["DW_DB_URL", "SUPABASE_DB_URL"]
+
+
+def ontem() -> str:
+    """Retorna a data de ontem, default de periodo em todas as CLIs.
+
+    Era recalculada em tres lugares (o parser do `main.py` e o dos dois
+    extratores). Nao chegava a ser um bug, mas e a mesma decisao — "sem
+    argumento, extraia o dia anterior" — escrita repetidas vezes.
+
+    Returns:
+        Data de ontem no formato ``YYYY-MM-DD``.
+    """
+    return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def get_db_url() -> str | None:
