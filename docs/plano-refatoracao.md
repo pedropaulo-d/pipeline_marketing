@@ -16,8 +16,8 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 1 concluída em 07/08/2026 e **ainda não commitada** —
-`plataformas.py` é arquivo novo. Fase 0 commitada em 06/08 (`18b85df`).
+**Onde paramos:** Fase 1 concluída e commitada em 07/08/2026 (`b5f8f40`).
+Fase 0 em 06/08 (`18b85df`).
 
 **Primeiro comando ao retomar** — confirma que o armazém continua no estado
 congelado antes de qualquer mudança:
@@ -430,7 +430,7 @@ qualquer ordem, uma por commit.
 | Fase | Status | Commit | Paridade |
 |---|---|---|---|
 | 0 | ✅ concluída | `18b85df` | golden congelado |
-| 1 | ✅ concluída | | OK — 1677 linhas |
+| 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
 | 2 | ⬜ pendente | | |
 | 3 | ⬜ pendente | | |
 | 4 | ⬜ pendente | | |
