@@ -40,9 +40,8 @@ import duckdb
 import pyarrow.parquet as pq
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR.parent))
 
-from benchmark.consultas import CONSULTAS  # noqa: E402
+from benchmark.consultas import CONSULTAS
 
 DADOS_DIR = BASE_DIR / "dados"
 RESULTADOS_DIR = BASE_DIR / "resultados"

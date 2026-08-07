@@ -39,6 +39,8 @@ import json
 import random
 from pathlib import Path
 
+from plataformas import PLATAFORMAS
+
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 SAIDA_PADRAO: Path = BASE_DIR / "tests" / "fixtures"
 
@@ -240,8 +242,10 @@ def main() -> None:
     meta, google = gerar()
     args.saida.mkdir(parents=True, exist_ok=True)
 
-    for nome, registros in (("meta", meta), ("google", google)):
-        caminho = args.saida / f"temp_{nome}_raw.json"
+    # O nome do arquivo vem do registro: a fixture precisa ser reconhecida pelo
+    # bronze_loader quando copiada para a raiz, e o loader le esse mesmo nome.
+    for chave, registros in (("meta", meta), ("google", google)):
+        caminho = args.saida / PLATAFORMAS[chave].arquivo_bruto.name
         caminho.write_text(
             json.dumps(registros, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

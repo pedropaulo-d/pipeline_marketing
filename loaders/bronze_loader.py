@@ -14,25 +14,16 @@ Uso:
 
 import json
 import logging
-import sys
 import uuid
 from datetime import date, datetime
 from pathlib import Path
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
-# Permite `python loaders/bronze_loader.py` alem de `python -m loaders...`,
-# garantindo que o pacote raiz (config.py) seja importavel nos dois casos.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import configurar_logging, get_db_url
+from plataformas import fontes, por_fonte
 
-# Importado depois do sys.path.insert acima, que e o que torna a raiz visivel.
-from plataformas import fontes, por_fonte  # noqa: E402
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
@@ -53,10 +44,6 @@ def get_engine() -> Engine:
     Raises:
         EnvironmentError: Se a URL do banco nao estiver configurada.
     """
-    from sqlalchemy import create_engine
-
-    from config import get_db_url
-
     db_url = get_db_url()
     if not db_url:
         raise EnvironmentError(
@@ -228,9 +215,7 @@ def run(sources: list[str] | None = None) -> int:
 
 def main() -> None:
     """Entry point para execucao standalone via CLI."""
-    from dotenv import load_dotenv
-
-    load_dotenv()
+    configurar_logging()
     run()
 
 

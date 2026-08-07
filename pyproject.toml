@@ -1,0 +1,27 @@
+# Este arquivo existe para tornar o projeto IMPORTAVEL, nao para gerenciar
+# dependencias. Elas continuam em `requirements.txt`, que o Dockerfile instala
+# numa camada propria — assim mexer no codigo nao invalida o cache do pip.
+#
+# Com `pip install -e .` no Dockerfile, `import config` e `import plataformas`
+# funcionam de qualquer diretorio, e os `sys.path.insert` que existiam em
+# loaders/, scripts/ e benchmark/ deixaram de ser necessarios.
+#
+# O compose monta o repositorio em /app (bind mount) e a instalacao editavel
+# grava o apontador em site-packages, que fica fora do caminho sombreado pelo
+# mount — por isso editar codigo no host tem efeito imediato, sem rebuild.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tcc-pipeline-dados"
+version = "0.1.0"
+description = "Pipeline ELT de marketing digital (Meta Ads + Google Ads) para Data Warehouse dimensional"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+# `main` fica de fora de proposito: e o entrypoint do pipeline, nao uma
+# biblioteca, e ninguem faz `import main`. Continua rodando como `python main.py`.
+py-modules = ["config", "plataformas"]
+packages = ["extractors", "loaders", "benchmark"]

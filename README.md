@@ -193,10 +193,12 @@ docker compose run --rm etl_app python loaders/bronze_loader.py
 
 ```
 tcc_pipeline_dados/
-|-- config.py                  # Env vars, mascaramento de logs, conexao do dbt
+|-- config.py                  # Env vars, logging, mascaramento, conexao do dbt
+|-- plataformas.py             # Registro unico das plataformas suportadas
 |-- main.py                    # Orquestrador: extracao -> bronze -> dbt build
 |-- Dockerfile                 # Python 3.11-slim, usuario non-root (UID 1000)
 |-- docker-compose.yml         # Servicos db (PostgreSQL 16) e etl_app
+|-- pyproject.toml             # Torna o projeto importavel (install editavel)
 |-- requirements.txt           # Dependencias Python (inclui dbt-postgres)
 |
 |-- extractors/

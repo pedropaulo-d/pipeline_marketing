@@ -39,11 +39,6 @@ from pathlib import Path
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
-# Permite `python scripts/verificar_paridade.py` a partir de qualquer lugar.
-# Mesma solucao provisoria de `loaders/bronze_loader.py`; a Fase 2 do plano de
-# refatoracao elimina as duas de uma vez.
-sys.path.insert(0, str(BASE_DIR))
-
 GOLDEN_PATH: Path = BASE_DIR / "tests" / "golden" / "agregados_gold.json"
 
 # As metricas sao somadas com `round(...)::text` porque a comparacao precisa

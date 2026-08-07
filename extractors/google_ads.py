@@ -5,18 +5,11 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dotenv import load_dotenv
 from google.ads.googleads.client import GoogleAdsClient
 
-from config import mask
+from config import configurar_logging, mask
 from plataformas import PLATAFORMAS
 
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 GAQL_DISCOVERY: str = """
@@ -226,6 +219,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point para execução standalone via CLI."""
+    configurar_logging()
     args = _parse_args()
     run(args.start_date, args.end_date)
 

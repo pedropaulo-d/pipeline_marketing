@@ -12,24 +12,17 @@ Sem argumentos, extrai apenas o dia anterior (yesterday).
 
 import argparse
 import logging
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger("pipeline")
-
-from config import validate_env
+from config import configurar_logging, dbt_env, validate_env
 from plataformas import PLATAFORMAS, chaves
 
-from pathlib import Path
+logger = logging.getLogger("pipeline")
 
 BASE_DIR: Path = Path(__file__).resolve().parent
 
@@ -188,11 +181,6 @@ def run_dbt() -> None:
     Raises:
         RuntimeError: Se o dbt terminar com código de saída diferente de zero.
     """
-    import os
-    import subprocess
-
-    from config import dbt_env
-
     logger.info(SEPARATOR)
     logger.info("ETAPA 3/3: TRANSFORMAÇÃO dbt (silver → gold) + TESTES")
     logger.info(SEPARATOR)
@@ -222,6 +210,7 @@ def run_dbt() -> None:
 
 def main() -> None:
     """Orquestra o pipeline ELT completo com interrupção em caso de falha."""
+    configurar_logging()
     args = parse_args()
     t0 = time.time()
 

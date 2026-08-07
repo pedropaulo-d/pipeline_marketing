@@ -32,6 +32,8 @@ import re
 import sys
 from pathlib import Path
 
+from plataformas import PLATAFORMAS
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 SAIDA_PADRAO = BASE_DIR / "data" / "publico"
 
@@ -252,8 +254,8 @@ def main() -> None:
     else:
         destino = Path(args.diretorio_saida)
         arquivos = [
-            (BASE_DIR / nome, destino / nome)
-            for nome in ("temp_meta_raw.json", "temp_google_raw.json")
+            (p.arquivo_bruto, destino / p.arquivo_bruto.name)
+            for p in PLATAFORMAS.values()
         ]
 
     total = 0

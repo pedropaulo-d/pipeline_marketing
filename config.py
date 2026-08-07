@@ -10,14 +10,36 @@ sensiveis para uso seguro em logs.
 import logging
 import os
 import sys
+from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
 
 from plataformas import PLATAFORMAS
 
+# Unica chamada de load_dotenv() do projeto. Como todo modulo que precisa de
+# variavel de ambiente importa este aqui, importar `config` e o que garante o
+# .env carregado — nao ha razao para repetir a chamada em cada arquivo.
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+LOG_FORMAT: str = "%(asctime)s [%(levelname)s] %(message)s"
+
+
+def configurar_logging(nivel: int = logging.INFO) -> None:
+    """Configura o logging do processo. Deve ser chamada pelos entrypoints.
+
+    ``logging.basicConfig`` so tem efeito na primeira vez que roda: se o
+    logging raiz ja tiver handler, a chamada e ignorada em silencio. Quando
+    quatro modulos chamavam basicConfig no import, tres eram no-op e qual delas
+    vencia dependia da ordem de importacao. Centralizar aqui torna a
+    configuracao previsivel: quem inicia o processo configura, os modulos
+    importados apenas pegam seu logger.
+
+    Args:
+        nivel: Nivel minimo de log. Default ``logging.INFO``.
+    """
+    logging.basicConfig(level=nivel, format=LOG_FORMAT)
 
 # ── Variaveis obrigatorias por modulo ──────────────────────────
 
@@ -59,8 +81,6 @@ def dbt_env() -> dict[str, str]:
         Mapa de variaveis de ambiente para injetar no processo do dbt.
         Vazio se a URL nao estiver definida (o dbt cai nos defaults).
     """
-    from urllib.parse import unquote, urlparse
-
     db_url = get_db_url()
     if not db_url:
         return {}

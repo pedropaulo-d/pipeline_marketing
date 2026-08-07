@@ -16,8 +16,11 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 1 concluída e commitada em 07/08/2026 (`b5f8f40`).
-Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 2 concluída em 07/08/2026, **ainda não commitada**.
+Fase 1 commitada no mesmo dia (`b5f8f40`), Fase 0 em 06/08 (`18b85df`).
+
+⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
+`docker compose build etl_app` antes de rodar qualquer coisa.
 
 **Primeiro comando ao retomar** — confirma que o armazém continua no estado
 congelado antes de qualquer mudança:
@@ -31,10 +34,10 @@ Esperado: `PARIDADE OK — 1677 linhas no fato`. Se divergir, **investigue antes
 de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 2 (infraestrutura transversal), com D1 já decidida:
-`pyproject.toml` + instalação editável. Ela também destrava a pendência que a
-Fase 1 empurrou — os dois scripts que ainda montam o nome do arquivo bruto à
-mão. Fases 1 a 3 mexem nos mesmos arquivos e valem um bloco só de commits.
+**Próximo passo:** Fase 3 (contrato comum dos extratores), que fecha o bloco
+1–3. Atenção ao aviso do próprio plano: unificar só a casca (`save_raw`, o CLI
+e o laço de `run`). `discover_accounts` e `extract_daily_ads` continuam
+separadas — as duas APIs são genuinamente diferentes.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -226,15 +229,76 @@ funcionar de qualquer diretório sem gambiarra.
 
 ## Fase 2 — Infraestrutura transversal
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
+passando.
+
 | Item | Situação | Alvo |
 |---|---|---|
 | 2.1 | `logging.basicConfig()` em 4 módulos (`main.py:23`, `meta_ads.py:18`, `google_ads.py:15`, `bronze_loader.py:29`). Só a primeira chamada tem efeito — as outras três são no-op silencioso | Uma `configurar_logging()` em `config.py`, chamada pelos entrypoints |
 | 2.2 | `load_dotenv()` em 4 módulos, no import | Uma vez, no entrypoint. `config.py` já faz no import dele |
-| 2.3 | `sys.path.insert` em `bronze_loader.py:27`, `benchmark/executar.py:43` e `scripts/verificar_paridade.py:45` | `pyproject.toml` + `pip install -e .` no Dockerfile (D1, fechada) |
+| 2.3 | `sys.path.insert` em `bronze_loader.py:27`, `benchmark/executar.py:43` e `scripts/verificar_paridade.py:45` | ✅ `pyproject.toml` + `pip install -e .` no Dockerfile (D1) |
 | 2.4 | Imports locais gratuitos: `config.py:70` (urllib), `main.py:202-203` (os, subprocess) | Subir para o topo. **Manter** os lazy dos SDKs em `main.py:163,169` — evitam carregar o SDK do Google numa execução só do Meta |
 
-O item 2.3 é a **armadilha nº 8 do CLAUDE.md**. Hoje ela é documentada; a
-refatoração pode eliminá-la.
+O item 2.3 era a **armadilha nº 8 do CLAUDE.md**. Foi eliminada.
+
+### O que foi entregue
+
+**2.3 — `pyproject.toml` + instalação editável.** O Dockerfile ganhou
+`RUN pip install --no-cache-dir --no-deps -e .` depois do `COPY . .`. O
+`pyproject.toml` declara só o necessário para o projeto ser importável
+(`py-modules = ["config", "plataformas"]`, `packages = ["extractors",
+"loaders", "benchmark"]`); as dependências continuam em `requirements.txt`,
+instalado numa camada anterior — mexer no código não invalida o cache do pip.
+`main` ficou de fora de propósito: é entrypoint, não biblioteca.
+
+Os três `sys.path.insert` saíram (`loaders/bronze_loader.py`,
+`scripts/verificar_paridade.py`, `benchmark/executar.py`), junto com os
+`# noqa: E402` que existiam só para calar o linter sobre imports fora do topo.
+
+**2.1 — `configurar_logging()` em `config.py`.** Os quatro `basicConfig` no
+import viraram uma função chamada pelos entrypoints (`main.main()`, e os
+`main()` dos dois extratores e do loader). O motivo importa: `basicConfig` é
+no-op se o logging raiz já tem handler, então três das quatro chamadas não
+faziam nada e **qual delas vencia dependia da ordem de importação**.
+
+**2.2 — `load_dotenv()` uma vez.** Ficou só o de `config.py`, que roda no
+import. Como todo módulo que precisa de variável de ambiente importa `config`,
+importá-lo é o que garante o `.env` carregado. Os `load_dotenv(ENV_PATH)` de
+`oauth_manual.py` e `generate_google_refresh_token.py` **não** foram tocados:
+são outra coisa — apontam para um arquivo específico para rotacionar o refresh
+token, e pertencem à Fase 8.
+
+**2.4 — Imports locais.** `urllib.parse` em `config.dbt_env`, `os`/`subprocess`
+e `config.dbt_env` em `main.run_dbt`, e `create_engine`/`get_db_url` em
+`bronze_loader.get_engine` subiram para o topo. Os imports tardios dos SDKs
+continuam tardios — hoje moram em `Plataforma.extrair()`.
+
+**Pendência da Fase 1, fechada aqui.** Com a raiz importável,
+`scripts/anonimizar_dataset.py` e `scripts/gerar_fixture.py` passaram a tirar
+os nomes dos arquivos brutos do registro em vez de montá-los à mão.
+
+### A armadilha que entrou no lugar da nº 8
+
+A instalação editável do setuptools grava o mapeamento dos **módulos de topo**
+em site-packages no momento do build. Criar `foo.py` na raiz e importá-lo sem
+`docker compose build etl_app` dá `ModuleNotFoundError` mesmo com o arquivo
+presente, porque o bind mount não atualiza esse mapeamento. Arquivo novo dentro
+de pacote já declarado (`extractors/`, `loaders/`, `benchmark/`) funciona sem
+rebuild — aí o mapeamento é por diretório. Medido nos dois casos, não deduzido.
+É um custo menor que o anterior: falha alto e claro no primeiro import, em vez
+de silenciosamente.
+
+### Verificação
+
+- `import config, plataformas, loaders, extractors, benchmark` a partir de
+  `/tmp`, sem nenhuma manipulação de `sys.path`.
+- `python /app/scripts/verificar_paridade.py` rodando com `-w /tmp` — o caso
+  que motivava o `sys.path.insert`.
+- `grep -rn "sys.path" --include=*.py .` → nenhum resultado.
+- Fixture regenerada: `git diff tests/fixtures/` vazio, determinismo intacto.
+- `main.py --skip-extract` completo, 75 testes dbt, e o formato de log
+  configurado aparecendo na saída.
+- `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`.
 
 ---
 
@@ -431,7 +495,7 @@ qualquer ordem, uma por commit.
 |---|---|---|---|
 | 0 | ✅ concluída | `18b85df` | golden congelado |
 | 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
-| 2 | ⬜ pendente | | |
+| 2 | ✅ concluída | | OK — 1677 linhas |
 | 3 | ⬜ pendente | | |
 | 4 | ⬜ pendente | | |
 | 5 | ⬜ pendente | | |
