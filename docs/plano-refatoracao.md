@@ -16,9 +16,9 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 3 concluída em 07/08/2026, **ainda não commitada** —
-fecha o bloco 1–3. Commitadas: Fase 2 (`101165a`) e Fase 1 (`b5f8f40`) no mesmo
-dia, Fase 0 em 06/08 (`18b85df`).
+**Onde paramos:** Fase 4 concluída em 07/08/2026, **ainda não commitada**.
+Commitadas no mesmo dia: Fase 3 (`a05c6b6`), Fase 2 (`101165a`) e Fase 1
+(`b5f8f40`); Fase 0 em 06/08 (`18b85df`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -31,13 +31,12 @@ docker compose up -d db
 docker compose run --rm etl_app python scripts/verificar_paridade.py verificar
 ```
 
-Esperado: `PARIDADE OK — 1677 linhas no fato`. Se divergir, **investigue antes
-de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
+Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4).
+Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** as fases 4, 5, 6 e 8 são independentes entre si e podem ir
-em qualquer ordem, uma por commit. A 6 (view da travessia) é a de maior valor
-na defesa; a 8 é a mais isolada e barata.
+**Próximo passo:** Fase 5 (derivação de chave duplicada na gold), seguindo a
+ordem numérica. Depois 6, 8 e a 9 opcional.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -397,6 +396,9 @@ existir **uma** definição de cada coisa em vez de duas que podem divergir.
 
 ## Fase 4 — Silver: deduplicação duplicada
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, agora com **76**
+testes dbt.
+
 `stg_meta_ads.sql:14-36` e `stg_google_ads.sql:19-41` contêm o **mesmo bloco**
 `bruto` + `ultimo_snapshot`, palavra por palavra, mudando só o valor de
 `where source =`.
@@ -408,6 +410,52 @@ dois modelos divergirem — que é a categoria exata do bug do `union all`
 **Guarda a acrescentar:** um teste que afirme que os dois modelos de staging
 expõem os mesmos nomes de coluna, na mesma ordem. Hoje a proteção é um
 comentário em `stg_ads_unified.sql:13-17` pedindo atenção humana.
+
+### O que foi entregue
+
+**Macro `ultimo_snapshot(fonte)`** (`dbt/macros/ultimo_snapshot.sql`). Devolve
+um `select` completo, para ser usado como corpo de CTE — assim o modelo mantém
+o nome da CTE e o resto dele não mudou:
+
+```sql
+with ultimo_snapshot as (
+    {{ ultimo_snapshot('meta_ads') }}
+)
+```
+
+**Teste `assert_staging_mesmo_contrato`.** Compara `information_schema.columns`
+dos dois modelos com `full outer join` por nome e falha quando a posição
+diverge — o que cobre de uma vez coluna faltando de um lado, coluna renomeada
+num só e ordem trocada.
+
+### Um achado durante a fase
+
+**Os dois modelos já estavam com as métricas em ordens diferentes.** No Meta,
+`reach` vinha logo após `link_clicks`; no Google, depois de `video_views`. Não
+causava erro porque `stg_ads_unified` lista as colunas explicitamente por nome
+— mas essa proteção é uma convenção, não um contrato: bastaria alguém
+simplificar para `select *`, que parece uma limpeza inofensiva, para trocar
+métricas de lugar em silêncio.
+
+Isso mudou o item em relação ao plano: em vez de só escrever o teste, foi
+preciso **primeiro alinhar a ordem** de `stg_meta_ads` à de `stg_google_ads` e
+então afirmá-la. As duas colunas ficaram comentadas nos dois modelos explicando
+que a ordem é intencional e verificada.
+
+Alternativa considerada e descartada: testar apenas o *conjunto* de nomes,
+ignorando a ordem, já que hoje ela não afeta o resultado. Ficaria um teste que
+não protege contra a armadilha nº 5 — que é sobre posição.
+
+### Verificação
+
+- 76 testes dbt passando (75 + o novo).
+- **Controle negativo:** devolver `reach` à posição antiga em `stg_meta_ads` faz
+  `assert_staging_mesmo_contrato` acusar **4 divergências** (`reach`,
+  `conversions`, `conversion_value`, `video_views` — todas deslocadas) e o
+  `dbt build` sair com erro. Revertido em seguida.
+- `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`. A macro e a
+  reordenação não mudaram um centavo, que é o esperado: `stg_ads_unified`
+  seleciona por nome.
 
 ---
 
@@ -567,7 +615,7 @@ qualquer ordem, uma por commit.
 | 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
 | 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
 | 3 | ✅ concluída | | OK — 1677 linhas |
-| 4 | ⬜ pendente | | |
+| 4 | ✅ concluída | | OK — 1677 linhas |
 | 5 | ⬜ pendente | | |
 | 6 | ⬜ pendente | | |
 | 7 | ⬜ pendente | | |

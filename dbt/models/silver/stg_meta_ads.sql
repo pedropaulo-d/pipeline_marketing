@@ -11,27 +11,9 @@
        devolve como arrays de {action_type, value} em vez de colunas.
 */
 
-with bruto as (
+with ultimo_snapshot as (
 
-    select
-        reference_date,
-        extracted_at,
-        payload,
-        dense_rank() over (
-            partition by reference_date
-            order by extracted_at desc
-        ) as recencia
-
-    from {{ source('bronze', 'raw_ads') }}
-    where source = 'meta_ads'
-
-),
-
-ultimo_snapshot as (
-
-    select *
-    from bruto
-    where recencia = 1
+    {{ ultimo_snapshot('meta_ads') }}
 
 )
 
@@ -49,13 +31,16 @@ select
     payload->>'ad_id'                                   as anuncio_external_id,
     payload->>'ad_name'                                 as anuncio_nome,
 
-    -- Metricas diretas
+    -- Metricas.
+    -- A ORDEM importa e e a mesma de stg_google_ads, afirmada pelo teste
+    -- assert_staging_mesmo_contrato: `union all` casa colunas por posicao,
+    -- entao manter os dois modelos alinhados impede que uma troca de metricas
+    -- passe despercebida se alguem simplificar stg_ads_unified para `select *`.
     coalesce((payload->>'spend')::numeric, 0)              as spend,
     coalesce((payload->>'impressions')::bigint, 0)         as impressions,
     coalesce((payload->>'inline_link_clicks')::int, 0)     as link_clicks,
-    coalesce((payload->>'reach')::bigint, 0)               as reach,
 
-    -- Metricas derivadas dos arrays de acoes
+    -- Derivadas dos arrays de acoes.
     -- Numeric por simetria com o Google, que reporta valores fracionados.
     {{ sum_action_value('payload', 'actions', ['lead']) }}::numeric
         as conversions,
@@ -63,6 +48,9 @@ select
         as conversion_value,
     {{ sum_action_value('payload', 'actions', ['video_view']) }}::bigint
         as video_views,
+
+    coalesce((payload->>'reach')::bigint, 0)               as reach,
+
     {{ sum_action_value('payload', 'actions', ['onsite_conversion.ig_profile_view']) }}::int
         as profile_views,
     {{ sum_action_value('payload', 'actions', ['purchase', 'omni_purchase']) }}::int

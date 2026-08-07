@@ -21,27 +21,9 @@
     longo do tempo, mas somar ou dividir uma pela outra nao tem significado.
 */
 
-with bruto as (
+with ultimo_snapshot as (
 
-    select
-        reference_date,
-        extracted_at,
-        payload,
-        dense_rank() over (
-            partition by reference_date
-            order by extracted_at desc
-        ) as recencia
-
-    from {{ source('bronze', 'raw_ads') }}
-    where source = 'google_ads'
-
-),
-
-ultimo_snapshot as (
-
-    select *
-    from bruto
-    where recencia = 1
+    {{ ultimo_snapshot('google_ads') }}
 
 )
 
@@ -59,7 +41,9 @@ select
     payload->>'ad_id'                                   as anuncio_external_id,
     payload->>'ad_name'                                 as anuncio_nome,
 
-    -- Metricas disponiveis
+    -- Metricas disponiveis.
+    -- A ORDEM importa e e a mesma de stg_meta_ads — ver o comentario la e o
+    -- teste assert_staging_mesmo_contrato.
     coalesce((payload->>'cost')::numeric, 0)               as spend,
     coalesce((payload->>'impressions')::bigint, 0)         as impressions,
     coalesce((payload->>'clicks')::int, 0)                 as link_clicks,
