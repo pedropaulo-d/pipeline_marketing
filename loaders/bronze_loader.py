@@ -26,6 +26,9 @@ from sqlalchemy.orm import Session
 # garantindo que o pacote raiz (config.py) seja importavel nos dois casos.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Importado depois do sys.path.insert acima, que e o que torna a raiz visivel.
+from plataformas import fontes, por_fonte  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -35,17 +38,10 @@ logger = logging.getLogger(__name__)
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 DDL_PATH: Path = BASE_DIR / "sql" / "bronze" / "init_bronze.sql"
 
-# Cada fonte tem seu arquivo bruto e o campo que carrega o dia de referencia.
-SOURCES: dict[str, dict] = {
-    "meta_ads": {
-        "path": BASE_DIR / "temp_meta_raw.json",
-        "date_field": "date_start",
-    },
-    "google_ads": {
-        "path": BASE_DIR / "temp_google_raw.json",
-        "date_field": "date",
-    },
-}
+# O arquivo bruto de cada fonte e o campo que carrega o dia de referencia vem
+# do registro de plataformas — o mesmo lugar de onde o extrator tira o caminho
+# em que escreve. Sem isso, renomear o arquivo de um lado so faz o loader
+# emitir "arquivo bruto ausente" e o pipeline terminar sem carregar nada.
 
 
 def get_engine() -> Engine:
@@ -192,12 +188,12 @@ def run(sources: list[str] | None = None) -> int:
     Raises:
         ValueError: Se alguma fonte informada for desconhecida.
     """
-    selecionadas = list(SOURCES) if sources is None else sources
-    invalidas = set(selecionadas) - set(SOURCES)
+    selecionadas = fontes() if sources is None else sources
+    invalidas = set(selecionadas) - set(fontes())
     if invalidas:
         raise ValueError(
             f"Fonte desconhecida: {', '.join(sorted(invalidas))}. "
-            f"Valores aceitos: {', '.join(SOURCES)}."
+            f"Valores aceitos: {', '.join(fontes())}."
         )
 
     engine = get_engine()
@@ -207,11 +203,15 @@ def run(sources: list[str] | None = None) -> int:
     with Session(engine) as session:
         try:
             for source in selecionadas:
-                cfg = SOURCES[source]
+                plataforma = por_fonte(source)
                 # batch_id por fonte — cada arquivo e uma unidade de carga.
                 batch_id = uuid.uuid4()
                 total += load_source(
-                    session, source, cfg["path"], cfg["date_field"], batch_id
+                    session,
+                    source,
+                    plataforma.arquivo_bruto,
+                    plataforma.campo_data,
+                    batch_id,
                 )
             session.commit()
         except Exception as exc:

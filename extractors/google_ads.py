@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from google.ads.googleads.client import GoogleAdsClient
 
 from config import mask
+from plataformas import PLATAFORMAS
 
 load_dotenv()
 
@@ -63,7 +64,9 @@ GAQL_ADS_TEMPLATE: str = """
     WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
 """
 
-OUTPUT_PATH: Path = Path(__file__).resolve().parent.parent / "temp_google_raw.json"
+# Vem do registro, e nao de um literal repetido aqui: e exatamente o caminho
+# que o bronze_loader vai ler depois.
+OUTPUT_PATH: Path = PLATAFORMAS["google"].arquivo_bruto
 
 
 def init_client() -> GoogleAdsClient:

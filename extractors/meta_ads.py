@@ -12,6 +12,7 @@ from facebook_business.adobjects.business import Business
 from facebook_business.api import FacebookAdsApi
 
 from config import mask
+from plataformas import PLATAFORMAS
 
 load_dotenv()
 
@@ -40,7 +41,9 @@ ACCOUNT_FIELDS: list[str] = ["account_id", "name", "account_status"]
 
 ACCOUNT_STATUS_ACTIVE: int = 1
 
-OUTPUT_PATH: Path = Path(__file__).resolve().parent.parent / "temp_meta_raw.json"
+# Vem do registro, e nao de um literal repetido aqui: e exatamente o caminho
+# que o bronze_loader vai ler depois.
+OUTPUT_PATH: Path = PLATAFORMAS["meta"].arquivo_bruto
 
 
 def init_api() -> None:

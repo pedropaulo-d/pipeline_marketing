@@ -13,26 +13,18 @@ import sys
 
 from dotenv import load_dotenv
 
+from plataformas import PLATAFORMAS
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 # ── Variaveis obrigatorias por modulo ──────────────────────────
 
+# Derivado do registro de plataformas: as credenciais de cada plataforma sao
+# declaradas junto com o resto da configuracao dela, num lugar so.
 _REQUIRED_VARS: dict[str, list[str]] = {
-    "Meta Ads": [
-        "META_APP_ID",
-        "META_APP_SECRET",
-        "META_ACCESS_TOKEN",
-        "META_BUSINESS_ID",
-    ],
-    "Google Ads": [
-        "GOOGLE_DEVELOPER_TOKEN",
-        "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_REFRESH_TOKEN",
-        "GOOGLE_LOGIN_CUSTOMER_ID",
-    ],
+    p.nome: list(p.variaveis_obrigatorias) for p in PLATAFORMAS.values()
 }
 
 # Variaveis alternativas: basta uma delas estar definida.

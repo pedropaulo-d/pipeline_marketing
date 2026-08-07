@@ -16,8 +16,8 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 0 concluída e commitada em 06/08/2026 (`18b85df`). Árvore
-limpa, nada em andamento, nenhum trabalho pela metade.
+**Onde paramos:** Fase 1 concluída em 07/08/2026 e **ainda não commitada** —
+`plataformas.py` é arquivo novo. Fase 0 commitada em 06/08 (`18b85df`).
 
 **Primeiro comando ao retomar** — confirma que o armazém continua no estado
 congelado antes de qualquer mudança:
@@ -31,12 +31,13 @@ Esperado: `PARIDADE OK — 1677 linhas no fato`. Se divergir, **investigue antes
 de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** Fase 1 (registro único de plataformas). É a de maior ganho e
-não depende de nenhuma das decisões pendentes.
+**Próximo passo:** Fase 2 (infraestrutura transversal), com D1 já decidida:
+`pyproject.toml` + instalação editável. Ela também destrava a pendência que a
+Fase 1 empurrou — os dois scripts que ainda montam o nome do arquivo bruto à
+mão. Fases 1 a 3 mexem nos mesmos arquivos e valem um bloco só de commits.
 
-**Bloqueios:** as decisões D1 e D2 (no fim deste documento) continuam abertas
-com o usuário. D1 bloqueia a Fase 2, D2 bloqueia a Fase 6. **Perguntar antes de
-executar essas duas fases** — as demais estão liberadas.
+**Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
+fechadas", no fim deste documento) — todas as nove fases estão liberadas.
 
 **Contexto que não está no código:** o dado real de 01–04/08 vive em
 `temp_meta_raw.json` / `temp_google_raw.json` na raiz, que são gitignored. São
@@ -142,6 +143,9 @@ erro numa versão futura do dbt.
 
 ## Fase 1 — "Plataforma" declarada em 6 lugares
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
+passando.
+
 O conceito mais central do sistema está espalhado. Adicionar uma terceira
 plataforma (ou renomear um arquivo temporário) exige seis edições coordenadas,
 e esquecer uma delas falha em silêncio.
@@ -170,6 +174,54 @@ registro.
 Ganho: adicionar TikTok Ads vira **uma** entrada, e o acoplamento
 extrator↔loader deixa de existir porque os dois passam a ler o mesmo lugar.
 
+### O que foi entregue
+
+`plataformas.py` na raiz, com a dataclass congelada `Plataforma` e o dicionário
+`PLATAFORMAS`. Cada entrada declara chave de CLI, nome (que é também o grupo de
+credenciais), fonte da bronze, arquivo bruto, campo de data, módulo do extrator
+e as variáveis de ambiente obrigatórias. Os seis pontos passaram a derivar dele:
+
+| Antes | Depois |
+|---|---|
+| `config._REQUIRED_VARS` com as 9 variáveis escritas à mão | Derivado por comprehension sobre o registro |
+| `main.PLATFORMS` | Removido — `PLATAFORMAS[p].nome` |
+| `main.BRONZE_SOURCES` | Removido — `PLATAFORMAS[p].fonte_bronze` |
+| `if "meta" in platforms` / `if "google" in platforms` | Laço sobre o registro |
+| `bronze_loader.SOURCES` | Removido — `por_fonte(source)` |
+| `OUTPUT_PATH` em cada extrator | `PLATAFORMAS["meta"].arquivo_bruto` |
+
+Dois detalhes que exigiram cuidado:
+
+1. **O import tardio do SDK precisava sobreviver.** O registro guarda o módulo
+   do extrator como *string* e `Plataforma.extrair()` resolve com
+   `importlib.import_module`. Se guardasse a função, importar o registro
+   carregaria os dois SDKs, e uma execução `--platforms meta` pagaria o custo
+   de carregar o SDK do Google. Verificado: importar `plataformas` não traz
+   `facebook_business` nem `google.ads` para `sys.modules`.
+2. **A ajuda da CLI também derivou.** O texto do `--skip-extract` listava os
+   nomes dos arquivos brutos e o do `--platforms` listava as plataformas
+   aceitas — duas cópias a mais, que agora saem do registro. Renomear um
+   arquivo bruto atualiza o `--help` junto.
+
+### Verificação
+
+- O extrator e o loader apontam para o mesmo arquivo — afirmado por asserção,
+  não por leitura: `meta_ads.OUTPUT_PATH == PLATAFORMAS["meta"].arquivo_bruto`.
+  É o acoplamento silencioso fechado: existe **uma** declaração do caminho.
+- `--platforms tiktok` sai com código 2 e mensagem listando os valores aceitos,
+  vindos do registro.
+- `main.py --skip-extract` completo: bronze recarregada, `dbt build` com 75
+  testes passando.
+- `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`.
+
+### Pendência empurrada para a Fase 2
+
+`scripts/anonimizar_dataset.py:256` e `scripts/gerar_fixture.py:244` ainda
+montam os nomes dos arquivos brutos à mão. Ligá-los ao registro hoje exigiria
+um **quarto** `sys.path.insert` — justamente o que a Fase 2 vai remover. Fica
+para depois da instalação editável, quando `import plataformas` passa a
+funcionar de qualquer diretório sem gambiarra.
+
 ---
 
 ## Fase 2 — Infraestrutura transversal
@@ -178,7 +230,7 @@ extrator↔loader deixa de existir porque os dois passam a ler o mesmo lugar.
 |---|---|---|
 | 2.1 | `logging.basicConfig()` em 4 módulos (`main.py:23`, `meta_ads.py:18`, `google_ads.py:15`, `bronze_loader.py:29`). Só a primeira chamada tem efeito — as outras três são no-op silencioso | Uma `configurar_logging()` em `config.py`, chamada pelos entrypoints |
 | 2.2 | `load_dotenv()` em 4 módulos, no import | Uma vez, no entrypoint. `config.py` já faz no import dele |
-| 2.3 | `sys.path.insert` em `bronze_loader.py:27` e `benchmark/executar.py:43` | Ver decisão D1 abaixo |
+| 2.3 | `sys.path.insert` em `bronze_loader.py:27`, `benchmark/executar.py:43` e `scripts/verificar_paridade.py:45` | `pyproject.toml` + `pip install -e .` no Dockerfile (D1, fechada) |
 | 2.4 | Imports locais gratuitos: `config.py:70` (urllib), `main.py:202-203` (os, subprocess) | Subir para o topo. **Manter** os lazy dos SDKs em `main.py:163,169` — evitam carregar o SDK do Google numa execução só do Meta |
 
 O item 2.3 é a **armadilha nº 8 do CLAUDE.md**. Hoje ela é documentada; a
@@ -254,7 +306,7 @@ vw_metricas_completas group by plataforma` e **não têm como errar**.
 É a melhor refatoração disponível no repositório: transforma uma armadilha
 documentada em erro impossível. Também é a mais defensável na banca — o
 argumento "documentei a pegadinha" é fraco perto de "tornei o caminho errado
-inacessível". Ver decisão D2.
+inacessível". Decidida como view em 07/08/2026 (D2, fechada).
 
 ---
 
@@ -308,23 +360,45 @@ do plano que adiciona conceito novo em vez de remover duplicação.
 
 ---
 
-## Decisões pendentes
+## Decisões fechadas
 
-**D1 — Como resolver o `sys.path.insert` (Fase 2.3)?**
+Ambas decididas com o usuário em 07/08/2026. Nenhuma fase do plano continua
+bloqueada.
 
-- (a) `pyproject.toml` + `pip install -e .` no Dockerfile. Solução correta,
-  elimina a armadilha de vez. Custo: mexe no Dockerfile, no compose e em todos
-  os comandos documentados.
-- (b) Rodar sempre com `python -m loaders.bronze_loader`. Mais barato, mas
-  muda os comandos do README e do CLAUDE.md do mesmo jeito.
-- (c) Deixar como está. Custa uma armadilha documentada para sempre.
+**D1 — Como resolver o `sys.path.insert` (Fase 2.3)? → `pyproject.toml` +
+instalação editável.**
 
-**D2 — A view da Fase 6 é refatoração ou funcionalidade nova?**
+Um `pyproject.toml` na raiz e `RUN pip install --no-cache-dir -e .` no
+Dockerfile, depois do `COPY . .` e antes do `chown`. Elimina os três
+`sys.path.insert` (`loaders/bronze_loader.py:27`, `benchmark/executar.py:43`,
+`scripts/verificar_paridade.py:45`) e a armadilha nº 8 do CLAUDE.md junto.
 
-Ela adiciona um objeto ao armazém. Se a preferência for um repositório
-estritamente igual em superfície, a alternativa é uma macro dbt que gera a
-travessia, usada pelos testes e pelas queries de demonstração — mesmo ganho
-para o código, nenhum ganho para quem consulta o banco pelo psql.
+O custo levantado no plano original estava superestimado. O compose faz
+bind-mount de `.:/app` e o `WORKDIR` já é `/app`; a instalação editável grava o
+apontador em `site-packages`, que fica **fora** do caminho sombreado pelo mount.
+Resultado: `import config` passa a funcionar de qualquer diretório e **nenhum
+comando documentado muda** — só o Dockerfile, com uma linha, mais o rebuild da
+imagem (`docker compose build etl_app`).
+
+Descartadas: `ENV PYTHONPATH=/app` (vale só dentro do container — quem clonar o
+repo e rodar no host reencontra a armadilha) e `python -m` (muda os comandos do
+README e do CLAUDE.md, e o caminho antigo continua existindo e quebrando).
+
+**D2 — A travessia da hierarquia (Fase 6) vira view no banco.**
+
+Modelo dbt `gold.vw_metricas_completas`, materializado como view, com a
+cláusula de validade SCD2 em cada um dos cinco níveis. Serve qualquer
+consumidor — psql, queries de demonstração, testes e o dashboard da pendência
+nº 1 — enquanto a macro só resolveria a duplicação dentro do dbt e deixaria
+quem consulta o banco direto ainda escrevendo o join à mão.
+
+Não conflita com a regra de paridade: a view não altera fato nem dimensões,
+apenas expõe uma leitura correta do que já existe. Os agregados congelados
+continuam válidos sem recongelamento.
+
+Descartada a combinação view + macro: a view já é o único lugar onde a
+travessia aparece, então a indireção extra custaria explicação na defesa sem
+ganho correspondente.
 
 ---
 
@@ -356,7 +430,7 @@ qualquer ordem, uma por commit.
 | Fase | Status | Commit | Paridade |
 |---|---|---|---|
 | 0 | ✅ concluída | `18b85df` | golden congelado |
-| 1 | ⬜ pendente | | |
+| 1 | ✅ concluída | | OK — 1677 linhas |
 | 2 | ⬜ pendente | | |
 | 3 | ⬜ pendente | | |
 | 4 | ⬜ pendente | | |

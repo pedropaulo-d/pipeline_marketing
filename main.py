@@ -27,24 +27,13 @@ logging.basicConfig(
 logger = logging.getLogger("pipeline")
 
 from config import validate_env
+from plataformas import PLATAFORMAS, chaves
 
 from pathlib import Path
 
 BASE_DIR: Path = Path(__file__).resolve().parent
 
 SEPARATOR: str = "=" * 60
-
-# Plataformas suportadas → grupo de credenciais correspondente em config.py
-PLATFORMS: dict[str, str] = {
-    "meta": "Meta Ads",
-    "google": "Google Ads",
-}
-
-# Plataforma → identificador da fonte na camada bronze.
-BRONZE_SOURCES: dict[str, str] = {
-    "meta": "meta_ads",
-    "google": "google_ads",
-}
 
 
 # ── Validação de argumentos ──────────────────────────────────
@@ -97,21 +86,26 @@ def parse_args() -> argparse.Namespace:
         default=yesterday,
         help="Data final (YYYY-MM-DD). Default: yesterday.",
     )
+    # Os nomes de arquivo e a lista de plataformas saem do registro: a ajuda
+    # da CLI nunca fica dessincronizada do que o pipeline realmente aceita.
+    brutos = " / ".join(p.arquivo_bruto.name for p in PLATAFORMAS.values())
+    aceitas = ", ".join(chaves())
+
     parser.add_argument(
         "--skip-extract",
         action="store_true",
         help=(
             "Pula a extração e reprocessa os arquivos brutos já existentes "
-            "(temp_meta_raw.json / temp_google_raw.json). Útil para "
+            f"({brutos}). Útil para "
             "demonstrar transformação e carga sem consumir a API."
         ),
     )
     parser.add_argument(
         "--platforms",
-        default="meta,google",
+        default=",".join(chaves()),
         help=(
-            "Plataformas a extrair, separadas por vírgula: meta, google. "
-            "Default: meta,google. Permite rodar o pipeline quando as "
+            f"Plataformas a extrair, separadas por vírgula: {aceitas}. "
+            f"Default: {','.join(chaves())}. Permite rodar o pipeline quando as "
             "credenciais de uma das plataformas estão indisponíveis."
         ),
     )
@@ -119,11 +113,11 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     args.platforms = [p.strip().lower() for p in args.platforms.split(",") if p.strip()]
-    invalid = set(args.platforms) - PLATFORMS.keys()
+    invalid = set(args.platforms) - set(chaves())
     if invalid:
         parser.error(
             f"--platforms inválido: {', '.join(sorted(invalid))}. "
-            f"Valores aceitos: {', '.join(PLATFORMS)}."
+            f"Valores aceitos: {aceitas}."
         )
     if not args.platforms:
         parser.error("--platforms exige ao menos uma plataforma.")
@@ -159,17 +153,12 @@ def run_extraction(
 
     counts: dict[str, int] = {}
 
-    if "meta" in platforms:
-        from extractors import meta_ads
-
-        logger.info("Extraindo Meta Ads...")
-        counts["meta"] = meta_ads.run(start_date, end_date)
-
-    if "google" in platforms:
-        from extractors import google_ads
-
-        logger.info("Extraindo Google Ads...")
-        counts["google"] = google_ads.run(start_date, end_date)
+    # O despacho percorre o registro em vez de um `if` por plataforma. O import
+    # do SDK continua tardio — acontece dentro de `Plataforma.extrair`.
+    for chave in platforms:
+        plataforma = PLATAFORMAS[chave]
+        logger.info("Extraindo %s...", plataforma.nome)
+        counts[chave] = plataforma.extrair(start_date, end_date)
 
     return counts
 
@@ -244,7 +233,10 @@ def main() -> None:
     # ── Validação de credenciais ──
     # Só são exigidas as credenciais das plataformas efetivamente extraídas;
     # a URL do Data Warehouse é sempre obrigatória.
-    groups = [] if args.skip_extract else [PLATFORMS[p] for p in args.platforms]
+    groups = (
+        [] if args.skip_extract
+        else [PLATAFORMAS[p].nome for p in args.platforms]
+    )
     validate_env(groups=groups)
 
     # ── Extração ──
@@ -270,7 +262,7 @@ def main() -> None:
     # bruto da outra plataforma pode ter sobrado de uma execução anterior.
     fontes = (
         None if args.skip_extract
-        else [BRONZE_SOURCES[p] for p in args.platforms]
+        else [PLATAFORMAS[p].fonte_bronze for p in args.platforms]
     )
     try:
         bronze_count = run_bronze(fontes)
