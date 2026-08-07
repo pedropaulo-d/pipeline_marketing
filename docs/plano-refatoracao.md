@@ -16,10 +16,10 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 ## ▶️ Retomada — leia isto primeiro
 
-**Onde paramos:** Fase 8 concluída em 07/08/2026, **ainda não commitada**.
-Commitadas no mesmo dia: Fases 1 a 7 (`b5f8f40`, `101165a`, `a05c6b6`,
-`20c8dc3`, `9382683`, `2b20c99`, `ad02ae9`); Fase 0 em 06/08 (`18b85df`).
-**Só resta a Fase 9, que é opcional.**
+**Onde paramos: o plano acabou.** As nove fases estão concluídas. A Fase 9 é a
+única **ainda não commitada**; as demais foram para o histórico em 06–07/08
+(`18b85df`, `b5f8f40`, `101165a`, `a05c6b6`, `20c8dc3`, `9382683`, `2b20c99`,
+`ad02ae9`, `ca6fad6`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -36,10 +36,12 @@ Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4)
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
-**Próximo passo:** decidir se a Fase 9 entra. Ela é a única do plano que
-**acrescenta conceito** em vez de remover duplicação — um teste que confronte
-os campos extraídos com os campos lidos pela silver. Não é dívida existente;
-é cobertura nova. Se ficar de fora, o plano está encerrado.
+**Próximo passo:** nenhum dentro deste plano. O trabalho volta para as
+pendências do projeto — camada de consumo (dashboard), materialização
+incremental e orquestração com Airflow.
+
+A regra que valeu para tudo continua valendo: `verificar_paridade.py verificar`
+depois de qualquer mudança em transformação.
 
 **Bloqueios:** nenhum. D1 e D2 foram fechadas em 07/08/2026 (ver "Decisões
 fechadas", no fim deste documento) — todas as nove fases estão liberadas.
@@ -699,6 +701,8 @@ Exercitada em diretório temporário, sem tocar no `.env` real:
 
 ## Fase 9 — Opcional: cobertura de campo
 
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, **83** testes dbt.
+
 Nada liga `INSIGHT_FIELDS` (`meta_ads.py:24`) e a lista do `GAQL_ADS_TEMPLATE`
 (`google_ads.py:39`) aos modelos silver que leem essas chaves do payload.
 Acrescentar um campo no extrator e esquecer do modelo é silencioso — foi
@@ -707,6 +711,53 @@ literalmente a pendência nº 1 que fechamos hoje, na direção inversa.
 Alvo possível: teste dbt que confronte as chaves presentes no lote mais recente
 da bronze com as chaves que a silver lê. Fica por último porque é o único item
 do plano que adiciona conceito novo em vez de remover duplicação.
+
+### O que foi entregue
+
+`assert_campos_extraidos_sao_consumidos` — compara as chaves do lote mais
+recente de cada fonte com as que o modelo de staging correspondente lê. Cada
+linha retornada é um campo que está entrando no armazém e sendo descartado em
+silêncio.
+
+**O risco desta fase era criar uma terceira lista.** Declarar as chaves
+consumidas num `vars:` resolveria o teste e criaria exatamente o problema que
+este plano existe para remover — e pior: uma lista declarada que sai de
+sincronia com o SQL faz o teste *mentir*, o que é pior que não ter teste.
+
+Por isso a macro `chaves_consumidas(modelo)` **extrai as chaves do próprio
+código do modelo**, via `raw_code` do grafo do dbt, reconhecendo `payload->>'x'`,
+`payload->'x'` e `sum_action_value('payload', 'x', ...)`. Não há lista a manter:
+mudar o SQL muda a lista. Verificado no SQL compilado que a extração pega as 14
+chaves do Meta (inclusive `actions` e `action_values`, que chegam pela macro) e
+as 14 do Google.
+
+**O que precisou ser declarado**, e por quê:
+
+- `var fontes_staging` — o par fonte↔modelo. Espelha `plataformas.py`; o dbt
+  não lê Python. Plataforma nova entra nos dois lugares.
+- `ignoradas` — `date_start`/`date_stop` (Meta) e `date` (Google) chegam no
+  payload e a silver não lê: são consumidos pelo `bronze_loader` como
+  `reference_date` antes disso. Sem declará-los, o teste acusaria falso
+  positivo neles.
+
+### Duas direções, só uma verificada
+
+A direção inversa — exigir que toda chave lida pela silver exista no lote —
+foi deliberadamente **não** implementada. Campos opcionais da API podem faltar
+legitimamente num lote inteiro: `action_values` aparece em 10 dos 527 registros
+do último lote do Meta, e nada impede um dia em que não apareça em nenhum. O
+`coalesce` dos modelos já trata essa ausência; o teste só produziria ruído.
+
+### Verificação
+
+- 83 testes dbt passando.
+- **Controle negativo 1:** tirando `date_stop` das `ignoradas`, o teste falha e
+  aponta a chave.
+- **Controle negativo 2 (o cenário real da fase):** fazendo `stg_meta_ads`
+  parar de ler `reach`, o teste falha — que é exatamente "o campo é extraído e
+  o modelo esquece dele". Rodado com `dbt test --select`, sem rebuild, então o
+  armazém não foi tocado.
+- `PARIDADE OK — 1677 linhas`.
 
 ---
 
@@ -799,4 +850,8 @@ qualquer ordem, uma por commit.
 | 6 | ✅ concluída | | OK — 1677 linhas |
 | 7 | ✅ concluída | | OK — 1677 linhas |
 | 8 | ✅ concluída | | n/a — fora do pipeline |
-| 9 | ⬜ pendente | | |
+| 9 | ✅ concluída | | OK — 1677 linhas |
+
+**Plano concluído.** As nove fases foram executadas em 06–07/08/2026, cada uma
+verificada contra o golden. O número não mudou uma vez: `1677 linhas` do
+início ao fim. A bateria de testes dbt foi de 75 para 83.

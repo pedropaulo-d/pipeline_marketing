@@ -14,6 +14,22 @@ clean-targets: ["target", "dbt_packages"]
 # Fonte unica da lista: era repetida nos dois testes de consistencia SCD2, que
 # precisavam ser editados juntos a cada dimensao nova.
 vars:
+  # Fontes da bronze e o modelo de staging que consome cada uma. Espelha o
+  # registro de plataformas (plataformas.py) — o dbt nao consegue ler o Python,
+  # entao plataforma nova entra tambem aqui.
+  #
+  # `ignoradas`: chaves que o payload traz e que o staging NAO le de proposito.
+  # Sao os campos de data, consumidos pelo bronze_loader como `reference_date`
+  # antes do payload chegar na silver. Sem esta lista o teste
+  # assert_campos_extraidos_sao_consumidos acusaria falso positivo nelas.
+  fontes_staging:
+    - fonte: meta_ads
+      modelo: stg_meta_ads
+      ignoradas: ["date_start", "date_stop"]
+    - fonte: google_ads
+      modelo: stg_google_ads
+      ignoradas: ["date"]
+
   dimensoes_scd2:
     - ["dim_conta", "conta_nk"]
     - ["dim_campanha", "campanha_nk"]
