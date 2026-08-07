@@ -1,3 +1,54 @@
+# Bloco reaproveitado pelos quatro servicos do Airflow (init, apiserver,
+# scheduler, dag-processor). Imagem, ambiente, volumes e dependencias ficam
+# declarados uma vez so.
+x-airflow-comum: &airflow-comum
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  env_file:
+    # Credenciais do Meta e do Google. As tasks de extracao chamam as APIs
+    # reais — sao os mesmos segredos que o etl_app usa.
+    - .env
+  environment: &airflow-comum-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    # A DAG nasce pausada: ela consome API de producao com dado real de
+    # clientes. Despausar tem de ser decisao consciente, nao efeito colateral
+    # de subir o compose.
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Sao_Paulo
+    # No Airflow 3 as tasks falam com o api-server pela Task Execution API.
+    # Em containers separados, `localhost` seria o proprio container.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-tcc-jwt-secret-local}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Aponta o pipeline para o DW deste compose, sobrescrevendo o .env —
+    # mesma regra do servico etl_app. As tasks do dbt derivam DBT_HOST e
+    # companhia daqui, via config.dbt_env().
+    DW_DB_URL: ${DW_DB_URL:-postgresql://etl:etl@db:5432/marketing_dw}
+    # As tasks fazem `cd /opt/project` antes de `python -m ...`, o que ja
+    # colocaria a raiz no sys.path. Declarar aqui torna o import previsivel
+    # tambem para quem abrir um shell no container para depurar.
+    PYTHONPATH: /opt/project
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
+    # Projeto inteiro: as tasks rodam os mesmos comandos do terminal.
+    - .:/opt/project
+  # Sem isso os arquivos criados pelo Airflow no host ficam de outro dono e o
+  # usuario nao consegue apaga-los — a armadilha nº 2 do CLAUDE.md.
+  user: "${AIRFLOW_UID:-1000}:0"
+  depends_on:
+    airflow_db:
+      condition: service_healthy
+    db:
+      condition: service_healthy
+
 services:
   # Data Warehouse local. Nao ha DDL de inicializacao: no ELT o schema nasce
   # do proprio pipeline — `bronze_loader` aplica o DDL da bronze e o dbt
@@ -37,5 +88,93 @@ services:
       db:
         condition: service_healthy
 
+  # ── Airflow ────────────────────────────────────────────────────────────
+  # Banco de METADADOS do Airflow, separado do Data Warehouse de proposito:
+  # estado de orquestracao e dado analitico tem ciclos de vida diferentes, e
+  # dropar um nao pode levar o outro junto.
+  airflow_db:
+    image: postgres:16-alpine
+    container_name: tcc_airflow_db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Roda uma vez: migra o schema de metadados e cria o usuario admin. O
+  # entrypoint da imagem oficial trata as duas variaveis `_AIRFLOW_*`.
+  airflow-init:
+    <<: *airflow-comum
+    container_name: tcc_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - /entrypoint airflow version
+    environment:
+      <<: *airflow-comum-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    user: "0:0"
+
+  # UI e Task Execution API. No Airflow 3 o `webserver` virou `api-server`.
+  airflow-apiserver:
+    <<: *airflow-comum
+    container_name: tcc_airflow_apiserver
+    command: api-server
+    ports:
+      # 8082 no host: a 8080 e do Airflow do projeto b3-data-pipeline, que
+      # roda em paralelo, e a 8081 e do callback OAuth do Google.
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      airflow_db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-comum
+    container_name: tcc_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow_db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # No Airflow 3 o parser de DAGs e um processo separado do scheduler.
+  airflow-dag-processor:
+    <<: *airflow-comum
+    container_name: tcc_airflow_dag_processor
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow_db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
 volumes:
   dw_data:
+  airflow_db_data:

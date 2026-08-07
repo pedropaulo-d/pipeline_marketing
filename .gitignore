@@ -83,3 +83,7 @@ claude.md
 benchmark/dados/
 benchmark/*.duckdb
 benchmark/*.duckdb.wal
+
+# Airflow: logs e estado de execucao sao locais, nao versionados.
+airflow/logs/
+airflow/plugins/__pycache__/
