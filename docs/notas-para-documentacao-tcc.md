@@ -75,8 +75,8 @@ formalmente, em nível somente-leitura.
 | Tempo de extração — Meta (87 contas) | ~2 minutos |
 | Tempo de extração — Google (64 subcontas) | ~100 segundos |
 | Tempo de transformação + testes (dbt) | ~3 segundos |
-| Modelos dbt | 10 (3 views silver, 7 tabelas gold) |
-| Testes de dados automatizados | 75 |
+| Modelos dbt | 11 (3 views silver, 7 tabelas gold, 1 view de consumo) |
+| Testes de dados automatizados | 72 |
 
 ⚠️ O schema `public` do mesmo banco guarda a tabela do benchmark (seção 5.6),
 cerca de 1,2 GB. Não confundir com o tamanho do armazém: o pipeline em si ocupa
@@ -686,7 +686,9 @@ do histórico do versionamento.
 
 ### 6.2 Testes automatizados
 
-📊 75 testes executados a cada build:
+📊 72 testes executados a cada build (o `dbt build` reporta `PASS=83`, que é a
+contagem de **nós**: 11 modelos + 72 testes — não citar 83 como número de
+testes):
 
 | Categoria | O que verifica |
 |---|---|

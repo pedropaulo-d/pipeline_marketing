@@ -135,7 +135,8 @@ with DAG(
             f'cd {PROJETO} && python -c "from main import run_dbt; run_dbt()"'
         ),
         doc_md=(
-            "`dbt build`: materializa silver e gold e roda os 83 testes. "
+            "`dbt build`: materializa silver e gold e roda os 72 testes — o "
+            "`PASS=83` conta nos, isto e, 11 modelos mais os 72 testes. "
             "Falha de teste falha a task — dado ruim nao avanca em silencio."
         ),
     )

@@ -48,9 +48,10 @@ flowchart LR
 | Camada bronze | ✅ JSONB append-only + log de ingestão |
 | Camada silver | ✅ 3 views dbt, dedup por recência |
 | Camada gold | ✅ Snowflake Schema materializado por dbt |
-| Testes de dados | ✅ 75 testes dbt passando |
+| Testes de dados | ✅ 72 testes dbt passando |
+| Historização | ✅ SCD Tipo 2 nas dimensões (05/08) |
 | Data Warehouse | ✅ PostgreSQL 16 em container |
-| Orquestração | ⬜ não existe |
+| Orquestração | ✅ Airflow 3.3.0 — DAG diária, uma task por etapa (07/08) |
 
 > [!success] Arquitetura ELT implementada em 05/08
 > Migrado de ETL (pandas + CSVs temporários) para **bronze → silver → gold**
@@ -186,9 +187,9 @@ Não defenda com opinião — defenda com medição. Proposta: incluir um
 ### Bloco B — Arquitetura
 
 - [ ] **B1.** O modelo está como Snowflake (Plataforma → Conta → Campanha → AdSet → Anúncio). Vê problema em defender isso em vez de achatar num Star Schema?
-- [ ] **B2.** **SCD Tipo 2** é esperado para nível de TCC? Hoje renomear uma campanha sobrescreve o histórico (Tipo 1).
+- [ ] **B2.** **SCD Tipo 2** é esperado para nível de TCC? Está implementado desde 05/08 — renomear uma campanha cria uma versão nova em vez de sobrescrever o histórico. O DW tem 3 versões, todas nascidas da fronteira abril↔agosto.
 - [ ] **B3.** O ELT em camadas **já está implementado** com dbt. A troca custou as foreign keys do banco, que viraram testes `relationships`. O senhor considera essa perda aceitável, dado o ganho em testabilidade e rastreabilidade?
-- [ ] **B4.** **Airflow é requisito ou meio?** Para um DAG diário ele custa caro em infra. A ferramenta será avaliada, ou o que importa é demonstrar orquestração?
+- [ ] **B4.** **Airflow é requisito ou meio?** Implementado em 07/08 (3.3.0, uma task por etapa, janela móvel de 7 dias, DAG nasce pausada). A ferramenta será avaliada, ou o que importa é demonstrar orquestração?
 
 > [!check] Onde eu quero chegar
 > **B2 é a pergunta que ele provavelmente faria primeiro** — chegar nela antes
@@ -254,18 +255,21 @@ descartava silenciosamente ~1% das conversões (376 contra 380,29 reais).
 > [!note] Levante você mesmo — antes que a banca levante
 > Reconhecer limitação é consciência crítica; ser pego por ela é falha.
 
-- **Sem orquestração** — `main.py` roda em sequência, sem retry.
-- **Sem SCD Tipo 2** — renomear campanha sobrescreve o histórico na gold. A bronze preserva os nomes antigos, então a implementação futura é possível sem perda de dado.
 - **Cobertura desigual de métricas** — a query GAQL do Google não retorna `reach` nem `purchases` nesse nível; as colunas ficam zeradas para a plataforma e distorcem comparação direta. `video_views` passou a ser extraído em 06/08, mas com definição diferente da do Meta (TrueView de 30s contra 3s), o que impede somar as duas plataformas nessa métrica.
 - **Materialização full-refresh** — a gold é reconstruída inteira a cada execução. Adequado a 1,7 mil linhas, insuficiente em outra ordem de grandeza.
 - **Integridade referencial mais fraca** — as FKs do banco viraram testes `relationships`, que detectam violação após a materialização em vez de impedi-la na escrita.
 
 ### Resolvidas em 05/08
 
-- ~~Sem testes automatizados~~ → 75 testes dbt
+- ~~Sem testes automatizados~~ → 72 testes dbt
 - ~~Sem camada raw preservada~~ → bronze append-only
 - ~~Sem observabilidade~~ → `bronze.ingestion_log`
 - ~~Reprocessar exige chamar a API~~ → todas as camadas reconstroem a partir da bronze
+- ~~Sem SCD Tipo 2~~ → dimensões versionadas pela macro `dimensao_scd2`; o fato resolve a versão vigente por `data between valido_de and valido_ate`. O histórico vem da bronze, não da API — consultada hoje ela devolve o nome atual para datas passadas.
+
+### Resolvida em 07/08
+
+- ~~Sem orquestração~~ → **Airflow 3.3.0**, DAG `pipeline_marketing_diario`: uma task por etapa (retry seletivo em vez de reexecutar 2 min de extração), janela móvel de 7 dias porque as métricas do Meta mudam retroativamente por até 28 dias, `catchup=False` para não achatar o SCD2, e a DAG nasce pausada porque consome API de produção com dado real.
 
 ---
 

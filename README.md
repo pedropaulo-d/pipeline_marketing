@@ -62,7 +62,7 @@ Detalhes de projeto, validacao e limitacoes em
 |---|---|
 | **Arquitetura em camadas** | Bronze (JSONB bruto, append-only) → Silver (limpeza e unificacao) → Gold (modelo dimensional) |
 | **Idempotencia** | Reprocessar o mesmo periodo nao altera o resultado da gold; a bronze acumula snapshots e a silver mantem o mais recente |
-| **Testes de dados** | 75 testes dbt: unicidade, nao-nulidade, dominios e integridade referencial entre fato e dimensoes |
+| **Testes de dados** | 72 testes dbt: unicidade, nao-nulidade, dominios e integridade referencial entre fato e dimensoes (o `dbt build` reporta 83 nos: 11 modelos + 72 testes) |
 | **Rastreabilidade** | Dado bruto preservado permite reprocessar todas as camadas sem chamar a API novamente |
 | **Observabilidade** | `bronze.ingestion_log` registra lote, fonte, periodo e volume de cada carga |
 | **Backfill historico** | Argumento `--start-date` / `--end-date` permite carga retroativa de qualquer periodo |
@@ -157,7 +157,8 @@ docker compose run --rm etl_app python main.py --skip-extract
 ### 4.1. Transformacoes e testes isolados
 
 ```bash
-# Materializa silver e gold e roda os 75 testes de dados
+# Materializa silver e gold e roda os 72 testes de dados (PASS=83 conta nos:
+# 11 modelos + 72 testes)
 docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt build
 
 # Apenas os testes

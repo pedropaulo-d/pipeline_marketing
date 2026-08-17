@@ -168,7 +168,7 @@ hierarquia devolve exatamente uma linha por linha do fato).
 |---|---|---|
 | Reprocessar sem API | ❌ | ✅ |
 | Histórico do dado bruto | ❌ | ✅ append-only |
-| Testes de dados | ❌ | ✅ 75 testes |
+| Testes de dados | ❌ | ✅ 72 testes |
 | Histórico de renomeações | ❌ SCD Tipo 1 | ✅ SCD Tipo 2 |
 | Lineage documentado | ❌ | ✅ gerado pelo dbt |
 | Auditoria de execuções | ❌ | ✅ `ingestion_log` |

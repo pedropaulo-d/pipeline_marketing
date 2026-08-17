@@ -32,7 +32,8 @@ docker compose up -d db
 docker compose run --rm etl_app python scripts/verificar_paridade.py verificar
 ```
 
-Esperado: `PARIDADE OK — 1677 linhas no fato` (e 76 testes dbt desde a Fase 4).
+Esperado: `PARIDADE OK — 1677 linhas no fato` (e 66 testes dbt desde a Fase 4;
+o `dbt build` reporta 76 nós).
 Se divergir, **investigue antes de refatorar** — ou alguém rodou uma extração nova (legítimo: recongele de
 propósito), ou algo mudou sozinho.
 
@@ -92,8 +93,9 @@ transformado, não o código que o transporta.
 Depois de cada fase: `verificar_paridade.py verificar` tem de sair OK. Sem
 isso o resto do plano é chute.
 
-> Sem a Fase 0, uma refatoração que troque duas métricas de lugar passa nos 75
-> testes do dbt exatamente como o bug do `union all` passou nos 65.
+> Sem a Fase 0, uma refatoração que troque duas métricas de lugar passa nos 65
+> testes do dbt exatamente como o bug do `union all` passou nos testes de
+> então.
 
 ### Mudança em relação ao plano original
 
@@ -134,8 +136,8 @@ Três defeitos apareceram durante a própria construção da rede de segurança:
 - Controle negativo: adulterar **um centavo** no golden faz o `verificar`
   acusar a divergência e sair com código 1.
 - A fixture é determinística: duas gerações produzem arquivos idênticos.
-- A fixture atravessa o pipeline inteiro num banco descartável — 75 testes dbt
-  passando — e exercita o que deveria: 2 versões SCD2 da campanha renomeada,
+- A fixture atravessa o pipeline inteiro num banco descartável — 65 testes dbt
+  passando (75 nós no `dbt build`) — e exercita o que deveria: 2 versões SCD2 da campanha renomeada,
   conversões do Google preservadas fracionadas, `video_views` zerado no dia de
   formato antigo e populado nos demais, e o mesmo `external_id` produzindo duas
   entidades distintas, uma em cada plataforma.
@@ -150,8 +152,8 @@ erro numa versão futura do dbt.
 
 ## Fase 1 — "Plataforma" declarada em 6 lugares
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
-passando.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 65 testes dbt
+passando (o `dbt build` reporta 75: são nós, 10 modelos + 65 testes).
 
 O conceito mais central do sistema está espalhado. Adicionar uma terceira
 plataforma (ou renomear um arquivo temporário) exige seis edições coordenadas,
@@ -217,8 +219,8 @@ Dois detalhes que exigiram cuidado:
   É o acoplamento silencioso fechado: existe **uma** declaração do caminho.
 - `--platforms tiktok` sai com código 2 e mensagem listando os valores aceitos,
   vindos do registro.
-- `main.py --skip-extract` completo: bronze recarregada, `dbt build` com 75
-  testes passando.
+- `main.py --skip-extract` completo: bronze recarregada, `dbt build` com 65
+  testes passando (75 nós).
 - `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`.
 
 ### Pendência empurrada para a Fase 2
@@ -233,8 +235,8 @@ funcionar de qualquer diretório sem gambiarra.
 
 ## Fase 2 — Infraestrutura transversal
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
-passando.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 65 testes dbt
+passando (o `dbt build` reporta 75: são nós, 10 modelos + 65 testes).
 
 | Item | Situação | Alvo |
 |---|---|---|
@@ -302,7 +304,7 @@ sem reintroduzir nenhum `sys.path.insert`.
   que motivava o `sys.path.insert`.
 - `grep -rn "sys.path" --include=*.py .` → nenhum resultado.
 - Fixture regenerada: `git diff tests/fixtures/` vazio, determinismo intacto.
-- `main.py --skip-extract` completo, 75 testes dbt, e o formato de log
+- `main.py --skip-extract` completo, 65 testes dbt (75 nós), e o formato de log
   configurado aparecendo na saída.
 - `verificar_paridade.py verificar` → `PARIDADE OK — 1677 linhas`.
 
@@ -310,8 +312,8 @@ sem reintroduzir nenhum `sys.path.insert`.
 
 ## Fase 3 — Extratores: contrato comum
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 75 testes dbt
-passando.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 65 testes dbt
+passando (o `dbt build` reporta 75: são nós, 10 modelos + 65 testes).
 
 `meta_ads.py` e `google_ads.py` duplicam a estrutura inteira: `save_raw`,
 `_parse_args`, `main`, e o esqueleto de `run` (init → discover → loop →
@@ -393,7 +395,7 @@ testada com dublês:
 - Credencial ausente (`META_ACCESS_TOKEN=`) → `SystemExit(1)` com
   `- META_ACCESS_TOKEN (Meta Ads)`.
 - `python -m extractors.meta_ads --help` e o do Google seguem funcionando.
-- `main.py --skip-extract`, 75 testes dbt, `PARIDADE OK — 1677 linhas`.
+- `main.py --skip-extract`, 65 testes dbt (75 nós), `PARIDADE OK — 1677 linhas`.
 
 **Sobre o tamanho:** os dois extratores perderam 118 linhas e ganharam 46; a
 casca comum tem 103. O total ficou praticamente igual — o ganho não é volume, é
@@ -455,7 +457,7 @@ não protege contra a armadilha nº 5 — que é sobre posição.
 
 ### Verificação
 
-- 76 testes dbt passando (75 + o novo).
+- 66 testes dbt passando (65 + o novo; 76 nós no `dbt build`).
 - **Controle negativo:** devolver `reach` à posição antiga em `stg_meta_ads` faz
   `assert_staging_mesmo_contrato` acusar **4 divergências** (`reach`,
   `conversions`, `conversion_value`, `video_views` — todas deslocadas) e o
@@ -468,8 +470,8 @@ não protege contra a armadilha nº 5 — que é sobre posição.
 
 ## Fase 5 — Gold: derivação de chave duplicada
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 76 testes dbt. O item
-5.3 mudou de forma: ver abaixo.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 66 testes dbt (76
+nós no `dbt build`). O item 5.3 mudou de forma: ver abaixo.
 
 | Item | Onde | Problema |
 |---|---|---|
@@ -507,7 +509,7 @@ uma melhoria real na forma de falhar.
 
 ### Verificação
 
-- 76 testes dbt passando.
+- 66 testes dbt passando (76 nós no `dbt build`).
 - **Controle negativo da var:** removendo `dim_anuncio` de `dimensoes_scd2`, o
   SQL compilado de `assert_scd2_uma_versao_atual` passa a cobrir só três
   dimensões; restaurando, volta a cobrir as quatro. (Primeira tentativa deste
@@ -521,8 +523,8 @@ uma melhoria real na forma de falhar.
 
 ## Fase 6 — A travessia da hierarquia (a lição dos 7,8%)
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, agora com **82**
-testes dbt.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, agora com **71**
+testes dbt (82 nós no `dbt build`: 11 modelos + 71 testes).
 
 A travessia correta das 5 dimensões, com a cláusula de validade em cada nível,
 está escrita **4 vezes**: três em `queries_demo.sql` (queries 2, 3 e 6) e uma
@@ -574,7 +576,8 @@ repositório onde duplicar é o certo.
   sobre os agregados por plataforma e dia → **0 divergências**. 1677 linhas na
   view, 1677 no fato, R$ 20.216,73 de investimento total — o valor correto, não
   o inflado de R$ 21.795,17.
-- 82 testes dbt (76 + 6 do contrato da view no `_gold.yml`).
+- 71 testes dbt (66 + 5 do contrato da view no `_gold.yml`); o `dbt build`
+  reporta 82 nós (11 modelos + 71 testes).
 - `queries_demo.sql` roda inteiro. A saída da query 3 foi comparada linha a
   linha com a versão anterior: **idêntica**.
 - `PARIDADE OK — 1677 linhas`.
@@ -593,7 +596,8 @@ mudança.
 
 ## Fase 7 — `main.py`: orquestração
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 82 testes dbt.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, 71 testes dbt (82
+nós no `dbt build`).
 
 | Item | Onde | Problema |
 |---|---|---|
@@ -640,7 +644,7 @@ decisão de segurança por simetria estética.
   URL de teste **não aparece em nenhuma linha do log** (0 ocorrências).
 - `config.ontem()`, o default do `main.py` e o dos extratores devolvem a mesma
   data.
-- `PARIDADE OK — 1677 linhas`, 82 testes dbt.
+- `PARIDADE OK — 1677 linhas`, 71 testes dbt (82 nós no `dbt build`).
 
 ---
 
@@ -696,14 +700,15 @@ Exercitada em diretório temporário, sem tocar no `.env` real:
 - `.env` ausente → `SystemExit` com `Arquivo nao encontrado: ...`, que é
   exatamente a divergência que existia entre as duas cópias.
 - Nenhum `.env.bak` apareceu na raiz do projeto: o `.env` real ficou intacto.
-- 82 testes dbt e `PARIDADE OK — 1677 linhas` (os scripts de OAuth não fazem
-  parte do pipeline, mas a conferência é barata).
+- 71 testes dbt (82 nós no `dbt build`) e `PARIDADE OK — 1677 linhas` (os
+  scripts de OAuth não fazem parte do pipeline, mas a conferência é barata).
 
 ---
 
 ## Fase 9 — Opcional: cobertura de campo
 
-✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, **83** testes dbt.
+✅ **Concluída em 07/08/2026.** Paridade OK — 1677 linhas, **72** testes dbt
+(o `PASS=83` do `dbt build` conta nós: 11 modelos + 72 testes).
 
 Nada liga `INSIGHT_FIELDS` (`meta_ads.py:24`) e a lista do `GAQL_ADS_TEMPLATE`
 (`google_ads.py:39`) aos modelos silver que leem essas chaves do payload.
@@ -752,7 +757,7 @@ do último lote do Meta, e nada impede um dia em que não apareça em nenhum. O
 
 ### Verificação
 
-- 83 testes dbt passando.
+- 72 testes dbt passando (83 nós no `dbt build`: 11 modelos + 72 testes).
 - **Controle negativo 1:** tirando `date_stop` das `ignoradas`, o teste falha e
   aponta a chave.
 - **Controle negativo 2 (o cenário real da fase):** fazendo `stg_meta_ads`
@@ -856,7 +861,9 @@ qualquer ordem, uma por commit.
 
 **Plano concluído.** As nove fases foram executadas em 06–07/08/2026, cada uma
 verificada contra o golden. O número não mudou uma vez: `1677 linhas` do
-início ao fim. A bateria de testes dbt foi de 75 para 83.
+início ao fim. A bateria de testes dbt foi de **65 para 72 testes** — o que o
+`dbt build` reporta como 75 e 83 é a contagem de **nós**, que soma os modelos
+(10 antes, 11 depois de a Fase 6 criar `vw_metricas_completas`).
 
 ## Depois do plano — a última armadilha
 
@@ -875,7 +882,7 @@ no `sys.path` e arquivo novo funciona na hora, sem rebuild e sem
 para o conteúdo literal `/app`; um módulo criado na raiz **depois** do build
 importa normalmente; imports a partir de `/tmp` continuam funcionando para
 `config`, `plataformas`, `loaders`, `extractors` e `benchmark`; pipeline
-completo com 83 testes, `python -m extractors.meta_ads --help`,
+completo com 72 testes, `python -m extractors.meta_ads --help`,
 `verificar_paridade` rodado de outro diretório, fixture regenerada sem diff e
 `PARIDADE OK — 1677 linhas`.
 

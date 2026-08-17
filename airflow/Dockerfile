@@ -8,7 +8,7 @@
 #
 # A variante `-python3.11` nao e detalhe: a imagem `apache/airflow:3.3.0` sem
 # sufixo traz Python 3.13, e o pipeline e verificado em 3.11 (mesma versao do
-# `Dockerfile` da raiz, `requires-python` do pyproject e dos 83 testes dbt).
+# `Dockerfile` da raiz, `requires-python` do pyproject e dos 72 testes dbt).
 # Orquestrar codigo num runtime diferente do que foi testado e trocar uma
 # garantia por uma suposicao.
 FROM apache/airflow:3.3.0-python3.11

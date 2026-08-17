@@ -123,8 +123,9 @@ docker exec tcc_airflow_scheduler airflow tasks test \
 Verificado ate aqui: a imagem constroi, os quatro servicos sobem, a DAG e lida
 sem erro de import, a janela renderiza `--start-date 2026-07-31 --end-date
 2026-08-06` para `ds=2026-08-06`, e as tasks `carrega_bronze` e
-`transforma_dbt` executam dentro do Airflow — a segunda com os **83 testes dbt
-passando**, o que prova o caminho inteiro (bind mount, import do projeto,
+`transforma_dbt` executam dentro do Airflow — a segunda com os **72 testes dbt
+passando** (o `PASS=83` do `dbt build` conta nós: 11 modelos + 72 testes), o
+que prova o caminho inteiro (bind mount, import do projeto,
 `DW_DB_URL` e conexao com o DW).
 
 **Ainda nao executadas: `extrai_meta` e `extrai_google`.** Elas chamam as APIs

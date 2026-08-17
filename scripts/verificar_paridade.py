@@ -2,7 +2,7 @@
 
 Por que existe
 --------------
-Os 75 testes do dbt verificam ESTRUTURA: unicidade, nao-nulidade, dominio,
+Os 72 testes do dbt verificam ESTRUTURA: unicidade, nao-nulidade, dominio,
 integridade referencial. Nenhum deles verifica se o numero continua o mesmo.
 Este repositorio ja demonstrou tres vezes que "os testes passaram" nao e
 evidencia de correcao:
