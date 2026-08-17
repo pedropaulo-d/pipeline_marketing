@@ -157,12 +157,13 @@ def extract_daily_ads(
     return rows
 
 
-def run(start_date: str, end_date: str) -> int:
+def run(start_date: str, end_date: str, run_id: str | None = None) -> int:
     """Executa a extração completa do Google Ads para o período informado.
 
     Args:
         start_date: Data inicial no formato ``YYYY-MM-DD``.
         end_date: Data final no formato ``YYYY-MM-DD``.
+        run_id: Identificador da execução, gravado no manifesto do artefato.
 
     Returns:
         Quantidade total de registros extraídos.
@@ -181,6 +182,7 @@ def run(start_date: str, end_date: str) -> int:
         extrair_conta=partial(extract_daily_ads, client),
         start_date=start_date,
         end_date=end_date,
+        run_id=run_id,
     )
 
 

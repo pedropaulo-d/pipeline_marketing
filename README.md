@@ -196,6 +196,8 @@ docker compose run --rm etl_app python loaders/bronze_loader.py
 tcc_pipeline_dados/
 |-- config.py                  # Env vars, logging, mascaramento, conexao do dbt
 |-- plataformas.py             # Registro unico das plataformas suportadas
+|-- janela.py                  # Janela movel: os 7 dias completos anteriores
+|-- manifesto.py               # Prova de origem do JSON bruto (fonte, run, janela)
 |-- main.py                    # Orquestrador: extracao -> bronze -> dbt build
 |-- Dockerfile                 # Python 3.11-slim, usuario non-root (UID 1000)
 |-- docker-compose.yml         # Servicos db (PostgreSQL 16) e etl_app

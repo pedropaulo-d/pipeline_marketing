@@ -8,10 +8,26 @@ A tabela e append-only. Reprocessar o mesmo periodo cria um lote novo em vez
 de sobrescrever o anterior; a deduplicacao acontece na camada silver, que
 considera apenas o snapshot mais recente de cada dia.
 
+Contrato com a extracao
+-----------------------
+Quando a carga recebe ``--run-id`` (o caso da DAG), cada arquivo bruto so e
+aceito se o manifesto ao lado dele provar que veio DESTA execucao: mesma fonte,
+mesmo ``run_id``, mesma janela e ``sha256`` batendo com o conteudo em disco.
+Sem essa prova a carga falha — antes, um arquivo sobrado de execucao anterior
+era reingerido em silencio como lote novo, e como a silver adota o snapshot
+mais recente, dado velho voltaria a valer.
+
+Sem ``--run-id`` (execucao local, `main.py --skip-extract`) a checagem e
+dispensada de proposito: ali os arquivos em disco SAO a entrada pretendida.
+
 Uso:
     docker compose run --rm etl_app python loaders/bronze_loader.py
+    python -m loaders.bronze_loader --sources meta_ads,google_ads \\
+        --run-id manual__2026-08-17T12:00:00 \\
+        --start-date 2026-08-10 --end-date 2026-08-16
 """
 
+import argparse
 import json
 import logging
 import uuid
@@ -21,6 +37,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
+import manifesto
 from config import configurar_logging, get_db_url
 from plataformas import fontes, por_fonte
 
@@ -159,7 +176,49 @@ def load_source(
     return len(linhas)
 
 
-def run(sources: list[str] | None = None) -> int:
+def _conferir_artefatos(
+    selecionadas: list[str], run_id: str, start_date: str, end_date: str
+) -> None:
+    """Exige que todo arquivo bruto a carregar pertenca a esta execucao.
+
+    A checagem acontece ANTES de qualquer insert, e para todas as fontes de uma
+    vez: aceitar o Meta e so entao descobrir que o Google e de outro run
+    deixaria a bronze com meia execucao dentro.
+
+    Args:
+        selecionadas: Fontes a carregar.
+        run_id: Identificador da execucao atual.
+        start_date: Primeiro dia da janela pedida.
+        end_date: Ultimo dia da janela pedida.
+
+    Raises:
+        ManifestoInvalido: Se qualquer artefato nao provar origem nesta
+            execucao.
+    """
+    for fonte in selecionadas:
+        plataforma = por_fonte(fonte)
+        registro = manifesto.validar(
+            plataforma, run_id=run_id, start_date=start_date, end_date=end_date
+        )
+        if registro.registros == 0:
+            logger.info(
+                "%s: extracao desta execucao retornou 0 registros — resultado "
+                "legitimo, nada a carregar.", fonte,
+            )
+        else:
+            logger.info(
+                "%s: artefato validado (run_id %s, janela %s a %s, %d registros).",
+                fonte, run_id, registro.start_date, registro.end_date,
+                registro.registros,
+            )
+
+
+def run(
+    sources: list[str] | None = None,
+    run_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> int:
     """Carrega os arquivos brutos disponiveis na camada bronze.
 
     Args:
@@ -168,12 +227,20 @@ def run(sources: list[str] | None = None) -> int:
             plataforma so: o arquivo bruto da outra pode ter sobrado de uma
             execucao anterior e seria reingerido como lote novo, inflando a
             bronze com uma copia de dado ja carregado.
+        run_id: Identificador da execucao. Quando informado, cada artefato
+            precisa provar, pelo manifesto, que veio dela — e a carga falha se
+            nao provar. Exige ``start_date`` e ``end_date``.
+        start_date: Primeiro dia da janela pedida a esta execucao.
+        end_date: Ultimo dia da janela pedida a esta execucao.
 
     Returns:
         Total de registros inseridos.
 
     Raises:
-        ValueError: Se alguma fonte informada for desconhecida.
+        ValueError: Se alguma fonte informada for desconhecida ou se
+            ``run_id`` vier sem a janela correspondente.
+        manifesto.ManifestoInvalido: Se algum artefato nao pertencer a esta
+            execucao.
     """
     selecionadas = fontes() if sources is None else sources
     invalidas = set(selecionadas) - set(fontes())
@@ -181,6 +248,19 @@ def run(sources: list[str] | None = None) -> int:
         raise ValueError(
             f"Fonte desconhecida: {', '.join(sorted(invalidas))}. "
             f"Valores aceitos: {', '.join(fontes())}."
+        )
+
+    if run_id is not None:
+        if not (start_date and end_date):
+            raise ValueError(
+                "--run-id exige --start-date e --end-date: sem a janela nao ha "
+                "como conferir se o artefato e o desta execucao."
+            )
+        _conferir_artefatos(selecionadas, run_id, start_date, end_date)
+    else:
+        logger.warning(
+            "Carga sem run_id: os arquivos brutos em disco serao aceitos como "
+            "estao (modo local / --skip-extract)."
         )
 
     engine = get_engine()
@@ -213,10 +293,49 @@ def run(sources: list[str] | None = None) -> int:
     return total
 
 
+def _parse_args() -> argparse.Namespace:
+    """Parseia os argumentos da carga.
+
+    Returns:
+        Namespace com ``sources``, ``run_id``, ``start_date`` e ``end_date``.
+    """
+    parser = argparse.ArgumentParser(description="Carga da camada bronze.")
+    parser.add_argument(
+        "--sources",
+        default=None,
+        help=(
+            "Fontes a carregar, separadas por virgula "
+            f"({', '.join(fontes())}). Default: todas."
+        ),
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help=(
+            "Identificador da execucao. Com ele, cada artefato precisa provar "
+            "no manifesto que veio desta execucao. Exige --start-date e "
+            "--end-date."
+        ),
+    )
+    parser.add_argument("--start-date", default=None, help="Janela: primeiro dia.")
+    parser.add_argument("--end-date", default=None, help="Janela: ultimo dia.")
+
+    args = parser.parse_args()
+    if args.sources:
+        args.sources = [f.strip() for f in args.sources.split(",") if f.strip()]
+    return args
+
+
 def main() -> None:
     """Entry point para execucao standalone via CLI."""
     configurar_logging()
-    run()
+    args = _parse_args()
+    run(
+        sources=args.sources,
+        run_id=args.run_id,
+        start_date=args.start_date,
+        end_date=args.end_date,
+    )
 
 
 if __name__ == "__main__":

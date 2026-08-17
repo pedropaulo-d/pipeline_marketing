@@ -21,6 +21,13 @@ logs/
 # tests/fixtures/temp_meta_raw.json e excluia a fixture sintetica em silencio.
 /temp_meta_raw.json
 /temp_google_raw.json
+# Manifestos de extracao: acompanham os brutos e carregam janela, run_id e
+# sha256. Nao tem dado de cliente, mas descrevem um artefato que nao existe
+# num clone limpo — versiona-los so criaria manifesto orfao.
+/temp_meta_raw.manifesto.json
+/temp_google_raw.manifesto.json
+# Resto de escrita atomica interrompida (arquivo vizinho antes do `os.replace`).
+*.parcial
 *.log
 
 # (Opcional) Se for salvar arquivos CSV/JSON futuros de transformação

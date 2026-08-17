@@ -197,7 +197,7 @@ def executar_etapa(
 
 
 def run_extraction(
-    start_date: str, end_date: str, platforms: list[str]
+    start_date: str, end_date: str, platforms: list[str], run_id: str | None = None
 ) -> dict[str, int]:
     """Executa a extração das plataformas selecionadas.
 
@@ -205,6 +205,8 @@ def run_extraction(
         start_date: Data inicial no formato ``YYYY-MM-DD``.
         end_date: Data final no formato ``YYYY-MM-DD``.
         platforms: Plataformas a extrair (``"meta"`` e/ou ``"google"``).
+        run_id: Identificador desta execução, gravado no manifesto de cada
+            artefato para que a carga possa exigir a prova de origem.
 
     Returns:
         Mapa ``{plataforma: registros_extraidos}``.
@@ -216,24 +218,33 @@ def run_extraction(
     for chave in platforms:
         plataforma = PLATAFORMAS[chave]
         logger.info("Extraindo %s...", plataforma.nome)
-        counts[chave] = plataforma.extrair(start_date, end_date)
+        counts[chave] = plataforma.extrair(start_date, end_date, run_id)
 
     return counts
 
 
-def run_bronze(sources: list[str] | None = None) -> int:
+def run_bronze(
+    sources: list[str] | None = None,
+    run_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> int:
     """Carrega os arquivos brutos na camada bronze, sem transformar.
 
     Args:
         sources: Fontes da bronze a carregar. ``None`` carrega todas — o caso
             de ``--skip-extract``, em que os arquivos em disco são a entrada.
+        run_id: Identificador desta execução. Quando informado, cada artefato
+            precisa provar no manifesto que veio dela.
+        start_date: Primeiro dia da janela extraída.
+        end_date: Último dia da janela extraída.
 
     Returns:
         Quantidade de registros inseridos.
     """
     from loaders import bronze_loader
 
-    return bronze_loader.run(sources)
+    return bronze_loader.run(sources, run_id, start_date, end_date)
 
 
 def run_dbt() -> None:
@@ -286,6 +297,11 @@ def main() -> None:
     validate_env(groups=groups)
 
     # ── Extração ──
+    # Identificador desta execução: vai para o manifesto de cada artefato e é
+    # o que permite à carga recusar um JSON sobrado de outra execução. Fora do
+    # Airflow não existe `run_id`, então o pipeline gera o seu.
+    run_id = f"local__{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}"
+
     counts: dict[str, int] = {}
     if args.skip_extract:
         _cabecalho(ETAPA_EXTRACAO, "IGNORADA (--skip-extract)")
@@ -293,7 +309,9 @@ def main() -> None:
     else:
         counts = executar_etapa(
             ETAPA_EXTRACAO,
-            lambda: run_extraction(args.start_date, args.end_date, args.platforms),
+            lambda: run_extraction(
+                args.start_date, args.end_date, args.platforms, run_id
+            ),
             detalhe=f"(período: {args.start_date} a {args.end_date})",
         )
 
@@ -304,11 +322,21 @@ def main() -> None:
     # ── Carga bruta na bronze ──
     # Com --platforms restrito, só a fonte recém-extraída entra: o arquivo
     # bruto da outra plataforma pode ter sobrado de uma execução anterior.
+    # Com --skip-extract não há execução de origem para exigir, e os arquivos
+    # em disco são deliberadamente a entrada — por isso o `run_id` não vai.
     fontes = (
         None if args.skip_extract
         else [PLATAFORMAS[p].fonte_bronze for p in args.platforms]
     )
-    bronze_count = executar_etapa(ETAPA_BRONZE, lambda: run_bronze(fontes))
+    bronze_count = executar_etapa(
+        ETAPA_BRONZE,
+        lambda: run_bronze(
+            fontes,
+            None if args.skip_extract else run_id,
+            None if args.skip_extract else args.start_date,
+            None if args.skip_extract else args.end_date,
+        ),
+    )
 
     # ── Transformação no banco + testes de dados ──
     # Única etapa com `detalhar_erro`: a mensagem do RuntimeError é nossa e

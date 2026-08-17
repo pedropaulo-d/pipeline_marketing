@@ -55,7 +55,25 @@ class Plataforma:
     modulo_extrator: str
     variaveis_obrigatorias: tuple[str, ...]
 
-    def extrair(self, start_date: str, end_date: str) -> int:
+    @property
+    def arquivo_manifesto(self) -> Path:
+        """Caminho do manifesto que acompanha o arquivo bruto.
+
+        Derivado do `arquivo_bruto` com `with_name`, e nao com `with_suffix`:
+        `Path('temp_meta_raw.json').with_suffix('.manifest.json')` produziria
+        um nome plausivel aqui, mas e a mesma armadilha que ja gerou
+        `.env.env.bak` neste repositorio.
+
+        Returns:
+            Caminho do manifesto (ex: ``temp_meta_raw.manifesto.json``).
+        """
+        return self.arquivo_bruto.with_name(
+            f"{self.arquivo_bruto.stem}.manifesto.json"
+        )
+
+    def extrair(
+        self, start_date: str, end_date: str, run_id: str | None = None
+    ) -> int:
         """Executa a extracao desta plataforma no periodo informado.
 
         O modulo do extrator e importado aqui dentro, e nao no topo do arquivo,
@@ -66,12 +84,14 @@ class Plataforma:
         Args:
             start_date: Data inicial no formato ``YYYY-MM-DD``.
             end_date: Data final no formato ``YYYY-MM-DD``.
+            run_id: Identificador da execucao, gravado no manifesto para que o
+                loader consiga provar que o arquivo bruto veio dela.
 
         Returns:
             Quantidade de registros extraidos.
         """
         modulo = importlib.import_module(self.modulo_extrator)
-        return modulo.run(start_date, end_date)
+        return modulo.run(start_date, end_date, run_id)
 
 
 PLATAFORMAS: dict[str, Plataforma] = {

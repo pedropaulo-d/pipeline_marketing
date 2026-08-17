@@ -23,5 +23,5 @@ requires-python = ">=3.11"
 [tool.setuptools]
 # `main` fica de fora de proposito: e o entrypoint do pipeline, nao uma
 # biblioteca, e ninguem faz `import main`. Continua rodando como `python main.py`.
-py-modules = ["config", "plataformas"]
+py-modules = ["config", "plataformas", "janela", "manifesto"]
 packages = ["extractors", "loaders", "benchmark"]

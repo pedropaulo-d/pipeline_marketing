@@ -187,9 +187,9 @@ Não defenda com opinião — defenda com medição. Proposta: incluir um
 ### Bloco B — Arquitetura
 
 - [ ] **B1.** O modelo está como Snowflake (Plataforma → Conta → Campanha → AdSet → Anúncio). Vê problema em defender isso em vez de achatar num Star Schema?
-- [ ] **B2.** **SCD Tipo 2** é esperado para nível de TCC? Está implementado desde 05/08 — renomear uma campanha cria uma versão nova em vez de sobrescrever o histórico. O DW tem 3 versões, todas nascidas da fronteira abril↔agosto.
+- [ ] **B2.** **SCD Tipo 2** é esperado para nível de TCC? Está implementado desde 05/08 — renomear uma campanha cria uma versão nova em vez de sobrescrever o histórico. O DW tem **7 entidades versionadas** — 1 conta, 3 campanhas e 3 adsets, com duas versões cada —, todas nascidas da fronteira abril↔agosto (medido em 17/08/2026).
 - [ ] **B3.** O ELT em camadas **já está implementado** com dbt. A troca custou as foreign keys do banco, que viraram testes `relationships`. O senhor considera essa perda aceitável, dado o ganho em testabilidade e rastreabilidade?
-- [ ] **B4.** **Airflow é requisito ou meio?** Implementado em 07/08 (3.3.0, uma task por etapa, janela móvel de 7 dias, DAG nasce pausada). A ferramenta será avaliada, ou o que importa é demonstrar orquestração?
+- [ ] **B4.** **Airflow é requisito ou meio?** Implementado em 07/08 (3.3.0, uma task por etapa, janela móvel dos 7 dias completos anteriores, DAG nasce pausada). A ferramenta será avaliada, ou o que importa é demonstrar orquestração?
 
 > [!check] Onde eu quero chegar
 > **B2 é a pergunta que ele provavelmente faria primeiro** — chegar nela antes
@@ -269,7 +269,7 @@ descartava silenciosamente ~1% das conversões (376 contra 380,29 reais).
 
 ### Resolvida em 07/08
 
-- ~~Sem orquestração~~ → **Airflow 3.3.0**, DAG `pipeline_marketing_diario`: uma task por etapa (retry seletivo em vez de reexecutar 2 min de extração), janela móvel de 7 dias porque as métricas do Meta mudam retroativamente por até 28 dias, `catchup=False` para não achatar o SCD2, e a DAG nasce pausada porque consome API de produção com dado real.
+- ~~Sem orquestração~~ → **Airflow 3.3.0**, DAG `pipeline_marketing_diario`: uma task por etapa (retry seletivo em vez de reexecutar 2 min de extração), janela móvel dos 7 dias completos anteriores (D-7 a D-1) porque as métricas do Meta mudam retroativamente por até 28 dias, `catchup=False` para não achatar o SCD2, e a DAG nasce pausada porque consome API de produção com dado real.
 
 ---
 
