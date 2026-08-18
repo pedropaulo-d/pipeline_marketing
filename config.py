@@ -5,6 +5,12 @@ existam antes de qualquer modulo do pipeline ser executado.  Se alguma
 variavel faltar, o processo encerra imediatamente com mensagem clara
 (sem expor valores).  A funcao ``mask()`` oculta parcialmente valores
 sensiveis para uso seguro em logs.
+
+``PSEUDONIMIZACAO_CHAVE`` tambem chega pelo ``.env`` carregado aqui, mas
+**nao** entra em ``validate_env``: ela nao e credencial de plataforma e o
+pipeline nao precisa dela para rodar. Quem valida e ``pseudonimos.py``, na
+fronteira de exposicao — exigir a chave para extrair ou transformar acoplaria
+duas coisas independentes.
 """
 
 import logging

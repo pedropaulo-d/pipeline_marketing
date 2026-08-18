@@ -141,5 +141,16 @@ models:
               values: ['Meta Ads', 'Google Ads']
       - name: anuncio_nk
         tests: [not_null]
+      # As quatro versoes SCD2 sao o que a superficie de exposicao usa para
+      # demonstrar versionamento sem reimplementar a travessia. Versao ausente
+      # ou menor que 1 significaria versao nao resolvida na data do fato.
+      - name: conta_versao
+        tests: [not_null]
+      - name: campanha_versao
+        tests: [not_null]
+      - name: adset_versao
+        tests: [not_null]
+      - name: anuncio_versao
+        tests: [not_null]
       - name: spend
         tests: [not_null]

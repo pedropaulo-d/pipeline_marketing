@@ -55,11 +55,19 @@ select
     -- Hierarquia, do topo para a folha. A chave natural acompanha o nome
     -- porque agrupar por nome funde entidades homonimas e separa as que foram
     -- renomeadas; agrupar por `_nk` e o criterio estavel.
+    --
+    -- O numero da versao SCD2 sai nos QUATRO niveis. Ele nao vem de join novo:
+    -- as linhas de dimensao ja foram resolvidas pela clausula de validade
+    -- abaixo, entao `versao` e uma projecao da versao vigente naquela data.
+    -- Quem consome a superficie de exposicao usa isso para demonstrar SCD2 sem
+    -- reimplementar a travessia — a reimplementacao e exatamente o que ja
+    -- inflou os agregados neste projeto.
     p.nome                  as plataforma,
 
     ct.conta_nk,
     ct.external_id          as conta_external_id,
     ct.nome                 as conta_nome,
+    ct.versao               as conta_versao,
 
     c.campanha_nk,
     c.external_id           as campanha_external_id,
@@ -69,10 +77,12 @@ select
     s.adset_nk,
     s.external_id           as adset_external_id,
     s.nome                  as adset_nome,
+    s.versao                as adset_versao,
 
     a.anuncio_nk,
     a.external_id           as anuncio_external_id,
     a.nome                  as anuncio_nome,
+    a.versao                as anuncio_versao,
 
     -- Metricas, no mesmo grao do fato
     f.spend,
