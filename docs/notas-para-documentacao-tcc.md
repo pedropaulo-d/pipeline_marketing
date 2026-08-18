@@ -333,22 +333,32 @@ de cada extração*, não o estado real da plataforma naquele dia. É uma
 aproximação, e a única possível sem *change data capture* na origem. Ela
 subestima renomeações ocorridas entre duas extrações.
 
-### 4.6 Anonimização fora do pipeline
+### 4.6 Pseudonimização fora do pipeline
 
-⚖️ **Decisão:** a anonimização roda na fronteira da publicação, não na ingestão.
+⚖️ **Decisão:** a pseudonimização roda na fronteira de exposição, não na
+ingestão.
 
 **Justificativa:** mantém a lógica do pipeline idêntica para dado real e dado
-anonimizado, evitando dois caminhos de código que poderiam divergir.
+pseudonimizado, evitando dois caminhos de transformação que poderiam divergir.
+O material principal da Defesa é exportado da view canônica do Gold para uma
+superfície própria; o JSON bruto desidentificado é apenas ferramenta secundária
+de reprodução.
 
 **Princípios adotados:**
 
-1. Pseudonimização determinística — o mesmo nome sempre gera o mesmo
-   pseudônimo. Sem isso, cada execução criaria entidades novas e inflaria as
-   dimensões.
-2. Preservação da estrutura, substituição da identidade — a convenção de
-   nomenclatura permanece analisável.
-3. Métricas intactas — sem os nomes, valores não identificam ninguém, e
-   alterá-los destruiria a validade analítica do dataset.
+1. HMAC-SHA256 com chave local não versionada e separação de domínio por nível
+   e plataforma — a mesma entidade mantém o rótulo, sem mapa persistente nem
+   salt atacável por dicionário.
+2. Substituição integral dos nomes — marca, datas embutidas, localidades,
+   produtos, colchetes e convenções internas não sobrevivem como fingerprint.
+   Nome e ID recebem a mesma identidade pública.
+3. Contrato *fail closed* — coluna, campo aninhado ou tipo de ação novo exige
+   revisão explícita; nada desconhecido é copiado por omissão.
+4. Métricas e datas intactas — a transformação não arredonda, converte nem
+   trunca valores, inclusive conversões fracionadas e itens de ação.
+5. Destinos têm intenção distinta: `data/anonimizado/` é local e secundário;
+   `data/exposicao/` é a superfície da Defesa; `data/publico/` exige flag e
+   autorização específica da agência.
 
 ---
 
