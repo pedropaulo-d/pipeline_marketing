@@ -22,6 +22,30 @@ Uso
     python scripts/verificar_paridade.py congelar   # grava o golden
     python scripts/verificar_paridade.py verificar  # compara; exit 1 se divergir
 
+Como a comparacao funciona
+--------------------------
+`verificar` continua saindo com 0 quando tudo bate e 1 quando qualquer numero
+diverge. O que mudou e o RELATORIO.
+
+As colecoes com identidade natural (`_CHAVES_NATURAIS`) sao comparadas por
+chave, e cada chave e classificada:
+
+- NOVO      — chave presente agora e ausente no golden;
+- REMOVIDO  — chave que existia no golden e sumiu;
+- ALTERADO  — chave nos dois lados, com pelo menos um campo diferente (o
+              relatorio mostra campo, valor do golden, valor atual e delta);
+- IDENTICO  — chave nos dois lados sem nenhuma diferenca (so contada).
+
+Consequencia pratica: **ordem de lista nao e divergencia**. Antes, um dia novo
+em `por_plataforma_dia` deslocava todas as posicoes seguintes e produzia
+dezenas de "era X, agora Y" falsos — foi o que aconteceu no primeiro DagRun
+real (17/08/2026), com 77 diferencas relatadas enquanto as 10 chaves
+historicas estavam intactas. As estruturas sem chave natural continuam na
+comparacao recursiva de `_diferencas`.
+
+A deteccao nao arredonda nem converte para float: compara os valores como
+estao gravados. Arredondamento existe so na apresentacao do delta.
+
 Quando o dado muda de verdade
 -----------------------------
 Uma extracao nova legitimamente altera os numeros (metricas mudam
@@ -33,13 +57,27 @@ deve ser revisada. O que o script impede e a alteracao silenciosa.
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 GOLDEN_PATH: Path = BASE_DIR / "tests" / "golden" / "agregados_gold.json"
+
+# Colecoes do golden que tem identidade natural — comparadas POR CHAVE, nunca
+# por posicao. Ordem de lista deixa de ser diferenca; dia novo vira NOVO em vez
+# de deslocar todo o resto.
+#
+# Sao so estas duas de proposito: `totais_fato` e `travessia` sao dicts
+# escalares, e nada mais no golden tem chave inequivoca. Nao existe framework
+# de diff aqui — o que nao esta nesta tabela cai na comparacao recursiva de
+# `_diferencas`.
+_CHAVES_NATURAIS: dict[str, tuple[str, ...]] = {
+    "por_plataforma_dia": ("plataforma", "data"),
+    "contagens": ("objeto",),
+}
 
 # As metricas sao somadas com `round(...)::text` porque a comparacao precisa
 # ser exata: converter para float introduziria diferenca de representacao onde
@@ -232,7 +270,11 @@ def congelar() -> None:
 
 
 def _diferencas(esperado, obtido, caminho: str = "") -> list[str]:
-    """Compara duas estruturas e descreve cada divergencia encontrada.
+    """Compara duas estruturas por posicao/recursao e descreve as divergencias.
+
+    Usada nas estruturas SEM chave natural (``totais_fato``, ``travessia`` e
+    qualquer bloco novo que apareca no golden). Para as colecoes listadas em
+    ``_CHAVES_NATURAIS`` quem compara e ``_comparar_por_chave``.
 
     Args:
         esperado: Valor do golden.
@@ -270,6 +312,354 @@ def _diferencas(esperado, obtido, caminho: str = "") -> list[str]:
     return []
 
 
+class _Ausente:
+    """Marcador para campo que existe de um lado so."""
+
+    def __repr__(self) -> str:
+        return "<ausente>"
+
+
+_AUSENTE = _Ausente()
+
+
+@dataclass(frozen=True)
+class CampoAlterado:
+    """Um campo que mudou dentro de um item identificado por chave."""
+
+    campo: str
+    golden: object
+    atual: object
+
+
+@dataclass(frozen=True)
+class ItemAlterado:
+    """Item presente nos dois lados, com pelo menos um campo diferente."""
+
+    chave: tuple[str, ...]
+    campos: tuple[CampoAlterado, ...]
+
+
+@dataclass(frozen=True)
+class DiffKeyed:
+    """Resultado da comparacao por chave natural de uma colecao."""
+
+    nome: str
+    chave: tuple[str, ...]
+    novas: tuple[tuple[str, ...], ...]
+    removidas: tuple[tuple[str, ...], ...]
+    alteradas: tuple[ItemAlterado, ...]
+    identicas: int
+
+    @property
+    def divergencias(self) -> int:
+        """Quantas chaves divergem: novas + removidas + alteradas."""
+        return len(self.novas) + len(self.removidas) + len(self.alteradas)
+
+
+@dataclass(frozen=True)
+class Divergencias:
+    """Tudo o que difere entre o golden e o estado atual."""
+
+    keyed: tuple[DiffKeyed, ...]
+    outros: tuple[str, ...]
+
+    @property
+    def total(self) -> int:
+        """Numero de divergencias, somando as keyed e as demais."""
+        return sum(d.divergencias for d in self.keyed) + len(self.outros)
+
+    def houve(self) -> bool:
+        """Diz se existe qualquer divergencia."""
+        return self.total > 0
+
+
+def _indexar(colecao, campos: tuple[str, ...]) -> dict | None:
+    """Indexa uma colecao pela chave natural.
+
+    Args:
+        colecao: Valor vindo do golden ou do banco.
+        campos: Campos que formam a chave.
+
+    Returns:
+        Dict ``chave -> item``, ou ``None`` se a colecao nao for indexavel
+        (nao e lista de dicts, falta campo de chave ou a chave se repete).
+        ``None`` nunca e sucesso silencioso: quem chama cai para a comparacao
+        posicional e registra o aviso.
+    """
+    if not isinstance(colecao, list):
+        return None
+
+    indice: dict[tuple[str, ...], dict] = {}
+    for item in colecao:
+        if not isinstance(item, dict):
+            return None
+        if any(campo not in item for campo in campos):
+            return None
+        # Chave sempre como texto, na ordem declarada em `_CHAVES_NATURAIS`.
+        chave = tuple(str(item[campo]) for campo in campos)
+        if chave in indice:
+            return None
+        indice[chave] = item
+    return indice
+
+
+def _campos_alterados(
+    esperado: dict, obtido: dict, campos_chave: tuple[str, ...]
+) -> tuple[CampoAlterado, ...]:
+    """Lista os campos que mudaram entre duas versoes do mesmo item.
+
+    A comparacao usa os valores originais — sem arredondar, sem converter para
+    float. Formatacao e assunto do relatorio, nao da deteccao.
+
+    Args:
+        esperado: Item do golden.
+        obtido: Item atual.
+        campos_chave: Campos que formam a chave (nao entram na comparacao,
+            por definicao sao iguais dos dois lados).
+
+    Returns:
+        Tupla ordenada por nome de campo, para o relatorio ser deterministico.
+    """
+    alterados: list[CampoAlterado] = []
+    for campo in sorted(set(esperado) | set(obtido)):
+        if campo in campos_chave:
+            continue
+        antes = esperado.get(campo, _AUSENTE)
+        agora = obtido.get(campo, _AUSENTE)
+        if antes != agora:
+            alterados.append(CampoAlterado(campo, antes, agora))
+    return tuple(alterados)
+
+
+def _comparar_por_chave(
+    nome: str, esperado, obtido, campos: tuple[str, ...]
+) -> tuple[DiffKeyed | None, str | None]:
+    """Compara uma colecao por chave natural, ignorando a ordem dos itens.
+
+    Args:
+        nome: Nome do bloco no golden.
+        esperado: Colecao do golden.
+        obtido: Colecao atual.
+        campos: Campos que formam a chave.
+
+    Returns:
+        ``(DiffKeyed, None)`` em caso normal; ``(None, aviso)`` quando a
+        colecao nao pode ser indexada e a comparacao precisa cair para o
+        modo posicional.
+    """
+    indice_esperado = _indexar(esperado, campos)
+    indice_obtido = _indexar(obtido, campos)
+    if indice_esperado is None or indice_obtido is None:
+        return None, (
+            f"{nome}: nao foi possivel indexar por "
+            f"({', '.join(campos)}) — item sem campo de chave, chave "
+            "repetida ou formato inesperado; comparado por posicao"
+        )
+
+    chaves_esperadas = set(indice_esperado)
+    chaves_obtidas = set(indice_obtido)
+
+    alteradas: list[ItemAlterado] = []
+    identicas = 0
+    for chave in sorted(chaves_esperadas & chaves_obtidas):
+        campos_alterados = _campos_alterados(
+            indice_esperado[chave], indice_obtido[chave], campos
+        )
+        if campos_alterados:
+            alteradas.append(ItemAlterado(chave, campos_alterados))
+        else:
+            identicas += 1
+
+    diff = DiffKeyed(
+        nome=nome,
+        chave=tuple(campos),
+        novas=tuple(sorted(chaves_obtidas - chaves_esperadas)),
+        removidas=tuple(sorted(chaves_esperadas - chaves_obtidas)),
+        alteradas=tuple(alteradas),
+        identicas=identicas,
+    )
+    return diff, None
+
+
+def comparar(esperado: dict, obtido: dict) -> Divergencias:
+    """Compara o golden com o estado atual e devolve as diferencas.
+
+    Nao imprime, nao decide exit code e nao altera nenhum dos dois lados:
+    a deteccao fica separada da apresentacao (`formatar`) e da CLI.
+
+    Args:
+        esperado: Bloco ``agregados`` do golden.
+        obtido: Agregados coletados agora.
+
+    Returns:
+        Estrutura ``Divergencias``, vazia quando os dois lados sao iguais.
+    """
+    keyed: list[DiffKeyed] = []
+    outros: list[str] = []
+
+    for nome in sorted(set(esperado) | set(obtido)):
+        if nome not in esperado:
+            outros.append(f"{nome}: surgiu (agora {obtido[nome]!r})")
+            continue
+        if nome not in obtido:
+            outros.append(f"{nome}: sumiu (era {esperado[nome]!r})")
+            continue
+
+        campos = _CHAVES_NATURAIS.get(nome)
+        if campos is None:
+            outros += _diferencas(esperado[nome], obtido[nome], nome)
+            continue
+
+        diff, aviso = _comparar_por_chave(
+            nome, esperado[nome], obtido[nome], campos
+        )
+        if diff is None:
+            outros.append(aviso)
+            outros += _diferencas(esperado[nome], obtido[nome], nome)
+        else:
+            keyed.append(diff)
+
+    return Divergencias(keyed=tuple(keyed), outros=tuple(outros))
+
+
+def _numero(valor) -> Decimal | None:
+    """Converte para Decimal quando o valor for numerico de verdade.
+
+    Args:
+        valor: Valor do golden ou atual.
+
+    Returns:
+        ``Decimal`` finito, ou ``None`` quando o valor nao e numerico.
+    """
+    if isinstance(valor, bool) or isinstance(valor, _Ausente) or valor is None:
+        return None
+    if isinstance(valor, Decimal):
+        numero = valor
+    elif isinstance(valor, (int, float)):
+        numero = Decimal(str(valor))
+    elif isinstance(valor, str):
+        try:
+            numero = Decimal(valor)
+        except InvalidOperation:
+            return None
+    else:
+        return None
+    return numero if numero.is_finite() else None
+
+
+def _texto_numero(numero: Decimal) -> str:
+    """Formata um Decimal sem notacao exponencial e sem zeros a direita.
+
+    Args:
+        numero: Valor a apresentar.
+
+    Returns:
+        Texto legivel: ``1568.96``, ``170``, ``-11.16``.
+    """
+    texto = format(numero, "f")
+    if "." in texto:
+        texto = texto.rstrip("0").rstrip(".")
+    return texto or "0"
+
+
+def _apresentar(valor) -> str:
+    """Devolve a forma legivel de um valor para o relatorio.
+
+    Args:
+        valor: Valor do golden ou atual.
+
+    Returns:
+        Numero enxuto quando for numerico; ``repr`` caso contrario.
+    """
+    numero = _numero(valor)
+    return _texto_numero(numero) if numero is not None else repr(valor)
+
+
+def _delta(golden, atual) -> str | None:
+    """Descreve a variacao entre dois valores numericos.
+
+    Apresentacao apenas: a divergencia ja foi detectada com os valores
+    originais, na precisao em que o projeto os grava.
+
+    Args:
+        golden: Valor do golden.
+        atual: Valor atual.
+
+    Returns:
+        Texto como ``+11.16 (+0.71%)``, ou ``None`` se algum lado nao for
+        numerico. O percentual sai fora quando o golden e zero — nao ha
+        variacao relativa a partir de zero — e vira ``<0.01%`` quando a
+        variacao existe mas some no arredondamento.
+    """
+    antes = _numero(golden)
+    agora = _numero(atual)
+    if antes is None or agora is None:
+        return None
+
+    diferenca = agora - antes
+    texto = f"{'+' if diferenca > 0 else ''}{_texto_numero(diferenca)}"
+    if antes != 0:
+        percentual = (diferenca / abs(antes) * Decimal(100)).quantize(
+            Decimal("0.01")
+        )
+        if percentual == 0:
+            # Houve mudanca, mas ela some no arredondamento. Escrever "0%"
+            # sugeriria que nada mudou — a divergencia e real.
+            texto += f" ({'+' if diferenca > 0 else '-'}<0.01%)"
+        else:
+            sinal = "+" if percentual > 0 else ""
+            texto += f" ({sinal}{_texto_numero(percentual)}%)"
+    return texto
+
+
+def formatar(divergencias: Divergencias) -> list[str]:
+    """Transforma as divergencias em relatorio legivel.
+
+    Args:
+        divergencias: Estrutura devolvida por `comparar`.
+
+    Returns:
+        Linhas do relatorio. A ordem depende so do conteudo, nunca da ordem
+        em que os itens chegaram.
+    """
+    linhas = [f"PARIDADE DIVERGENTE — {divergencias.total} divergencia(s)"]
+
+    for diff in divergencias.keyed:
+        if diff.divergencias == 0:
+            continue
+        linhas.append("")
+        linhas.append(f"{diff.nome} (chave: {' | '.join(diff.chave)}):")
+        linhas.append(f"  novas:     {len(diff.novas)}")
+        linhas.append(f"  removidas: {len(diff.removidas)}")
+        linhas.append(f"  alteradas: {len(diff.alteradas)}")
+        linhas.append(f"  identicas: {diff.identicas}")
+
+        if diff.novas:
+            linhas.append("  NOVO:")
+            linhas += [f"    + {' | '.join(chave)}" for chave in diff.novas]
+        if diff.removidas:
+            linhas.append("  REMOVIDO:")
+            linhas += [f"    - {' | '.join(chave)}" for chave in diff.removidas]
+        if diff.alteradas:
+            linhas.append("  ALTERADO:")
+            for item in diff.alteradas:
+                linhas.append(f"    ~ {' | '.join(item.chave)}")
+                for campo in item.campos:
+                    linhas.append(f"        {campo.campo}:")
+                    linhas.append(f"          golden: {_apresentar(campo.golden)}")
+                    linhas.append(f"          atual:  {_apresentar(campo.atual)}")
+                    delta = _delta(campo.golden, campo.atual)
+                    if delta is not None:
+                        linhas.append(f"          delta:  {delta}")
+
+    if divergencias.outros:
+        linhas.append("")
+        linhas.append("outros:")
+        linhas += [f"  - {problema}" for problema in divergencias.outros]
+
+    return linhas
+
+
 def verificar() -> int:
     """Compara o estado atual da gold com o golden gravado.
 
@@ -288,17 +678,16 @@ def verificar() -> int:
     with _conectar() as conn:
         atual = coletar(conn)
 
-    problemas = _diferencas(golden["agregados"], atual)
+    divergencias = comparar(golden["agregados"], atual)
 
-    if not problemas:
+    if not divergencias.houve():
         linhas = atual["totais_fato"]["linhas"]
         print(f"PARIDADE OK — {linhas} linhas no fato, todos os agregados batem.")
         print(f"  golden de {golden['gerado_em']}")
         return 0
 
-    print(f"PARIDADE QUEBRADA — {len(problemas)} divergencia(s):", file=sys.stderr)
-    for problema in problemas:
-        print(f"  - {problema}", file=sys.stderr)
+    for linha in formatar(divergencias):
+        print(linha, file=sys.stderr)
     print(
         "\nSe a mudanca for legitima (extracao nova, correcao deliberada), "
         "recongele com `congelar` e revise o diff no commit.",
