@@ -56,6 +56,14 @@ formalmente, em nível somente-leitura.
 
 ## 2. Fatos medidos sobre o sistema
 
+⚠️ **Os números desta seção são o retrato de 06/08/2026, quando havia cinco dias
+carregados.** Execuções reais posteriores do pipeline ampliaram o armazém e
+alteraram volume, período coberto e agregados. Antes de levar qualquer número
+daqui para a monografia, confirmar o valor vigente no banco. O que **não**
+envelhece são as decisões da seção 4 e os achados da seção 5, que dependem da
+ordem de grandeza e do mecanismo, não do total do dia.
+
+
 ### 2.1 Volume de dados
 
 📊 Números verificados em 06/08/2026:
@@ -671,6 +679,98 @@ por essa rota precisa ser recalculado antes de entrar no texto. A tabela da
 seção 2.3 já foi corrigida.
 
 ---
+
+### 5.10 Deriva retroativa medida em produção
+
+🔍 O experimento mais forte do trabalho sobre a natureza da fonte. Uma execução
+agendada do pipeline reextraiu sete dias completos anteriores e permitiu
+comparar, chave a chave, o estado do armazém antes e depois — com datas de
+controle deliberadamente **fora** da janela.
+
+O desenho experimental separa três grupos de datas:
+
+- **controle** — datas fora da janela reextraída, que não podem mudar;
+- **reextração** — datas já carregadas e consultadas de novo, que podem mudar;
+- **novas** — datas que entram no armazém pela primeira vez.
+
+📊 Resultado do controle: todas as datas fora da janela permaneceram idênticas
+nas duas plataformas, em todas as nove métricas. Nenhuma linha removida. É a
+prova de que a reextração **substitui apenas o que estava na janela** e não
+contamina o histórico.
+
+📊 Resultado da reextração, agregado sobre os cinco dias reextraídos:
+
+| Métrica | Google Ads | Meta Ads |
+|---|---|---|
+| linhas | 0 | +8 |
+| investimento | −0,001698 | +121,87 |
+| impressões | −4 | +8.223 |
+| cliques | −2 | +140 |
+| conversões | 0 | +6 |
+| valor de conversão | 0 | 0 |
+| video views | 0 | +33 |
+| alcance | 0 | +7.209 |
+| compras | 0 | +12 |
+
+🔍 **O achado central é a assimetria entre as plataformas.** Das cinco chaves
+reextraídas por plataforma, o Google manteve duas idênticas e alterou três, com
+deriva desprezível e de sinal negativo — o maior desvio relativo válido ficou
+abaixo de 0,1%, compatível com invalidação de cliques pela própria plataforma.
+O Meta alterou **todas as cinco**, em oito métricas distintas, com desvio
+relativo de até ~7,7% no dia mais antigo da janela.
+
+O padrão é coerente com o mecanismo: a janela de atribuição do Meta credita
+conversões e consolida entrega por dias depois do fato, enquanto o relatório do
+Google já chega praticamente estabilizado nesse nível de agregação. A deriva
+**decresce conforme a data se afasta da borda recente da janela**, o que é
+exatamente o comportamento esperado de consolidação retroativa.
+
+⚖️ Isso converte a janela móvel de sete dias de uma escolha defensável em uma
+escolha **medida**. Extrair apenas o dia anterior congelaria números que ainda
+iriam mudar; e o custo de reextrair sete dias é baixo justamente por causa das
+duas decisões que já existiam — bronze append-only e "último snapshot vence" na
+silver.
+
+⚠️ `video_views` aparece na tabela por plataforma e **não deve ser somado entre
+elas**: as definições são diferentes (seção 5.8).
+
+⚠️ Quando o valor anterior é zero, não existe variação percentual. O caso
+ocorreu com `purchases` do Meta em três dias reextraídos, que saíram de zero.
+Registrar a variação absoluta e dizer que o percentual não se aplica; inventar
+um denominador seria erro metodológico.
+
+#### O que o mesmo experimento provou sobre as camadas
+
+📊 Cada camada foi verificada de forma independente na mesma execução:
+
+- **bronze append-only** — a reextração criou exatamente um lote novo por
+  plataforma; todos os lotes anteriores permaneceram presentes, com contagem de
+  linhas, intervalo de datas e assinatura de conteúdo inalterados. Nenhum lote
+  foi removido ou reescrito. É o que torna a deriva **mensurável**: os dois
+  snapshots do mesmo dia coexistem;
+- **silver "último snapshot vence"** — para cada data reextraída a bronze passou
+  a conter dois snapshots, e a silver apresentou **exatamente um**, o mais
+  recente, sem duplicidade semântica por anúncio × dia;
+- **gold sem inflação de grão** — o grão de um anúncio por dia permaneceu único,
+  e a contagem obtida percorrendo a hierarquia versionada coincidiu com a
+  contagem do fato. É a verificação que denuncia o erro da seção 5.9;
+- **SCD Tipo 2** — o armazém ganhou entidades novas e **versões novas**,
+  inclusive a primeira renomeação de anúncio registrada, uma dimensão que até
+  então não tinha nenhuma entidade multiversão. Reforça a seção 5.4: o problema
+  que o SCD2 resolve continua acontecendo, e não só em campanha.
+
+🔍 A comparação foi feita por **chave natural** (plataforma × data), não por
+posição. Isso importa metodologicamente: uma comparação posicional acusaria
+divergência em cascata a partir da primeira data nova inserida no meio da
+sequência, escondendo o que de fato mudou. A comparação por chave classifica
+cada divergência em nova, removida, alterada ou idêntica, e foi validada por uma
+análise independente que reproduziu as mesmas contagens.
+
+**Formulação para o texto:** um armazém que consome fontes com atribuição
+retroativa não pode tratar a carga como imutável nem a reextração como falha; a
+combinação de camada bruta append-only, dedução do snapshot vigente e dimensões
+versionadas é o que permite absorver a mudança do passado sem perder o registro
+de que ela ocorreu.
 
 ## 6. Validação e evidências
 

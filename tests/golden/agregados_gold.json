@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-08-17T16:52:54+00:00",
+  "gerado_em": "2026-08-19T15:06:41+00:00",
   "agregados": {
     "por_plataforma_dia": [
       {
@@ -106,7 +106,7 @@
         "linhas": 288,
         "spend": "4317.326364",
         "impressions": "31150.000000",
-        "link_clicks": "1521.000000",
+        "link_clicks": "1520.000000",
         "conversions": "149.666667",
         "conversion_value": "109.500000",
         "video_views": "600.000000",
@@ -134,7 +134,7 @@
         "linhas": 267,
         "spend": "2603.120936",
         "impressions": "26381.000000",
-        "link_clicks": "1140.000000",
+        "link_clicks": "1139.000000",
         "conversions": "90.830599",
         "conversion_value": "53.000000",
         "video_views": "557.000000",
@@ -160,12 +160,40 @@
         "plataforma": "Google Ads",
         "data": "2026-08-16",
         "linhas": 205,
-        "spend": "1547.970253",
-        "impressions": "25708.000000",
+        "spend": "1547.968555",
+        "impressions": "25704.000000",
         "link_clicks": "1074.000000",
         "conversions": "105.000000",
         "conversion_value": "97.000000",
         "video_views": "513.000000",
+        "reach": "0.000000",
+        "profile_views": "0.000000",
+        "purchases": "0.000000"
+      },
+      {
+        "plataforma": "Google Ads",
+        "data": "2026-08-17",
+        "linhas": 256,
+        "spend": "2379.297196",
+        "impressions": "27418.000000",
+        "link_clicks": "1217.000000",
+        "conversions": "165.500000",
+        "conversion_value": "121.000000",
+        "video_views": "573.000000",
+        "reach": "0.000000",
+        "profile_views": "0.000000",
+        "purchases": "0.000000"
+      },
+      {
+        "plataforma": "Google Ads",
+        "data": "2026-08-18",
+        "linhas": 228,
+        "spend": "2836.624924",
+        "impressions": "27945.000000",
+        "link_clicks": "1283.000000",
+        "conversions": "166.000000",
+        "conversion_value": "119.000000",
+        "video_views": "557.000000",
         "reach": "0.000000",
         "profile_views": "0.000000",
         "purchases": "0.000000"
@@ -271,55 +299,55 @@
       {
         "plataforma": "Meta Ads",
         "data": "2026-08-12",
-        "linhas": 101,
-        "spend": "1575.620000",
-        "impressions": "106466.000000",
-        "link_clicks": "1697.000000",
-        "conversions": "70.000000",
+        "linhas": 104,
+        "spend": "1690.280000",
+        "impressions": "114267.000000",
+        "link_clicks": "1827.000000",
+        "conversions": "73.000000",
         "conversion_value": "0.000000",
-        "video_views": "14902.000000",
-        "reach": "98621.000000",
+        "video_views": "14918.000000",
+        "reach": "105460.000000",
         "profile_views": "0.000000",
-        "purchases": "0.000000"
+        "purchases": "6.000000"
       },
       {
         "plataforma": "Meta Ads",
         "data": "2026-08-13",
-        "linhas": 96,
-        "spend": "1435.640000",
-        "impressions": "101323.000000",
-        "link_clicks": "1352.000000",
-        "conversions": "37.000000",
+        "linhas": 100,
+        "spend": "1441.180000",
+        "impressions": "101648.000000",
+        "link_clicks": "1360.000000",
+        "conversions": "38.000000",
         "conversion_value": "0.000000",
         "video_views": "14462.000000",
-        "reach": "94564.000000",
+        "reach": "94878.000000",
         "profile_views": "0.000000",
-        "purchases": "0.000000"
+        "purchases": "2.000000"
       },
       {
         "plataforma": "Meta Ads",
         "data": "2026-08-14",
-        "linhas": 103,
+        "linhas": 104,
         "spend": "1332.780000",
         "impressions": "102139.000000",
         "link_clicks": "1415.000000",
-        "conversions": "51.000000",
+        "conversions": "53.000000",
         "conversion_value": "0.000000",
         "video_views": "14136.000000",
         "reach": "95050.000000",
         "profile_views": "0.000000",
-        "purchases": "0.000000"
+        "purchases": "4.000000"
       },
       {
         "plataforma": "Meta Ads",
         "data": "2026-08-15",
         "linhas": 101,
-        "spend": "1221.020000",
-        "impressions": "105253.000000",
+        "spend": "1221.040000",
+        "impressions": "105254.000000",
         "link_clicks": "1360.000000",
         "conversions": "38.000000",
         "conversion_value": "0.000000",
-        "video_views": "13572.000000",
+        "video_views": "13573.000000",
         "reach": "98615.000000",
         "profile_views": "0.000000",
         "purchases": "0.000000"
@@ -328,49 +356,77 @@
         "plataforma": "Meta Ads",
         "data": "2026-08-16",
         "linhas": 98,
-        "spend": "1568.960000",
-        "impressions": "136368.000000",
-        "link_clicks": "1670.000000",
+        "spend": "1570.610000",
+        "impressions": "136464.000000",
+        "link_clicks": "1672.000000",
         "conversions": "61.000000",
         "conversion_value": "0.000000",
-        "video_views": "17548.000000",
-        "reach": "125876.000000",
+        "video_views": "17564.000000",
+        "reach": "125932.000000",
         "profile_views": "0.000000",
         "purchases": "0.000000"
+      },
+      {
+        "plataforma": "Meta Ads",
+        "data": "2026-08-17",
+        "linhas": 132,
+        "spend": "1750.090000",
+        "impressions": "131249.000000",
+        "link_clicks": "1642.000000",
+        "conversions": "72.000000",
+        "conversion_value": "0.000000",
+        "video_views": "16304.000000",
+        "reach": "119849.000000",
+        "profile_views": "0.000000",
+        "purchases": "0.000000"
+      },
+      {
+        "plataforma": "Meta Ads",
+        "data": "2026-08-18",
+        "linhas": 137,
+        "spend": "1703.160000",
+        "impressions": "128968.000000",
+        "link_clicks": "1783.000000",
+        "conversions": "68.000000",
+        "conversion_value": "0.000000",
+        "video_views": "15784.000000",
+        "reach": "116980.000000",
+        "profile_views": "0.000000",
+        "purchases": "12.000000"
       }
     ],
     "totais_fato": {
-      "linhas": 4162,
-      "spend": "52113.851403",
-      "impressions": "1915875.000000",
-      "link_clicks": "31558.000000",
-      "conversions": "1839.942581",
-      "conversion_value": "763.000000",
-      "video_views": "199282.000000",
-      "reach": "1501082.000000",
+      "linhas": 4923,
+      "spend": "60904.891825",
+      "impressions": "2239674.000000",
+      "link_clicks": "37621.000000",
+      "conversions": "2317.442581",
+      "conversion_value": "1003.000000",
+      "video_views": "232533.000000",
+      "reach": "1745120.000000",
       "profile_views": "0.000000",
-      "purchases": "16.000000"
+      "purchases": "40.000000"
     },
     "contagens": [
       {
         "objeto": "gold.dim_adset",
-        "linhas": 386,
-        "entidades": 383
+        "linhas": 401,
+        "entidades": 398
       },
       {
         "objeto": "gold.dim_anuncio",
-        "linhas": 762,
-        "entidades": 762
+        "linhas": 803,
+        "entidades": 801
       },
       {
         "objeto": "gold.dim_campanha",
-        "linhas": 209,
-        "entidades": 204
+        "linhas": 213,
+        "entidades": 207
       },
       {
         "objeto": "gold.dim_conta",
-        "linhas": 66,
-        "entidades": 64
+        "linhas": 67,
+        "entidades": 65
       },
       {
         "objeto": "gold.dim_plataforma",
@@ -379,23 +435,23 @@
       },
       {
         "objeto": "gold.dim_tempo",
-        "linhas": 12,
-        "entidades": 12
+        "linhas": 14,
+        "entidades": 14
       },
       {
         "objeto": "gold.fato_metricas",
-        "linhas": 4162,
+        "linhas": 4923,
         "entidades": null
       },
       {
         "objeto": "silver.stg_ads_unified",
-        "linhas": 4162,
+        "linhas": 4923,
         "entidades": null
       }
     ],
     "travessia": {
-      "via_hierarquia": 4162,
-      "no_fato": 4162
+      "via_hierarquia": 4923,
+      "no_fato": 4923
     }
   }
 }
