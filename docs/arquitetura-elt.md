@@ -14,7 +14,7 @@ quando o caminho legado foi removido e o projeto passou a ter uma arquitetura
 só. As medições de paridade desta nota foram feitas enquanto os dois
 coexistiam; o código do ETL permanece no histórico do git e pode ser
 restaurado com
-`git checkout f8d5ca2 -- transformers/ loaders/supabase_loader.py init_db.sql`.
+`git checkout f86abba -- transformers/ loaders/supabase_loader.py init_db.sql`.
 
 ## Por que mudou
 

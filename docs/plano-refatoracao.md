@@ -10,7 +10,7 @@ status: em execucao — Fase 0 concluida
 # Plano de refatoração
 
 Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
-`e4577a9`). Cada fase é independente e verificável isoladamente.
+`c65ae49`). Cada fase é independente e verificável isoladamente.
 
 ---
 
@@ -18,8 +18,8 @@ Levantamento feito em 06/08/2026 sobre a árvore pós-remoção do ETL (commit
 
 **Onde paramos: o plano acabou.** As nove fases estão concluídas. A Fase 9 é a
 única **ainda não commitada**; as demais foram para o histórico em 06–07/08
-(`18b85df`, `b5f8f40`, `101165a`, `a05c6b6`, `20c8dc3`, `9382683`, `2b20c99`,
-`ad02ae9`, `ca6fad6`).
+(`f9aa9aa`, `fdb0557`, `f283d56`, `351c3b7`, `1dab42f`, `bdb9e4b`, `a41e005`,
+`ec2335d`, `f74b44b`).
 
 ⚠️ A Fase 2 mexeu no Dockerfile — quem clonar ou trocar de branch precisa de
 `docker compose build etl_app` antes de rodar qualquer coisa.
@@ -848,16 +848,16 @@ qualquer ordem, uma por commit.
 
 | Fase | Status | Commit | Paridade |
 |---|---|---|---|
-| 0 | ✅ concluída | `18b85df` | golden congelado |
-| 1 | ✅ concluída | `b5f8f40` | OK — 1677 linhas |
-| 2 | ✅ concluída | `101165a` | OK — 1677 linhas |
-| 3 | ✅ concluída | `a05c6b6` | OK — 1677 linhas |
-| 4 | ✅ concluída | `20c8dc3` | OK — 1677 linhas |
-| 5 | ✅ concluída | `9382683` | OK — 1677 linhas |
-| 6 | ✅ concluída | `2b20c99` | OK — 1677 linhas |
-| 7 | ✅ concluída | `ad02ae9` | OK — 1677 linhas |
-| 8 | ✅ concluída | `ca6fad6` | n/a — fora do pipeline |
-| 9 | ✅ concluída | `422abcc` | OK — 1677 linhas |
+| 0 | ✅ concluída | `f9aa9aa` | golden congelado |
+| 1 | ✅ concluída | `fdb0557` | OK — 1677 linhas |
+| 2 | ✅ concluída | `f283d56` | OK — 1677 linhas |
+| 3 | ✅ concluída | `351c3b7` | OK — 1677 linhas |
+| 4 | ✅ concluída | `1dab42f` | OK — 1677 linhas |
+| 5 | ✅ concluída | `bdb9e4b` | OK — 1677 linhas |
+| 6 | ✅ concluída | `a41e005` | OK — 1677 linhas |
+| 7 | ✅ concluída | `ec2335d` | OK — 1677 linhas |
+| 8 | ✅ concluída | `f74b44b` | n/a — fora do pipeline |
+| 9 | ✅ concluída | `cb94d93` | OK — 1677 linhas |
 
 **Plano concluído.** As nove fases foram executadas em 06–07/08/2026, cada uma
 verificada contra o golden. O número não mudou uma vez: `1677 linhas` do
