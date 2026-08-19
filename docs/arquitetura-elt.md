@@ -134,13 +134,26 @@ extrações.
 
 #### Demonstração
 
-Três campanhas foram renomeadas entre abril e agosto nos dados reais:
+Três campanhas foram renomeadas entre abril e agosto nos dados reais.
 
-| `external_id` | v1 (07/04 – 31/07) | v2 (01/08 – atual) |
-|---|---|---|
-| `EXTERNAL_ID_A` | `[MARCA_A] [OBJETIVO] [CANAL] DD/MM/AAAA` | `[MARCA_A] [OBJETIVO] [CANAL] AAMMDD` |
-| `EXTERNAL_ID_B` | `[FORMATO] [SECAO] DD/MM/AA` | `[OBJETIVO] [SECAO] [FORMATO] - DD/MM/AA` |
-| `EXTERNAL_ID_C` | `[MARCA_C] EMPRESA_C_GRAFIA_1 DD-MM` | `[MARCA_C] EMPRESA_C_GRAFIA_2 DD-MM` |
+⚠️ **Nomes e identificadores abaixo são pseudônimos documentais.** Os valores
+reais carregam marca do cliente, razão social e o `external_id` da plataforma —
+identificadores diretos que não podem constar de arquivo versionado. O que está
+preservado é a estrutura do nome e a natureza da mudança, que é o que a
+demonstração precisa. Estes rótulos são exemplo de documentação; não têm relação
+com os pseudônimos do dataset de exposição, que vêm de HMAC com chave local.
+A mesma convenção é usada na seção 5.4 de `notas-para-documentacao-tcc.md`.
+
+| # | `external_id` | v1 (07/04 – 31/07) | v2 (01/08 – atual) | O que mudou |
+|---|---|---|---|---|
+| A | `EXTERNAL_ID_A` | `[MARCA_A] [OBJETIVO] [CANAL] DD/MM/AAAA` | `[MARCA_A] [OBJETIVO] [CANAL] AAMMDD` | formato da data embutida |
+| B | `EXTERNAL_ID_B` | `[FORMATO] [SECAO] DD/MM/AA` | `[OBJETIVO] [SECAO] [FORMATO] - DD/MM/AA` | vocabulário e ordem dos tokens |
+| C | `EXTERNAL_ID_C` | `[MARCA_C] EMPRESA_C_GRAFIA_1 DD-MM` | `[MARCA_C] EMPRESA_C_GRAFIA_2 DD-MM` | correção de erro de digitação |
+
+O `external_id` é o mesmo nas duas versões — é ele que ancora a chave natural e
+faz as duas linhas da dimensão descreverem a **mesma** entidade. O caso C mostra
+que basta corrigir um erro de digitação para nascer uma versão nova: a dimensão
+registra a mudança observada, não julga se ela é semanticamente relevante.
 
 Consultando o investimento por dia, cada data exibe o nome vigente à época —
 o relatório de abril não é mais reescrito pela renomeação de agosto.

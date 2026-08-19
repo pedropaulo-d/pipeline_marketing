@@ -3,7 +3,12 @@
 Arquivo de trabalho. Reúne fatos, números medidos, decisões com justificativa e
 achados do desenvolvimento, organizados pela estrutura típica de um TCC.
 
-**Última atualização:** 06/08/2026
+**Última atualização:** 19/08/2026 — seção 5.10 acrescentada; seção 5.4
+pseudonimizada; seção 2 marcada como snapshot histórico.
+
+⚠️ **Os números das seções 2, 6.2, 6.3 e 7 são de 06/08/2026 e foram superados
+por cargas reais posteriores.** As seções 4 e 5 continuam válidas: dependem do
+mecanismo e da ordem de grandeza, não do total do dia.
 
 ---
 
@@ -54,10 +59,14 @@ formalmente, em nível somente-leitura.
 
 ---
 
-## 2. Fatos medidos sobre o sistema
+## 2. Fatos medidos sobre o sistema — SNAPSHOT HISTÓRICO DE 06/08/2026
 
-⚠️ **Os números desta seção são o retrato de 06/08/2026, quando havia cinco dias
-carregados.** Execuções reais posteriores do pipeline ampliaram o armazém e
+🛑 **Esta seção inteira é um retrato congelado de 06/08/2026, quando havia cinco
+dias carregados. NÃO descreve o estado atual do sistema.** Está preservada de
+propósito, como evidência temporal de uma etapa do desenvolvimento.
+
+⚠️ **Nenhum número desta seção deve ir para a monografia sem reconferência no
+banco.** Execuções reais posteriores do pipeline ampliaram o armazém e
 alteraram volume, período coberto e agregados. Antes de levar qualquer número
 daqui para a monografia, confirmar o valor vigente no banco. O que **não**
 envelhece são as decisões da seção 4 e os achados da seção 5, que dependem da
@@ -448,21 +457,35 @@ prever isso. É exatamente o que motiva a camada bronze imutável (seção 4.4).
 
 ### 5.4 Renomeações reais no período observado
 
-📊 Três campanhas foram renomeadas entre abril e agosto nos dados reais:
+📊 Três campanhas foram renomeadas entre abril e agosto nos dados reais.
 
-| Versão 1 (07/04 – 31/07) | Versão 2 (01/08 – atual) |
-|---|---|
-| `[MARCA_A] [OBJETIVO] [CANAL] DD/MM/AAAA` | `[MARCA_A] [OBJETIVO] [CANAL] AAMMDD` |
-| `[FORMATO] [SECAO] DD/MM/AA` | `[OBJETIVO] [SECAO] [FORMATO] - DD/MM/AA` |
-| `[MARCA_C] EMPRESA_C_GRAFIA_1 DD-MM` | `[MARCA_C] EMPRESA_C_GRAFIA_2 DD-MM` |
+⚠️ **Os nomes abaixo são pseudônimos documentais.** Os nomes reais carregam
+marca do cliente, razão social e datas de convenção interna — identificadores
+diretos e indiretos que não podem constar de material exposto (ver seção 4.6).
+O que está preservado é a **estrutura** do nome e a **natureza da mudança**, que
+é o que sustenta o argumento. Estes rótulos são exemplo de documentação: não
+são os pseudônimos do dataset de exposição, que vêm de HMAC com chave local.
 
-📊 Efeito no modelo: `dim_campanha` passou a ter 180 linhas para 177 entidades;
-`dim_adset`, 337 para 334; `dim_conta`, 58 para 57.
+| # | Versão 1 (07/04 – 31/07) | Versão 2 (01/08 – atual) | O que mudou |
+|---|---|---|---|
+| A | `[MARCA_A] [OBJETIVO] [CANAL] DD/MM/AAAA` | `[MARCA_A] [OBJETIVO] [CANAL] AAMMDD` | só o formato da data embutida |
+| B | `[FORMATO] [SECAO] DD/MM/AA` | `[OBJETIVO] [SECAO] [FORMATO] - DD/MM/AA` | vocabulário e ordem dos tokens |
+| C | `[MARCA_C] EMPRESA_C_GRAFIA_1 DD-MM` | `[MARCA_C] EMPRESA_C_GRAFIA_2 DD-MM` | correção de erro de digitação |
+
+A forma dos nomes é ela própria um dado do domínio e vale registrar no texto:
+são cadeias de tokens entre colchetes que codificam convenção operacional
+— marca, objetivo, canal, formato, seção do site — seguidas de uma data de
+criação. É exatamente o que a seção 4.5 usa para justificar o SCD Tipo 2: nome
+de campanha em mídia paga é campo operacional volátil, não rótulo estável.
+
+📊 Efeito no modelo, medido em 06/08/2026: `dim_campanha` passou a ter 180
+linhas para 177 entidades; `dim_adset`, 337 para 334; `dim_conta`, 58 para 57.
 
 Serve como **evidência empírica** de que o problema que o SCD Tipo 2 resolve não
-é hipotético neste domínio. Note que uma das renomeações é correção de erro de
-digitação ("EMPRESA_C_GRAFIA_1" → "EMPRESA_C_GRAFIA_2"), o que mostra que o histórico também preserva
-o registro de correções.
+é hipotético neste domínio. Note que o caso C é correção de erro de digitação na
+razão social, o que mostra que o histórico também preserva o registro de
+correções — e que uma renomeação pode ser semanticamente irrelevante e ainda
+assim criar uma versão nova na dimensão.
 
 ### 5.5 Perfis distintos das plataformas
 
@@ -982,5 +1005,15 @@ Research, por exemplo):
 - **Números desta nota são de 06/08/2026** e mudarão conforme novas cargas.
   Reconferir antes da versão final — e sempre pela rota de consulta correta:
   a soma das linhas por plataforma tem de fechar com o total da tabela fato.
-- O nome da agência e dos clientes **não deve aparecer** no texto publicado,
-  ainda que apareça neste arquivo de trabalho.
+- **Este arquivo é versionado.** O nome da agência, de clientes, marcas, razões
+  sociais, identificadores externos e nomes reais de campanha, conjunto ou
+  anúncio **não podem aparecer aqui** — nem como exemplo. A seção 5.4 usa
+  pseudônimos documentais por esse motivo. Identificador indireto conta:
+  localidade, produto, data de convenção interna e abreviação associável a
+  cliente também não entram.
+- **Números vencidos.** As seções 2, 6.2, 6.3 e 7 guardam medidas de 06/08/2026
+  já superadas por cargas reais posteriores — contagem de testes, linhas do
+  fato, dias carregados e o estado da orquestração mudaram. A seção 2 está
+  marcada como snapshot histórico; as demais ainda não foram revisadas. Confira
+  no banco antes de citar qualquer número, e sempre pela rota de consulta
+  correta.
