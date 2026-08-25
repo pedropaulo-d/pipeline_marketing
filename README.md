@@ -178,6 +178,30 @@ docker exec -i tcc_dw psql -U etl -d marketing_dw < docs/queries_demo.sql
 docker exec -it tcc_dw psql -U etl -d marketing_dw
 ```
 
+### 5.1. Dashboard analitico (camada de visualizacao)
+
+Painel em Streamlit + Plotly. Consome **exclusivamente** a superficie de
+exposicao pseudonimizada — nunca a bronze, a silver, a gold, o banco ou as
+APIs.
+
+```bash
+# Modo demonstracao: funciona num clone limpo, sem .env, banco ou credencial.
+docker compose up -d dashboard          # http://localhost:8501
+
+# Modo pseudonimizado: gere a superficie de exposicao antes.
+docker compose run --rm etl_app python scripts/exportar_dataset_exposicao.py
+docker compose run --rm etl_app python scripts/auditar_dataset_exposicao.py
+docker compose up -d dashboard
+```
+
+Com `data/exposicao/metricas.csv` presente o painel o adota sozinho e exibe o
+selo `DADOS PSEUDONIMIZADOS`; sem ele, cai no dataset sintetico versionado em
+`dashboard/dados_demo/` e exibe `DADOS DE DEMONSTRACAO`. Nao ha fallback para
+banco.
+
+Quatro paginas: Visao Geral, Campanhas, Anuncios e Sobre os dados. Detalhes em
+[`dashboard/README.md`](dashboard/README.md).
+
 ### 6. Execucao de modulos individuais (opcional)
 
 ```bash
@@ -227,6 +251,21 @@ tcc_pipeline_dados/
 |-- scripts/
 |   |-- generate_google_refresh_token.py
 |   |-- oauth_manual.py        # Fluxo OAuth manual em dois passos
+|   |-- exportar_dataset_exposicao.py  # Gold -> superficie pseudonimizada
+|   |-- auditar_dataset_exposicao.py   # Auditor independente do artefato
+|
+|-- .streamlit/
+|   |-- config.toml           # Tema do painel (conteudo claro, sidebar escura)
+|
+|-- dashboard/                 # Camada de visualizacao (Streamlit + Plotly)
+|   |-- app.py                 # Quatro paginas: geral, campanhas, anuncios, dados
+|   |-- dados.py               # Contrato fail closed do CSV de exposicao
+|   |-- metricas.py            # Catalogo das 9 metricas, derivadas, divisao segura
+|   |-- filtros.py             # Filtros globais com hierarquia
+|   |-- graficos.py            # Figuras Plotly
+|   |-- componentes.py         # CSS e blocos de interface
+|   |-- gerar_dados_demo.py    # Dataset sintetico versionado
+|   |-- Dockerfile             # Imagem sem driver de banco e sem SDK
 |
 |-- docs/
     |-- arquitetura-elt.md     # Projeto das camadas e validacao de paridade
@@ -247,6 +286,7 @@ Este projeto passou por uma auditoria de seguranca (DevSecOps) cobrindo:
 - **Validacao de ambiente**: `config.validate_env()` verifica 11 variaveis obrigatorias no startup com fail-fast
 - **Container hardening**: Dockerfile executa como usuario non-root (`etl`, UID 1000); `.dockerignore` impede que `.env` e `.git` entrem na imagem
 - **Repositorio**: `.gitignore` exclui `.env` e arquivos temporarios
+- **Fronteira de exposicao**: o dashboard so le a superficie pseudonimizada; a imagem dele nao instala driver de banco nem SDK de plataforma, o servico nao recebe `.env` e o dataset entra somente leitura
 
 ---
 
@@ -260,6 +300,7 @@ Este projeto passou por uma auditoria de seguranca (DevSecOps) cobrindo:
 | Carga do bruto | SQLAlchemy + psycopg2-binary |
 | Transformacao | dbt-postgres (silver e gold no banco) |
 | Banco | PostgreSQL 16 |
+| Visualizacao | Streamlit + Plotly (servico proprio, sem credencial) |
 | Seguranca | python-dotenv, config.py (mask + validate_env) |
 
 ---

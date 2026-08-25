@@ -37,6 +37,12 @@ logs/
 # Excecao: os resultados do benchmark sao evidencia experimental do TCC.
 !benchmark/resultados/*.csv
 
+# Excecao: dataset SINTETICO de demonstracao do dashboard. Nao deriva de nome,
+# identificador nem metrica de cliente — sai de `dashboard/gerar_dados_demo.py`
+# com semente fixa. E o que mantem o repositorio demonstravel sem versionar a
+# superficie de exposicao (que continua coberta por `/data/`).
+!dashboard/dados_demo/*.csv
+
 # ========================
 # Python
 # ========================

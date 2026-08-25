@@ -1,0 +1,13 @@
+# Dependencias EXCLUSIVAS do dashboard.
+#
+# Ficam separadas de `requirements.txt` de proposito: a imagem do painel nao
+# instala driver de banco, SDK do Meta, SDK do Google nem dbt. A fronteira de
+# seguranca deixa de depender de disciplina e passa a ser uma propriedade da
+# imagem — nao existe biblioteca ali capaz de falar com o Data Warehouse ou
+# com as APIs de anuncios.
+#
+# `pandas` nao aparece porque nao e usado pelo codigo: a logica de
+# carregamento, filtro e agregacao e stdlib pura (csv + Decimal), o que
+# tambem permite testa-la no container do ETL, que nao tem Streamlit.
+streamlit>=1.49,<2
+plotly>=5.20,<7

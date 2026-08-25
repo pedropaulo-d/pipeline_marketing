@@ -175,6 +175,42 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # ── Dashboard ──────────────────────────────────────────────────────────
+  # Camada de visualizacao. Consome SOMENTE a superficie de exposicao
+  # pseudonimizada, e a fronteira e estrutural, nao disciplinar:
+  #
+  #   - sem `env_file: .env` — nenhuma credencial de Meta, Google ou banco
+  #     entra neste container;
+  #   - sem `depends_on: db` — o painel nao controla nem aguarda o DW;
+  #   - a imagem (dashboard/Dockerfile) instala apenas Streamlit e Plotly,
+  #     entao nao existe driver de banco nem SDK de plataforma dentro dela;
+  #   - o dataset entra por bind mount SOMENTE LEITURA.
+  #
+  # Sem `data/exposicao/metricas.csv` no host, o painel cai sozinho no
+  # dataset sintetico versionado em `dashboard/dados_demo/` e sinaliza
+  # "DADOS DE DEMONSTRACAO" na interface.
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: tcc_dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      # Codigo montado para editar sem rebuild.
+      - ./dashboard:/app/dashboard:ro
+      # Superficie de exposicao, somente leitura. O diretorio e gitignorado e
+      # pode nao existir num clone limpo — nesse caso o painel usa o dataset
+      # de demonstracao.
+      - ./data/exposicao:/app/data/exposicao:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   dw_data:
   airflow_db_data:

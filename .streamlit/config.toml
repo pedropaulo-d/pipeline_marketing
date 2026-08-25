@@ -1,0 +1,47 @@
+# Tema do painel analitico.
+#
+# Por que aqui, e nao so em CSS: os controles do Streamlit (select, multiselect,
+# date input, dropdown) sao componentes React que derivam suas cores do tema, e
+# nao do CSS da pagina. Sem declarar o tema, o navegador em modo escuro puxava
+# os campos para quase preto enquanto o conteudo permanecia claro — sidebar e
+# conteudo pareciam de dois produtos diferentes.
+#
+# Declarar `base = "light"` fixa o conteudo em claro **independente** do
+# `prefers-color-scheme` do navegador. A sidebar tem tema proprio, escuro, com
+# `secondaryBackgroundColor` um degrau acima do fundo: e o que da aos campos um
+# preenchimento levemente mais claro que a barra, com texto legivel.
+#
+# Este arquivo e lido do diretorio de trabalho. Localmente, isso e a raiz do
+# repositorio (`streamlit run dashboard/app.py`); no container, o Dockerfile o
+# copia para `/app/.streamlit/config.toml`, que e o WORKDIR.
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#E84A5F"
+backgroundColor = "#F6F7F9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#172033"
+borderColor = "#E4E7EC"
+linkColor = "#C43B4F"
+baseRadius = "medium"
+showSidebarBorder = false
+font = "sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#151A23"
+secondaryBackgroundColor = "#232B39"
+textColor = "#E7EAF0"
+primaryColor = "#E84A5F"
+borderColor = "#333C4C"
+linkColor = "#F08A97"
+showWidgetBorder = true
+baseRadius = "medium"

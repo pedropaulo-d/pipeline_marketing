@@ -795,6 +795,51 @@ combinação de camada bruta append-only, dedução do snapshot vigente e dimens
 versionadas é o que permite absorver a mudança do passado sem perder o registro
 de que ela ocorreu.
 
+### 5.11 A camada de consumo revela o que o modelo esconde
+
+Implementada em 25/08/2026: painel em Streamlit + Plotly consumindo
+exclusivamente a superfície de exposição pseudonimizada. Documentação completa
+em `docs/tcc/dashboard-implementado.md`; auditoria afirmação-a-evidência em
+`docs/tcc/evidencias-dashboard.md`.
+
+O achado relevante para o texto **não** é a existência do painel — é o que
+projetar a interface obrigou a explicitar. Um modelo dimensional trata as nove
+métricas como nove colunas numéricas equivalentes. A tela não pode: ela precisa
+decidir o que somar, o que comparar e o que recusar a comparar. Três
+propriedades, invisíveis no schema, tiveram de virar declaração:
+
+1. **Suporte por plataforma.** `reach`, `profile_views` e `purchases` não são
+   fornecidas pela consulta ao Google no nível consultado. Somar as duas
+   plataformas produz um total que subestima uma e sugere desempenho nulo na
+   outra. A interface marca "não disponibilizado nesta origem" em vez de exibir
+   zero.
+2. **Comparabilidade semântica.** `video_views` existe nas duas com definições
+   diferentes (seção 5.8). O total entre plataformas é aritmeticamente
+   calculável e analiticamente vazio.
+3. **Aditividade no tempo.** `reach` conta pessoas únicas: somar dias distintos
+   conta a mesma pessoa várias vezes. Um cartão de "alcance do período" seria
+   simplesmente errado — e nada no schema impediria de construí-lo.
+
+As três propriedades passaram a viver num catálogo único
+(`dashboard/metricas.py`), consultado pelo resto da aplicação. É o mesmo padrão
+de `plataformas.py`: a propriedade é declarada uma vez, não redescoberta em
+cada tela.
+
+**Consequência para a redação.** Vale afirmar que o modelo dimensional
+unificado permite consultar as duas plataformas pela mesma rota; **não** vale
+afirmar que unifica a semântica das métricas. Unificar estrutura e unificar
+significado são coisas diferentes, e a camada de consumo é onde a diferença
+aparece.
+
+**Segundo achado — a fronteira de exposição sobrevive à camada de
+visualização.** O painel é o primeiro artefato do projeto feito para ser
+projetado em tela e fotografado. Ele não recebe credencial, não instala driver
+de banco nem SDK de plataforma, e recusa inteiro qualquer arquivo que carregue
+coluna de identidade real. O dataset sintético de demonstração passa no **mesmo
+auditor independente** da superfície real, o que permite ao repositório
+continuar demonstrável sem nenhum dado de cliente.
+
+
 ## 6. Validação e evidências
 
 ### 6.1 Paridade entre implementações
@@ -895,7 +940,8 @@ sobre uma limitação não declarada é falha.
 
 - Orquestração com Apache Airflow.
 - Materialização incremental da camada gold.
-- Camada de consumo (painel analítico).
+- ~~Camada de consumo (painel analítico).~~ ✅ Implementada em 25/08/2026 —
+  Streamlit + Plotly sobre a superfície de exposição (seção 5.11).
 - Quantificação da deriva retroativa de métricas (seção 4.4).
 - Extensão a outras plataformas (TikTok Ads, LinkedIn Ads) — o modelo
   dimensional já acomoda, bastaria um novo extrator e um novo modelo de staging.
@@ -916,7 +962,9 @@ sobre uma limitação não declarada é falha.
 3. **Referencial teórico de modelagem dimensional** — Kimball, Inmon, ou
    contraste entre os dois.
 4. **Autorização formal de uso dos dados** e forma de publicação do dataset.
-5. **Camada de consumo** faz parte do escopo?
+5. ~~**Camada de consumo** faz parte do escopo?~~ Resolvida: implementada em
+   25/08/2026 como camada demonstrativa de consumo, não como produto de BI
+   (seção 5.11).
 6. **Volume de dados** a ser demonstrado — dados reais apenas ou também volume
    sintético.
 
