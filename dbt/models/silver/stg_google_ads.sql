@@ -1,10 +1,10 @@
 /*
     Silver — Google Ads.
 
-    Mesma deduplicacao por recencia da stg_meta_ads. A query GAQL ja devolve
-    metricas em colunas, entao aqui o trabalho e sobretudo renomear para o
-    vocabulario comum e explicitar as metricas que a plataforma nao fornece
-    neste nivel de consulta.
+    Mesma deduplicacao por ultima observacao de entidade/dia da stg_meta_ads.
+    A query GAQL ja devolve metricas em colunas, entao aqui o trabalho e
+    sobretudo renomear para o vocabulario comum e explicitar as metricas que a
+    plataforma nao fornece neste nivel de consulta.
 
     `reach`, `profile_views` e `purchases` ficam em zero: nao e ausencia de
     dado, e ausencia de suporte da API neste grao. A distincao esta
@@ -23,7 +23,10 @@
 
 with ultimo_snapshot as (
 
-    {{ ultimo_snapshot('google_ads') }}
+    {{ ultimo_snapshot(
+        'google_ads',
+        ['account_id', 'campaign_id', 'ad_group_id', 'ad_id']
+    ) }}
 
 )
 

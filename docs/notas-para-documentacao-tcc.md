@@ -897,6 +897,111 @@ correspondência com o nome usado pela plataforma acompanham o indicador na
 tela, escondidas até serem pedidas.
 
 
+### 5.13 Descoberta pelo estado corrente pode suprimir história
+
+Na consolidação do recorte experimental de 30 dias, o teste de regressão entre
+lotes encontrou 54 observações Meta com gasto positivo que existiam na Bronze
+e haviam desaparecido da Silver. Elas pertenciam a uma única conta e cobriam
+12 dias. A investigação do histórico completo encontrou ainda 11 observações
+relacionadas que o teste anterior não alcançava: três sem gasto positivo nos
+mesmos dias e oito em um 13º dia, ocultas por omissões consecutivas. Ao todo,
+65 linhas e R$ 429,34 continuavam preservados na Bronze.
+
+O incidente combinou duas decisões que isoladamente pareciam razoáveis. A
+descoberta Meta aceitava somente contas com estado corrente `ACTIVE`, embora o
+estado de entrega de hoje não determine a existência de métricas passadas. Em
+seguida, a Silver tratava o lote mais recente de uma fonte e dia como
+substituição integral do lote anterior. A conta ausente da descoberta fez o
+novo lote parecer completo; ao vencer por dia, ele apagou logicamente todo o
+histórico conhecido daquela entidade.
+
+**Correção.** A descoberta passou a classificar explicitamente os estados do
+SDK que ainda permitem tentar uma consulta histórica. Estado indisponível ou
+desconhecido aborta a extração, em vez de produzir silenciosamente um lote
+parcial. Na Silver, a deduplicação passou a escolher a observação mais recente
+pela chave hierárquica natural da entidade e pela data. Assim, uma observação
+presente e revisada vence a anterior, mas ausência sem tombstone não vira zero
+nem exclusão.
+
+Essa escolha é conservadora: pode reter a última observação conhecida quando a
+fonte deixa de devolver uma entidade intencionalmente. O contrato bruto atual
+não contém tombstone nem prova de completude por conta, portanto não existe
+evidência para distinguir essa situação de uma extração parcial. Uma evolução
+mais forte seria registrar completude e tombstones por conta e período, mas
+isso exigiria ampliar manifesto, carga e Bronze; não era necessário para
+recuperar o histórico já preservado.
+
+**Regressão determinística.** Testes unitários simulam dois anúncios no lote
+antigo e somente um no novo: o presente recebe a métrica revisada e o ausente
+mantém a última observação válida. Outro caso confirma a atualização dos dois
+quando ambos reaparecem; um terceiro deixa duplicatas empatadas visíveis para
+os testes de grão falharem fechado. O mesmo contrato é exercitado para Google.
+O teste de regressão em produção agora percorre todo o histórico Bronze, não
+apenas o penúltimo lote, e falha se uma chave que já teve gasto positivo não
+chegar à Silver.
+
+**Limite da recuperação.** A Bronze recuperou integralmente as 65 observações
+conhecidas, mas não prova que a conta teve zero em dias para os quais nunca há
+uma observação dela. Ausência de registro não foi preenchida artificialmente.
+Para afirmar completude do recorte inteiro, esses dias exigem consulta nova à
+fonte, autorizada e auditada separadamente.
+
+**Fechamento da lacuna por reextração autorizada (25/08/2026).** A consulta
+nova foi autorizada e executada em três janelas restritas exatamente às 17
+datas sem evidência, somente para o Meta. A descoberta devolveu 95 contas — oito
+a mais do que as 87 que o filtro antigo enxergava. A conta suprimida apareceu
+com estado `unsettled`, e não `active`: a causa raiz ficou confirmada
+empiricamente, e não apenas por inferência sobre o código. Os estados
+observados foram 85 `active`, 3 `disabled`, 5 `unsettled` e 2
+`temporarily_unavailable`.
+
+**A proteção contra snapshot parcial precisou de uma válvula explícita.** A
+regra de falhar fechado diante de `temporarily_unavailable` bloqueava toda
+extração do Meta enquanto qualquer conta estivesse nesse estado, inclusive a
+recuperação de períodos sem relação com ela. O desvio virou opt-in por
+execução, declarado na linha de comando, registrado em log e proibido à DAG;
+estado desconhecido continua abortando em qualquer caso. Isso é uma
+generalização do princípio de falhar fechado: a proteção precisa ter uma porta
+auditável, senão o próprio conserto fica impedido pela proteção.
+
+**Resultado.** A reextração acrescentou 3 lotes e 2.040 linhas à Bronze, sem
+tocar nas 48.407 anteriores. Na Silver, 60 linhas novas — todas da conta antes
+suprimida — e nenhuma entidade dimensional nova, porque os anúncios já eram
+conhecidos pelas observações recuperadas. O recorte de 30 dias passou de 10.594
+para 10.654 linhas, com R$ 456,06 de investimento adicional. A decomposição
+separa os dois efeitos: R$ 455,62 vêm da conta recuperada e R$ 0,44 de deriva
+retroativa legítima nas demais contas, o comportamento já documentado da API do
+Meta. Impressões, cliques, alcance, conversões e video views seguem a mesma
+separação.
+
+**Ausência continua não sendo zero.** Em três das 17 datas a conta foi
+consultada e não retornou linha nenhuma. Isso não virou registro zerado nem
+tombstone: a diferença é que agora existe evidência de que a consulta cobriu o
+dia, o que antes não existia. Ausência dentro de uma janela efetivamente
+consultada e ausência por conta nunca consultada são fatos distintos, e só o
+segundo impede afirmar completude.
+
+**A mesma classe permanece aberta do lado do Google — DÍVIDA TÉCNICA / RISCO
+LATENTE, NÃO DEFEITO ATIVO CONHECIDO.** A consulta de descoberta de subcontas
+(`GAQL_DISCOVERY`, em `extractors/google_ads.py`) filtra
+`customer_client.status = 'ENABLED'`. É filtro por estado corrente aplicado a
+uma consulta cujo produto é histórico — conceitualmente o mesmo defeito
+corrigido no Meta, um nível acima de onde já havia sido corrigido no Google: lá
+o filtro removido foi o de `campaign.status`, não o de conta.
+
+A classificação como risco latente, e não como defeito ativo, tem base
+verificável: a Bronze atual não apresenta perda conhecida do lado do Google, e
+`assert_reextracao_nao_perde_gasto` — que passou a percorrer todo o histórico e
+cobre as duas fontes com severidade de erro — está verde. Se uma subconta
+tivesse sido suprimida, esse teste teria falhado.
+
+O motivo de não corrigir junto é de método, não de conveniência: alterar a
+descoberta muda o conjunto de contas consultadas e, portanto, a cobertura
+histórica. Isso reabriria o recorte experimental recém-validado e exigiria um
+ciclo próprio de reextração, auditoria e recongelamento. Correção e validação
+de um snapshot não devem competir pelo mesmo ciclo — foi justamente essa
+disciplina que permitiu decompor os deltas do incidente do Meta até o centavo.
+
 
 ## 6. Validação e evidências
 
@@ -935,11 +1040,12 @@ testes):
 | Grão | Nenhuma combinação (anúncio, dia) se repete |
 | Sanidade | Nenhuma métrica de mídia é negativa |
 | Consistência SCD | Intervalos de validade não se sobrepõem; exatamente uma versão corrente por entidade |
-| Regressão entre lotes | Nenhum anúncio com gasto desaparece entre o snapshot anterior e o mais recente do mesmo dia (seção 5.7) |
+| Regressão entre lotes | Toda chave com gasto positivo já observada na Bronze permanece representada na Silver; a verificação cobre todo o histórico, inclusive omissões consecutivas (seção 5.13) |
 
-O último é de severidade **alerta**, não erro: um anúncio pode legitimamente
-sumir da fonte. A distinção entre "o pipeline deve parar" e "alguém precisa
-olhar" é ela própria uma decisão de projeto que vale mencionar no texto.
+O último passou a ser erro, não alerta. Sem tombstone ou prova de completude,
+sumir da resposta não prova que a métrica histórica virou zero. Uma eventual
+semântica de remoção precisa chegar como evidência explícita; até lá, apagar a
+última observação válida seria uma decisão que o dado de origem não sustenta.
 
 ### 6.3 Idempotência
 
@@ -1090,6 +1196,7 @@ Research, por exemplo):
 | 05/08/2026 | Benchmark row-store × column-store |
 | 06/08/2026 | Cobertura de visualizações de vídeo do Google; detecção do filtro por status e da inflação por versão de dimensão |
 | 06/08/2026 | Remoção do caminho ETL — o projeto passa a ter uma arquitetura só |
+| 25/08/2026 | Correção da descoberta Meta e adoção da última observação por entidade/dia após detecção de supressão histórica por snapshot parcial |
 
 ---
 

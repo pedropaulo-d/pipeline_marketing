@@ -72,7 +72,11 @@ class Plataforma:
         )
 
     def extrair(
-        self, start_date: str, end_date: str, run_id: str | None = None
+        self,
+        start_date: str,
+        end_date: str,
+        run_id: str | None = None,
+        **opcoes: bool,
     ) -> int:
         """Executa a extracao desta plataforma no periodo informado.
 
@@ -81,17 +85,24 @@ class Plataforma:
         pesado. Uma execucao com ``--platforms meta`` nao deve pagar o custo de
         carregar o SDK do Google.
 
+        ``opcoes`` e um canal para desvios especificos de uma plataforma, e nao
+        parte do contrato comum: quem chama so passa opcao que o extrator
+        daquela plataforma declara. Uma opcao dirigida a plataforma errada
+        levanta ``TypeError`` na chamada, em vez de ser ignorada em silencio.
+
         Args:
             start_date: Data inicial no formato ``YYYY-MM-DD``.
             end_date: Data final no formato ``YYYY-MM-DD``.
             run_id: Identificador da execucao, gravado no manifesto para que o
                 loader consiga provar que o arquivo bruto veio dela.
+            **opcoes: Desvios especificos desta plataforma, repassados ao
+                ``run`` do extrator.
 
         Returns:
             Quantidade de registros extraidos.
         """
         modulo = importlib.import_module(self.modulo_extrator)
-        return modulo.run(start_date, end_date, run_id)
+        return modulo.run(start_date, end_date, run_id, **opcoes)
 
 
 PLATAFORMAS: dict[str, Plataforma] = {

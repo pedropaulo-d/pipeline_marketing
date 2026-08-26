@@ -1,68 +1,70 @@
-{{ config(severity = 'warn') }}
-
 /*
-    Alerta quando um anuncio que tinha gasto no snapshot anterior de um dia
-    desaparece do snapshot mais recente. Como a silver adota o mais recente,
-    o gasto ja carregado seria apagado do DW sem deixar rastro na gold.
+    Falha quando um anuncio que ja teve gasto positivo na Bronze desaparece da
+    Silver. A Silver mantem a observacao mais recente por entidade/dia: um
+    registro posterior atualiza metricas, mas a ausencia sem tombstone nao
+    apaga a ultima observacao valida.
 
-    Foi assim que se descobriu o filtro `campaign.status = 'ENABLED'` na GAQL:
-    ele comparava o status de HOJE com a entrega do dia consultado, entao uma
-    campanha pausada depois sumia da reextracao e levava o gasto junto
-    (R$ 210,57 em 04/08/2026, ja corrigido no extrator).
+    Foi uma perda desse tipo que revelou dois filtros por estado atual: o de
+    campanha na GAQL, corrigido anteriormente, e o de conta na descoberta
+    Meta. Contar linhas por lote nao basta, porque entradas novas podem ocultar
+    a subtracao de entidades antigas.
 
-    O grao importa: contar linhas por lote NAO pegaria o caso, porque naquele
-    dia cinco anuncios novos entraram e o total subiu de 250 para 254 mesmo
-    com a perda. So a comparacao anuncio a anuncio revela a subtracao.
-
-    Severidade `warn`, nao `error`: sumir pode ser legitimo (anuncio excluido
-    da conta). O teste nao decide se esta errado — obriga a olhar antes de
-    aceitar o lote.
+    A comparacao cobre TODO o historico, nao apenas o snapshot imediatamente
+    anterior. Isso pega omissoes consecutivas e continua aceitando zero
+    explicito: se a entidade vier num lote novo com gasto zero, ela existe na
+    Silver e sua observacao mais recente vence.
 */
 
-with snapshots as (
+with historico_positivo as (
 
     select
         source,
         reference_date,
-        payload->>'ad_id'                                     as anuncio_id,
-        coalesce(
-            (payload->>'spend')::numeric,
-            (payload->>'cost')::numeric,
-            0
-        )                                                     as gasto,
-        dense_rank() over (
-            partition by source, reference_date
-            order by extracted_at desc
-        )                                                     as recencia
+        payload->>'account_id' as conta_id,
+        payload->>'campaign_id' as campanha_id,
+        coalesce(payload->>'adset_id', payload->>'ad_group_id') as adset_id,
+        payload->>'ad_id' as anuncio_id
 
     from {{ source('bronze', 'raw_ads') }}
+    where coalesce(
+        (payload->>'spend')::numeric,
+        (payload->>'cost')::numeric,
+        0
+    ) > 0
+    group by 1, 2, 3, 4, 5, 6
 
 ),
 
-atual as (
-    select source, reference_date, anuncio_id
-    from snapshots
-    where recencia = 1
-),
+silver as (
 
-anterior as (
-    select source, reference_date, anuncio_id, gasto
-    from snapshots
-    where recencia = 2
-      and gasto > 0
+    select
+        'meta_ads' as source,
+        data as reference_date,
+        conta_external_id as conta_id,
+        campanha_external_id as campanha_id,
+        adset_external_id as adset_id,
+        anuncio_external_id as anuncio_id
+    from {{ ref('stg_meta_ads') }}
+
+    union all
+
+    select
+        'google_ads' as source,
+        data as reference_date,
+        conta_external_id as conta_id,
+        campanha_external_id as campanha_id,
+        adset_external_id as adset_id,
+        anuncio_external_id as anuncio_id
+    from {{ ref('stg_google_ads') }}
+
 )
 
 select
-    anterior.source,
-    anterior.reference_date,
-    anterior.anuncio_id,
-    anterior.gasto as gasto_perdido
+    historico_positivo.*
 
-from anterior
+from historico_positivo
 
-left join atual
-    on  atual.source = anterior.source
-    and atual.reference_date = anterior.reference_date
-    and atual.anuncio_id = anterior.anuncio_id
+left join silver
+    using (source, reference_date, conta_id, campanha_id, adset_id, anuncio_id)
 
-where atual.anuncio_id is null
+where silver.anuncio_id is null

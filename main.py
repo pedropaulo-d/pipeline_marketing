@@ -117,6 +117,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--permitir-contas-meta-indisponiveis",
+        action="store_true",
+        help=(
+            "DESVIO EXCEPCIONAL. Por padrão a descoberta do Meta ABORTA se "
+            "alguma conta estiver temporariamente indisponível, para não "
+            "produzir snapshot parcial. Com esta flag, essas contas são "
+            "excluídas com registro em log e a extração prossegue. Status de "
+            "conta desconhecido continua abortando em qualquer caso. Use "
+            "apenas em recuperação autorizada, execução a execução — a DAG "
+            "nunca liga esta flag."
+        ),
+    )
+
     args = parser.parse_args()
 
     args.platforms = [p.strip().lower() for p in args.platforms.split(",") if p.strip()]
@@ -134,6 +148,21 @@ def parse_args() -> argparse.Namespace:
             f"--start-date ({args.start_date}) não pode ser maior que "
             f"--end-date ({args.end_date})."
         )
+
+    # Desvio pedido sem a plataforma que o consome, ou sem extração nenhuma, é
+    # engano do operador — e engano silencioso aqui vira falsa sensação de que
+    # o desvio está valendo.
+    if args.permitir_contas_meta_indisponiveis:
+        if args.skip_extract:
+            parser.error(
+                "--permitir-contas-meta-indisponiveis não faz sentido com "
+                "--skip-extract: não há descoberta de contas."
+            )
+        if "meta" not in args.platforms:
+            parser.error(
+                "--permitir-contas-meta-indisponiveis exige 'meta' em "
+                "--platforms."
+            )
 
     return args
 
@@ -197,7 +226,11 @@ def executar_etapa(
 
 
 def run_extraction(
-    start_date: str, end_date: str, platforms: list[str], run_id: str | None = None
+    start_date: str,
+    end_date: str,
+    platforms: list[str],
+    run_id: str | None = None,
+    opcoes: dict[str, dict[str, bool]] | None = None,
 ) -> dict[str, int]:
     """Executa a extração das plataformas selecionadas.
 
@@ -207,18 +240,24 @@ def run_extraction(
         platforms: Plataformas a extrair (``"meta"`` e/ou ``"google"``).
         run_id: Identificador desta execução, gravado no manifesto de cada
             artefato para que a carga possa exigir a prova de origem.
+        opcoes: Desvios específicos por plataforma, no formato
+            ``{chave: {nome_da_opcao: valor}}``. Só chega ao extrator daquela
+            plataforma; ``None`` (o default) mantém o comportamento padrão.
 
     Returns:
         Mapa ``{plataforma: registros_extraidos}``.
     """
     counts: dict[str, int] = {}
+    opcoes = opcoes or {}
 
     # O despacho percorre o registro em vez de um `if` por plataforma. O import
     # do SDK continua tardio — acontece dentro de `Plataforma.extrair`.
     for chave in platforms:
         plataforma = PLATAFORMAS[chave]
         logger.info("Extraindo %s...", plataforma.nome)
-        counts[chave] = plataforma.extrair(start_date, end_date, run_id)
+        counts[chave] = plataforma.extrair(
+            start_date, end_date, run_id, **opcoes.get(chave, {})
+        )
 
     return counts
 
@@ -307,10 +346,22 @@ def main() -> None:
         _cabecalho(ETAPA_EXTRACAO, "IGNORADA (--skip-extract)")
         logger.info("Reprocessando os arquivos brutos já existentes.")
     else:
+        # Desvio excepcional: só é montado quando o operador pediu, e só
+        # alcança o extrator do Meta. Sem a flag, `opcoes` fica vazio e o
+        # comportamento é exatamente o de antes — fail closed.
+        opcoes: dict[str, dict[str, bool]] = {}
+        if args.permitir_contas_meta_indisponiveis:
+            logger.warning(
+                "DESVIO EXCEPCIONAL HABILITADO NESTA EXECUÇÃO: contas Meta "
+                "temporariamente indisponíveis serão excluídas da descoberta "
+                "em vez de abortar. Status desconhecido continua abortando."
+            )
+            opcoes["meta"] = {"permitir_contas_indisponiveis": True}
+
         counts = executar_etapa(
             ETAPA_EXTRACAO,
             lambda: run_extraction(
-                args.start_date, args.end_date, args.platforms, run_id
+                args.start_date, args.end_date, args.platforms, run_id, opcoes
             ),
             detalhe=f"(período: {args.start_date} a {args.end_date})",
         )

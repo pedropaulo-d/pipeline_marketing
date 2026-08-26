@@ -3,17 +3,20 @@
 
     Desempacota o payload bruto em colunas tipadas. Duas responsabilidades:
 
-    1. Deduplicacao: a bronze e append-only, entao o mesmo dia pode ter sido
-       extraido varias vezes. Vence o snapshot mais recente (`extracted_at`),
-       o que naturalmente incorpora as revisoes retroativas da janela de
-       atribuicao do Meta.
+    1. Deduplicacao: a bronze e append-only, entao a mesma entidade/dia pode
+       ter sido extraida varias vezes. Vence sua observacao mais recente
+       (`extracted_at`). Entidade ausente de lote posterior preserva a ultima
+       observacao conhecida; ausencia sem tombstone nao significa metrica zero.
     2. Normalizacao das metricas de `actions` / `action_values`, que a API
        devolve como arrays de {action_type, value} em vez de colunas.
 */
 
 with ultimo_snapshot as (
 
-    {{ ultimo_snapshot('meta_ads') }}
+    {{ ultimo_snapshot(
+        'meta_ads',
+        ['account_id', 'campaign_id', 'adset_id', 'ad_id']
+    ) }}
 
 )
 

@@ -4,7 +4,8 @@ models:
   - name: stg_meta_ads
     description: >
       Meta Ads tipado, com as metricas de `actions`/`action_values`
-      desempacotadas e deduplicado pelo snapshot mais recente de cada dia.
+      desempacotadas e deduplicado pela observacao mais recente de cada
+      anuncio/dia.
     columns:
       - name: data
         tests: [not_null]
@@ -16,7 +17,8 @@ models:
   - name: stg_google_ads
     description: >
       Google Ads tipado, com a nomenclatura alinhada ao vocabulario comum
-      (ad_group vira adset, cost vira spend).
+      (ad_group vira adset, cost vira spend) e a mesma semantica de ultima
+      observacao por anuncio/dia do Meta.
     columns:
       - name: data
         tests: [not_null]
@@ -41,3 +43,104 @@ models:
         tests: [not_null]
       - name: data
         tests: [not_null]
+
+unit_tests:
+  - name: meta_preserva_entidade_ausente_e_atualiza_a_presente
+    description: >
+      Um lote parcial atualiza o anuncio A e nao apaga a ultima observacao
+      valida do anuncio B.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"10"}'::jsonb as payload
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-02 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"B","spend":"20"}'::jsonb
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-03 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"12"}'::jsonb
+    expect:
+      rows:
+        - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
+        - {data: '2026-08-01', anuncio_external_id: B, spend: 20}
+
+  - name: meta_atualiza_todas_as_entidades_quando_presentes
+    description: Um lote completo substitui as metricas de A e B por chave.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"10"}'::jsonb as payload
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-02 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"B","spend":"20"}'::jsonb
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-03 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"12"}'::jsonb
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-03 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"B","spend":"18"}'::jsonb
+    expect:
+      rows:
+        - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
+        - {data: '2026-08-01', anuncio_external_id: B, spend: 18}
+
+  - name: meta_nao_oculta_duplicata_no_mesmo_snapshot
+    description: >
+      Empate da mesma chave permanece duplicado para os data tests falharem
+      fechado; nenhuma linha e escolhida arbitrariamente.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-03 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"12"}'::jsonb as payload
+          union all
+          select 'meta_ads', date '2026-08-01',
+                 timestamptz '2026-08-03 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A","spend":"12"}'::jsonb
+    expect:
+      rows:
+        - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
+        - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
+
+  - name: google_preserva_entidade_ausente_e_atualiza_a_presente
+    description: A protecao por chave vale igualmente para a fonte Google.
+    model: stg_google_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'google_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","ad_group_id":"S1","ad_id":"A","cost":"10"}'::jsonb as payload
+          union all
+          select 'google_ads', date '2026-08-01',
+                 timestamptz '2026-08-02 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","ad_group_id":"S1","ad_id":"B","cost":"20"}'::jsonb
+          union all
+          select 'google_ads', date '2026-08-01',
+                 timestamptz '2026-08-03 10:00:00+00',
+                 '{"account_id":"C1","campaign_id":"CP1","ad_group_id":"S1","ad_id":"A","cost":"12"}'::jsonb
+    expect:
+      rows:
+        - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
+        - {data: '2026-08-01', anuncio_external_id: B, spend: 20}
