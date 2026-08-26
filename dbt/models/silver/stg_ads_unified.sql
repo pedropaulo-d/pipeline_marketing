@@ -25,6 +25,8 @@
     'spend', 'impressions', 'link_clicks',
     'conversions', 'conversion_value',
     'video_views', 'reach', 'profile_views', 'purchases', 'purchase_value',
+    'result_type', 'result_count', 'result_attribution_window',
+    'cost_per_result', 'objective', 'optimization_goal',
     'extracted_at'
 ] %}
 
@@ -76,6 +78,12 @@ select
     profile_views,
     purchases,
     purchase_value,
+    result_type,
+    result_count,
+    result_attribution_window,
+    cost_per_result,
+    objective,
+    optimization_goal,
 
     extracted_at
 

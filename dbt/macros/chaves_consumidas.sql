@@ -20,6 +20,8 @@
       um array do payload (`actions`, `action_values`) em vez de um escalar.
     - `acao_canonica('payload', 'chave', [...])` — mesma ideia, mas escolhendo
       UMA representacao por prioridade em vez de somar.
+    - `resultado_meta_valido/par('payload', 'results', 'cost_per_result')` —
+      as duas metades da familia oficial de Resultado da Meta.
 
     Se um padrao novo de acesso ao payload for introduzido no futuro, ele
     precisa ser acrescentado aqui, senao a chave sera reportada como nao
@@ -53,7 +55,9 @@
         {%- set padroes = [
             "payload\\s*->>?\\s*'([a-zA-Z0-9_]+)'",
             "sum_action_value\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'",
-            "acao_canonica\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'"
+            "acao_canonica\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'",
+            "resultado_meta_(?:valido|par)\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'",
+            "resultado_meta_(?:valido|par)\\(\\s*'payload'\\s*,\\s*'[a-zA-Z0-9_]+'\\s*,\\s*'([a-zA-Z0-9_]+)'"
         ] -%}
 
         {%- for padrao in padroes -%}

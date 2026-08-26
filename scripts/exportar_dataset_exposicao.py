@@ -86,9 +86,16 @@ VIEW: str = "gold.vw_metricas_completas"
 #                    pseudonimo)
 # - PROIBIDA         identifica cliente; nunca sai, nem transformada
 # - IGNORADA_SEGURA  inofensiva, mas desnecessaria: derivavel de `data`
+# - RESERVADA_EXPOSICAO campo aprovado para a proxima versao do contrato, mas
+#                    ainda fora da v2 para nao mudar a superficie sem a
+#                    reextracao/revisao autorizada
+# - SOMENTE_DW       contexto util para diagnostico interno, desnecessario ao
+#                    dashboard pela politica de minimizacao
 USADA: str = "USADA"
 PROIBIDA: str = "PROIBIDA"
 IGNORADA_SEGURA: str = "IGNORADA_SEGURA"
+RESERVADA_EXPOSICAO: str = "RESERVADA_EXPOSICAO"
+SOMENTE_DW: str = "SOMENTE_DW"
 
 CLASSIFICACAO: dict[str, str] = {
     "data": USADA,
@@ -118,6 +125,20 @@ CLASSIFICACAO: dict[str, str] = {
     # agregavel; zero no Google por ausencia de suporte da GAQL neste grao.
     # Nao e identificador nem carrega informacao reidentificavel.
     "purchase_value": USADA,
+
+    # Resultado Meta: o dashboard precisara destas quatro colunas numa futura
+    # versao do contrato. Elas ficam classificadas agora para o fail closed da
+    # view continuar verde depois do dbt build, mas NAO entram em
+    # COLUNAS_ORIGEM/COLUNAS_SAIDA nem alteram a superficie v2 nesta etapa.
+    "result_type": RESERVADA_EXPOSICAO,
+    "result_count": RESERVADA_EXPOSICAO,
+    "result_attribution_window": RESERVADA_EXPOSICAO,
+    "cost_per_result": RESERVADA_EXPOSICAO,
+
+    # Contexto operacional oficial, sem funcao no consumidor. Mantido no DW
+    # para diagnostico; minimizacao evita expor coluna que a UI nao usa.
+    "objective": SOMENTE_DW,
+    "optimization_goal": SOMENTE_DW,
 
     # Identidade real: os 4 nomes e os 4 external IDs. As 4 chaves naturais
     # aparecem como USADA acima porque sao a ENTRADA do HMAC — o teste
@@ -283,7 +304,7 @@ def verificar_schema_de_origem(conn) -> None:
     E o fail closed do contrato. Coluna nova na origem — um campo textual
     recem-extraido, por exemplo — nao pode escorregar para a exposicao por
     omissao, e tambem nao pode ser ignorada em silencio: alguem precisa
-    decidir se ela e USADA, PROIBIDA ou IGNORADA_SEGURA.
+    decidir explicitamente sua classificacao antes de o exportador continuar.
 
     Args:
         conn: Conexao aberta com o Data Warehouse.
@@ -312,7 +333,8 @@ def verificar_schema_de_origem(conn) -> None:
         raise ContratoQuebrado(
             f"{VIEW} tem coluna(s) nao classificada(s): "
             f"{', '.join(nao_classificadas)}. Classifique em CLASSIFICACAO "
-            f"como {USADA}, {PROIBIDA} ou {IGNORADA_SEGURA} antes de exportar."
+            f"como {USADA}, {PROIBIDA}, {IGNORADA_SEGURA}, "
+            f"{RESERVADA_EXPOSICAO} ou {SOMENTE_DW} antes de exportar."
         )
 
     faltando = sorted(set(COLUNAS_ORIGEM) - reais)

@@ -20,7 +20,7 @@ Fail closed
 O contrato e verificado antes de qualquer renderizacao, no mesmo espirito de
 `verificar_schema_de_origem` no exportador:
 
-1. as 19 colunas obrigatorias tem de existir, na ordem do contrato;
+1. as 20 colunas obrigatorias v2 tem de existir, na ordem do contrato;
 2. nenhuma coluna pode terminar em `_nk`, `_sk`, `_external_id` ou `_nome`;
 3. os quatro identificadores tem de casar com o formato de pseudonimo;
 4. coluna extra e **ignorada de proposito** e reportada — coluna nova na
@@ -105,6 +105,17 @@ COLUNAS_OBRIGATORIAS: tuple[str, ...] = (
     "purchase_value",
 )
 
+# Campos ja compreendidos pelo dashboard para a futura superficie v3. Nesta
+# etapa continuam opcionais porque o artefato real v2 nao sera regenerado nem
+# tera sua versao alterada. O grupo entra inteiro ou nao entra: aceitar metade
+# faria o consumidor inventar a outra metade do pareamento oficial.
+COLUNAS_RESULTADO_OPCIONAIS: tuple[str, ...] = (
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result",
+)
+
 SUFIXOS_PROIBIDOS: tuple[str, ...] = ("_nk", "_sk", "_external_id", "_nome")
 
 FORMATO_ID: dict[str, re.Pattern] = {
@@ -120,6 +131,9 @@ FORMATO_ID: dict[str, re.Pattern] = {
 FORMATO_PLATAFORMA: re.Pattern = re.compile(r"^[A-Za-z0-9 ._-]{1,30}$")
 
 PLATAFORMAS_CONHECIDAS: tuple[str, ...] = ("Meta Ads", "Google Ads")
+
+FORMATO_RESULT_TYPE: re.Pattern = re.compile(r"^[A-Za-z0-9_.:]{1,120}$")
+FORMATO_ATTRIBUTION_WINDOW: re.Pattern = re.compile(r"^[A-Za-z0-9_|]{1,120}$")
 
 
 class ContratoInvalido(Exception):
@@ -288,14 +302,29 @@ def validar_cabecalho(cabecalho: list[str]) -> tuple[str, ...]:
             "`python scripts/exportar_dataset_exposicao.py`."
         )
 
-    presentes = [c for c in cabecalho if c in COLUNAS_OBRIGATORIAS]
-    if tuple(presentes) != COLUNAS_OBRIGATORIAS:
+    opcionais_presentes = [
+        c for c in COLUNAS_RESULTADO_OPCIONAIS if c in cabecalho
+    ]
+    if opcionais_presentes and tuple(opcionais_presentes) != COLUNAS_RESULTADO_OPCIONAIS:
+        faltando_resultado = [
+            c for c in COLUNAS_RESULTADO_OPCIONAIS if c not in cabecalho
+        ]
+        raise ContratoInvalido(
+            "Contrato de Resultado incompleto: coluna(s) ausente(s): "
+            f"{', '.join(faltando_resultado)}."
+        )
+
+    conhecidas = COLUNAS_OBRIGATORIAS + (
+        COLUNAS_RESULTADO_OPCIONAIS if opcionais_presentes else ()
+    )
+    presentes = [c for c in cabecalho if c in conhecidas]
+    if tuple(presentes) != conhecidas:
         raise ContratoInvalido(
             "A ordem das colunas diverge do contrato de exposicao. Regenere o "
             "artefato em vez de reordenar o arquivo a mao."
         )
 
-    return tuple(c for c in cabecalho if c not in COLUNAS_OBRIGATORIAS)
+    return tuple(c for c in cabecalho if c not in conhecidas)
 
 
 def _converter(bruto: dict, numero_linha: int) -> dict:
@@ -360,6 +389,52 @@ def _converter(bruto: dict, numero_linha: int) -> dict:
             raise ContratoInvalido(
                 f"{metrica} nao e numero na linha {numero_linha}."
             ) from None
+
+    # Superficie v2: as colunas nao existem e os quatro valores permanecem
+    # semanticamente ausentes. Superficie futura: o grupo inteiro existe e
+    # cada linha traz um par completo ou quatro vazios.
+    for coluna in COLUNAS_RESULTADO_OPCIONAIS:
+        linha[coluna] = None
+
+    if all(coluna in bruto for coluna in COLUNAS_RESULTADO_OPCIONAIS):
+        tipo = (bruto.get("result_type") or "").strip()
+        janela = (bruto.get("result_attribution_window") or "").strip()
+        quantidade_texto = (bruto.get("result_count") or "").strip()
+        custo_texto = (bruto.get("cost_per_result") or "").strip()
+        preenchidos = [bool(tipo), bool(quantidade_texto), bool(janela), bool(custo_texto)]
+
+        if any(preenchidos) and not all(preenchidos):
+            raise ContratoInvalido(
+                f"Par de Resultado incompleto na linha {numero_linha}."
+            )
+
+        if all(preenchidos):
+            if not FORMATO_RESULT_TYPE.fullmatch(tipo):
+                raise ContratoInvalido(
+                    f"result_type fora do formato aceito na linha {numero_linha}."
+                )
+            if not FORMATO_ATTRIBUTION_WINDOW.fullmatch(janela):
+                raise ContratoInvalido(
+                    "result_attribution_window fora do formato aceito na linha "
+                    f"{numero_linha}."
+                )
+            try:
+                quantidade = Decimal(quantidade_texto)
+                custo = Decimal(custo_texto)
+            except InvalidOperation:
+                raise ContratoInvalido(
+                    f"Resultado nao numerico na linha {numero_linha}."
+                ) from None
+            if quantidade < 0 or custo < 0:
+                raise ContratoInvalido(
+                    f"Resultado negativo na linha {numero_linha}."
+                )
+            linha.update({
+                "result_type": tipo,
+                "result_count": quantidade,
+                "result_attribution_window": janela,
+                "cost_per_result": custo,
+            })
 
     return linha
 

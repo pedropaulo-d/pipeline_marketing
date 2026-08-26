@@ -321,6 +321,22 @@ DERIVADAS: dict[str, Derivada] = {
 META: str = "Meta Ads"
 GOOGLE: str = "Google Ads"
 
+# Camada de apresentacao deliberadamente pequena: so os indicators validados
+# pelos probes reais recebem rotulo amigavel. Valor desconhecido permanece
+# tecnico internamente, mas nao ganha quantidade/custo agregado por inferencia.
+ROTULOS_RESULTADO: dict[str, str] = {
+    "lead": "Lead",
+    "video_thruplay_watched_actions": "ThruPlay",
+}
+
+RESULTADO_MULTIPLOS: str = "Múltiplos"
+RESULTADO_NAO_MAPEADO: str = "Resultado não mapeado"
+RESULTADO_DISPONIVEL: str = "disponivel"
+RESULTADO_AUSENTE: str = "ausente"
+RESULTADO_INCOMPATIVEL: str = "incompativel"
+RESULTADO_SEM_SUPORTE: str = "sem_suporte"
+RESULTADO_DESCONHECIDO: str = "desconhecido"
+
 
 @dataclass(frozen=True)
 class Painel:
@@ -635,6 +651,105 @@ def dividir(numerador, denominador, fator: Decimal = Decimal(1)):
     if denominador <= 0:
         return None
     return numerador / denominador * fator
+
+
+def resultado_campanha(linhas: list[dict]) -> dict:
+    """Agrega Resultado Meta no grao campanha x periodo filtrado.
+
+    O custo factual vindo da API e guardado para auditoria, mas nao participa
+    desta conta: somar ou tirar media de razoes seria incorreto. Para um unico
+    `result_type` + `result_attribution_window` validado, o custo agregado e
+    `SUM(spend de toda a campanha) / SUM(result_count reportado)`. Linhas sem
+    Resultado ainda carregam investimento e portanto participam do numerador.
+
+    Mais de um tipo/janela, indicador desconhecido, Google ou ausencia total
+    devolvem valores indisponiveis. Objective e optimization_goal nao entram
+    na decisao.
+
+    Args:
+        linhas: Linhas factuais de uma unica campanha no recorte.
+
+    Returns:
+        Dicionario com tipo tecnico, rotulo, janela, quantidade, custo e
+        estado semantico.
+    """
+    base = {
+        "result_type": None,
+        "result_count": None,
+        "result_attribution_window": None,
+        "cost_per_result": None,
+        "tipo_resultado": None,
+        "status_resultado": RESULTADO_AUSENTE,
+    }
+    if not linhas:
+        return base
+
+    if {linha["plataforma"] for linha in linhas} != {META}:
+        return {**base, "status_resultado": RESULTADO_SEM_SUPORTE}
+
+    com_resultado = [
+        linha for linha in linhas
+        if linha.get("result_type") is not None
+    ]
+    if not com_resultado:
+        return base
+
+    pares = {
+        (linha.get("result_type"), linha.get("result_attribution_window"))
+        for linha in com_resultado
+    }
+    if len(pares) != 1:
+        return {
+            **base,
+            "tipo_resultado": RESULTADO_MULTIPLOS,
+            "status_resultado": RESULTADO_INCOMPATIVEL,
+        }
+
+    result_type, janela = next(iter(pares))
+    rotulo = ROTULOS_RESULTADO.get(result_type)
+    if rotulo is None:
+        return {
+            **base,
+            "result_type": result_type,
+            "result_attribution_window": janela,
+            "tipo_resultado": RESULTADO_NAO_MAPEADO,
+            "status_resultado": RESULTADO_DESCONHECIDO,
+        }
+
+    quantidades = [linha.get("result_count") for linha in com_resultado]
+    if any(valor is None for valor in quantidades):
+        return {
+            **base,
+            "tipo_resultado": RESULTADO_MULTIPLOS,
+            "status_resultado": RESULTADO_INCOMPATIVEL,
+        }
+
+    result_count = sum(quantidades, Decimal(0))
+    spend = sum((linha["spend"] for linha in linhas), Decimal(0))
+    return {
+        "result_type": result_type,
+        "result_count": result_count,
+        "result_attribution_window": janela,
+        "cost_per_result": dividir(spend, result_count),
+        "tipo_resultado": rotulo,
+        "status_resultado": RESULTADO_DISPONIVEL,
+    }
+
+
+def formatar_quantidade_resultado(valor) -> str:
+    """Formata contagem inteira como inteira e preserva eventual fracao.
+
+    Args:
+        valor: Quantidade agregada ou ``None``.
+
+    Returns:
+        Texto pt-BR ou o marcador de indisponibilidade.
+    """
+    if valor is None:
+        return INDISPONIVEL
+    decimal = Decimal(str(valor))
+    formato = INTEIRO if decimal == decimal.to_integral_value() else DECIMAL
+    return formatar(decimal, formato)
 
 
 def calcular_derivada(chave: str, totais: dict):
@@ -1102,6 +1217,8 @@ def ranking(
             **calcular_derivadas(totais),
             "linhas": totais["linhas"],
         }
+        if nivel == "campanha":
+            registro.update(resultado_campanha(membros))
         for pai in ("conta", "campanha", "adset"):
             if pai == nivel:
                 break

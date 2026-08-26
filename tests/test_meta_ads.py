@@ -3,11 +3,44 @@
 import inspect
 import unittest
 from collections.abc import Iterator
+from pathlib import Path
 from unittest import mock
 
 from facebook_business.adobjects.adaccount import AdAccount
 
 from extractors import meta_ads
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+class TestContratoDeInsights(unittest.TestCase):
+    """O request normal carrega somente o contrato canonico validado."""
+
+    def test_campos_de_resultado_entram_no_request(self) -> None:
+        for campo in (
+            "objective",
+            "optimization_goal",
+            "results",
+            "cost_per_result",
+        ):
+            with self.subTest(campo=campo):
+                self.assertIn(campo, meta_ads.INSIGHT_FIELDS)
+
+    def test_campos_diagnosticos_nao_entram_por_curiosidade(self) -> None:
+        for campo in (
+            "result_values_performance_indicator",
+            "objective_results",
+            "cost_per_objective_result",
+            "cost_per_action_type",
+            "video_thruplay_watched_actions",
+            "cost_per_thruplay",
+        ):
+            with self.subTest(campo=campo):
+                self.assertNotIn(campo, meta_ads.INSIGHT_FIELDS)
+
+    def test_sdk_meta_esta_pinando_na_versao_validada(self) -> None:
+        requisitos = (BASE_DIR / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("facebook-business==26.0.0", requisitos.splitlines())
 
 
 class CursorFalso:

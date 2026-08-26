@@ -10,10 +10,38 @@
     "adset_name": "Conjunto Demo 1-1",
     "ad_id": "23000011001",
     "ad_name": "Anuncio Demo 1-1-1",
-    "spend": "379.93",
+    "spend": "34.05",
     "impressions": "12472",
     "inline_link_clicks": "147",
-    "reach": "7592"
+    "reach": "7592",
+    "objective": "OUTCOME_ENGAGEMENT",
+    "optimization_goal": "THRUPLAY",
+    "results": [
+      {
+        "indicator": "video_thruplay_watched_actions",
+        "values": [
+          {
+            "attribution_windows": [
+              "default"
+            ],
+            "value": "81"
+          }
+        ]
+      }
+    ],
+    "cost_per_result": [
+      {
+        "indicator": "video_thruplay_watched_actions",
+        "values": [
+          {
+            "attribution_windows": [
+              "default"
+            ],
+            "value": "0.42037037"
+          }
+        ]
+      }
+    ]
   },
   {
     "date_start": "2026-01-01",
@@ -114,14 +142,14 @@
     "adset_name": "Conjunto Demo 1-2",
     "ad_id": "1200000001201",
     "ad_name": "Anuncio Demo 1-2-1",
-    "spend": "763.43",
+    "spend": "138.20",
     "impressions": "4741",
     "inline_link_clicks": "75",
     "reach": "3060",
     "actions": [
       {
         "action_type": "lead",
-        "value": "5"
+        "value": "9"
       },
       {
         "action_type": "video_view",
@@ -144,6 +172,34 @@
       {
         "action_type": "lead",
         "value": "735.75"
+      }
+    ],
+    "objective": "OUTCOME_LEADS",
+    "optimization_goal": "OFFSITE_CONVERSIONS",
+    "results": [
+      {
+        "indicator": "lead",
+        "values": [
+          {
+            "attribution_windows": [
+              "default"
+            ],
+            "value": "9"
+          }
+        ]
+      }
+    ],
+    "cost_per_result": [
+      {
+        "indicator": "lead",
+        "values": [
+          {
+            "attribution_windows": [
+              "default"
+            ],
+            "value": "15.35555556"
+          }
+        ]
       }
     ]
   },

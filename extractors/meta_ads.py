@@ -26,6 +26,10 @@ INSIGHT_FIELDS: list[str] = [
     "reach",
     "actions",
     "action_values",
+    "objective",
+    "optimization_goal",
+    "results",
+    "cost_per_result",
 ]
 
 ACCOUNT_FIELDS: list[str] = ["account_id", "name", "account_status"]

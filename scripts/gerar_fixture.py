@@ -13,6 +13,8 @@ Nao e dado bonito: cada peculiaridade abaixo ja causou bug ou esta protegida
 por teste, e a fixture existe para que a refatoracao passe por todas elas.
 
 - Meta devolve conversoes como ARRAY de {action_type, value}, nao coluna.
+- Meta devolve Resultado em dois arrays pareados por indicator + janela de
+  atribuicao; a fixture inclui os casos validados de Lead e ThruPlay.
 - Um registro do Meta sem a chave `actions` — exercita o COALESCE da macro
   `sum_action_value`.
 - Google devolve conversoes FRACIONADAS (modelagem de atribuicao). Truncar
@@ -145,6 +147,53 @@ def _registro_meta(
         registro["action_values"] = [
             {"action_type": "lead", "value": f"{rng.uniform(0, 2000):.2f}"},
         ]
+
+    # Casos canonicos sinteticos, baseados apenas na estrutura validada pelos
+    # probes. Nenhum identificador ou nome real participa da fixture.
+    if (data, conta, campanha, anuncio) == (DATAS[0], 1, 1, 1):
+        registro.update({
+            "spend": "34.05",
+            "objective": "OUTCOME_ENGAGEMENT",
+            "optimization_goal": "THRUPLAY",
+            "results": [{
+                "indicator": "video_thruplay_watched_actions",
+                "values": [{
+                    "attribution_windows": ["default"],
+                    "value": "81",
+                }],
+            }],
+            "cost_per_result": [{
+                "indicator": "video_thruplay_watched_actions",
+                "values": [{
+                    "attribution_windows": ["default"],
+                    "value": "0.42037037",
+                }],
+            }],
+        })
+
+    if (data, conta, campanha, anuncio) == (DATAS[0], 1, 2, 1):
+        registro.update({
+            "spend": "138.20",
+            "objective": "OUTCOME_LEADS",
+            "optimization_goal": "OFFSITE_CONVERSIONS",
+            "results": [{
+                "indicator": "lead",
+                "values": [{
+                    "attribution_windows": ["default"],
+                    "value": "9",
+                }],
+            }],
+            "cost_per_result": [{
+                "indicator": "lead",
+                "values": [{
+                    "attribution_windows": ["default"],
+                    "value": "15.35555556",
+                }],
+            }],
+        })
+        for acao in registro.get("actions", []):
+            if acao["action_type"] == "lead":
+                acao["value"] = "9"
 
     return registro
 

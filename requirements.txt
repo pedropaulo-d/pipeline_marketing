@@ -1,5 +1,5 @@
 python-dotenv
-facebook-business
+facebook-business==26.0.0
 google-ads
 sqlalchemy
 psycopg2-binary

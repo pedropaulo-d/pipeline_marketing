@@ -592,6 +592,18 @@ def tabela_ranking(itens: list[dict], nivel: str) -> list[dict]:
                             ("adset", "Ad set")):
             if pai in item and pai != nivel:
                 linha[f"{rotulo} (pai)"] = item[pai]
+        if nivel == "campanha":
+            linha.update({
+                "Resultado": m.formatar_quantidade_resultado(
+                    item["result_count"]
+                ),
+                "Tipo de resultado": (
+                    item["tipo_resultado"] or m.INDISPONIVEL
+                ),
+                "Custo por resultado": m.formatar(
+                    item["cost_per_result"], m.MOEDA
+                ),
+            })
         linha.update({
             "Investimento": m.formatar_metrica("spend", item["spend"]),
             "Impressões": m.formatar_metrica(

@@ -13,6 +13,16 @@ models:
         tests: [not_null]
       - name: spend
         tests: [not_null]
+      - name: result_type
+        description: Indicator oficial pareado de `results`.
+      - name: result_count
+        description: Quantidade oficial; NULL quando a API nao trouxe resultado.
+      - name: result_attribution_window
+        description: Conjunto ordenado de attribution windows usado no pareamento.
+      - name: cost_per_result
+        description: Custo oficial no grao factual; metrica nao aditiva.
+      - name: resultado_valido
+        description: Guarda interna bloqueada por assert_resultado_meta_sem_ambiguidade.
 
   - name: stg_google_ads
     description: >
@@ -278,3 +288,234 @@ unit_tests:
         - {anuncio_external_id: A, conversions: 2.5, conversion_value: 99,
            purchases: 0, purchase_value: 0,
            spend: 10, impressions: 100, link_clicks: 5, video_views: 7}
+
+  - name: resultado_meta_lead_simples
+    description: Lead validado atravessa quantidade, custo, janela e contexto.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "objective":"OUTCOME_LEADS","optimization_goal":"OFFSITE_CONVERSIONS",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35555556"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: lead, result_count: 9,
+           result_attribution_window: default, cost_per_result: 15.35555556,
+           objective: OUTCOME_LEADS, optimization_goal: OFFSITE_CONVERSIONS,
+           resultado_valido: true}
+
+  - name: resultado_meta_thruplay_simples
+    description: Fixture sintetica reproduz a estrutura validada no probe real.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "spend":"34.05","objective":"OUTCOME_ENGAGEMENT","optimization_goal":"THRUPLAY",
+                   "results":[{"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"81"}]}],
+                   "cost_per_result":[{"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"0.42037037"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, spend: 34.05,
+           result_type: video_thruplay_watched_actions, result_count: 81,
+           result_attribution_window: default, cost_per_result: 0.42037037,
+           objective: OUTCOME_ENGAGEMENT, optimization_goal: THRUPLAY,
+           resultado_valido: true}
+
+  - name: resultado_meta_exige_indicator_correspondente
+    description: Indicator divergente nao e pareado por posicao.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"outro","values":[{"attribution_windows":["default"],"value":"10"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, cost_per_result: null,
+           resultado_valido: false}
+
+  - name: resultado_meta_exige_janela_correspondente
+    description: Mesmo indicator com attribution windows diferentes e invalido.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["7d_click"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["1d_view"],"value":"10"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, cost_per_result: null,
+           resultado_valido: false}
+
+  - name: resultado_meta_ordem_das_janelas_nao_muda_o_par
+    description: A lista interna e canonizada antes do pareamento.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["7d_click","1d_view"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["1d_view","7d_click"],"value":"15.35"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: lead, result_count: 9,
+           result_attribution_window: '1d_view|7d_click', cost_per_result: 15.35,
+           resultado_valido: true}
+
+  - name: resultado_meta_sem_cost_falha_fechado
+    description: Result sem custo correspondente e marcado como invalido.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, resultado_valido: false}
+
+  - name: resultado_meta_sem_result_falha_fechado
+    description: Cost sem result correspondente e marcado como invalido.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, resultado_valido: false}
+
+  - name: resultado_meta_multiplos_indicators_falha_fechado
+    description: Dois tipos oficiais nao sao somados nem priorizados.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[
+                     {"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]},
+                     {"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"81"}]}],
+                   "cost_per_result":[
+                     {"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"0.42"}]},
+                     {"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, resultado_valido: false}
+
+  - name: resultado_meta_multiplas_janelas_falha_fechado
+    description: Dois values de janelas distintas nao viram soma ou media.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[
+                     {"attribution_windows":["7d_click"],"value":"9"},
+                     {"attribution_windows":["1d_view"],"value":"2"}]}],
+                   "cost_per_result":[{"indicator":"lead","values":[
+                     {"attribution_windows":["1d_view"],"value":"20"},
+                     {"attribution_windows":["7d_click"],"value":"15"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, resultado_valido: false}
+
+  - name: resultado_meta_ausencia_legitima_permanece_null
+    description: Ausencia simultanea nao inventa zero nem quebra o pipeline.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A"}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, result_count: null,
+           result_attribution_window: null, cost_per_result: null,
+           resultado_valido: true}
+
+  - name: resultado_meta_item_sem_values_falha_fechado
+    description: Item estruturalmente presente nao e confundido com array vazio.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, resultado_valido: false}
+
+  - name: resultado_google_permanece_sem_suporte
+    description: Conversoes e CPA Google nao sao reinterpretados como Resultado Meta.
+    model: stg_google_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'google_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","ad_group_id":"S1","ad_id":"A",
+                   "cost":"100","conversions":"5"}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, conversions: 5,
+           result_type: null, result_count: null,
+           result_attribution_window: null, cost_per_result: null,
+           objective: null, optimization_goal: null, resultado_valido: true}
+
+  - name: resultado_meta_preserva_numeric_sem_float
+    description: Quantidade fracionaria e custo de oito casas usam numeric exato.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"2.75"}]}],
+                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"4.12345678"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_count: 2.75,
+           cost_per_result: 4.12345678, resultado_valido: true}

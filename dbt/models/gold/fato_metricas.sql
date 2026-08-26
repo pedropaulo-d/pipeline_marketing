@@ -26,7 +26,17 @@ select
     u.reach,
     u.profile_views,
     u.purchases,
-    u.purchase_value
+    u.purchase_value,
+
+    -- Resultado oficial no mesmo grao factual. `cost_per_result` e uma razao
+    -- observada, nao aditiva: consumidores agregados recalculam
+    -- SUM(spend) / SUM(result_count) somente para um unico type/window.
+    u.result_type,
+    u.result_count,
+    u.result_attribution_window,
+    u.cost_per_result,
+    u.objective,
+    u.optimization_goal
 
 from {{ ref('stg_ads_unified') }} u
 

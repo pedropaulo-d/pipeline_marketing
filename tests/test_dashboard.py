@@ -44,6 +44,7 @@ from dashboard import metricas as m
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 CABECALHO = list(dados.COLUNAS_OBRIGATORIAS)
+CABECALHO_RESULTADO = CABECALHO + list(dados.COLUNAS_RESULTADO_OPCIONAIS)
 
 # Identificadores ficticios, no formato da superficie de exposicao. Nao saem
 # de nenhuma entidade real nem da chave HMAC: sao literais de teste.
@@ -108,6 +109,23 @@ def linha_csv(
         anuncio, str(versoes[3]),
         spend, impressions, link_clicks, conversions, conversion_value,
         video_views, reach, profile_views, purchases, purchase_value,
+    ]
+
+
+def linha_csv_resultado(
+    *args,
+    result_type: str = "",
+    result_count: str = "",
+    result_attribution_window: str = "",
+    cost_per_result: str = "",
+    **kwargs,
+) -> list[str]:
+    """Monta a futura linha v3 sem mudar o fixture real da superficie v2."""
+    return linha_csv(*args, **kwargs) + [
+        result_type,
+        result_count,
+        result_attribution_window,
+        cost_per_result,
     ]
 
 
@@ -1827,6 +1845,163 @@ class TestDatasetDeDemonstracao(unittest.TestCase):
             gerar_dados_demo.identificador("conta", 1),
             gerar_dados_demo.identificador("campanha", 1),
         )
+
+
+class TestResultadoPorCampanha(unittest.TestCase):
+    """Resultado Meta e agregado somente para um tipo/janela validado."""
+
+    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def _lead(self, custo_um: str = "99", custo_dois: str = "1") -> list[dict]:
+        return self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="100.00", conversions="4",
+                result_type="lead", result_count="4",
+                result_attribution_window="default",
+                cost_per_result=custo_um,
+            ),
+            linha_csv_resultado(
+                "2026-08-02", "Meta Ads", spend="38.20", conversions="5",
+                anuncio="Anuncio-AAAA0002", result_type="lead",
+                result_count="5", result_attribution_window="default",
+                cost_per_result=custo_dois,
+            ),
+        ])
+
+    def test_campanha_lead_soma_resultado_e_recalcula_custo(self):
+        resultado = m.resultado_campanha(self._lead())
+        self.assertEqual(resultado["result_count"], Decimal(9))
+        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(
+            resultado["cost_per_result"], Decimal("138.20") / Decimal(9)
+        )
+
+    def test_campanha_thruplay_reproduz_fixture_validado(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="34.05",
+                result_type="video_thruplay_watched_actions",
+                result_count="81", result_attribution_window="default",
+                cost_per_result="0.42037037",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["result_count"], Decimal(81))
+        self.assertEqual(resultado["tipo_resultado"], "ThruPlay")
+        self.assertEqual(
+            resultado["cost_per_result"], Decimal("34.05") / Decimal(81)
+        )
+        self.assertEqual(m.formatar(resultado["cost_per_result"], m.MOEDA), "R$ 0,42")
+
+    def test_custo_agregado_nunca_e_soma_dos_custos_diarios(self):
+        resultado = m.resultado_campanha(self._lead("10", "20"))
+        self.assertNotEqual(resultado["cost_per_result"], Decimal(30))
+
+    def test_custo_agregado_nunca_e_media_dos_custos_diarios(self):
+        resultado = m.resultado_campanha(self._lead("10", "20"))
+        self.assertNotEqual(resultado["cost_per_result"], Decimal(15))
+
+    def test_custos_diarios_nao_alteram_razao_agregada(self):
+        antes = m.resultado_campanha(self._lead("10", "20"))
+        depois = m.resultado_campanha(self._lead("999", "0.01"))
+        self.assertEqual(antes["cost_per_result"], depois["cost_per_result"])
+
+    def test_multiplos_tipos_ficam_indisponiveis(self):
+        linhas = self._lead()
+        linhas[1]["result_type"] = "video_thruplay_watched_actions"
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+
+    def test_multiplas_janelas_ficam_indisponiveis(self):
+        linhas = self._lead()
+        linhas[1]["result_attribution_window"] = "7d_click"
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+
+    def test_sem_resultado_fica_indisponivel(self):
+        linhas = self._carregar([
+            linha_csv_resultado("2026-08-01", "Meta Ads", spend="10"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_type"])
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    def test_indicator_desconhecido_nao_inventa_rotulo(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="indicator.nao_validado", result_count="2",
+                result_attribution_window="default", cost_per_result="5",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(
+            resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO
+        )
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    def test_google_nao_ganha_resultado_meta(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Google Ads", spend="100", conversions="5",
+                result_type="lead", result_count="5",
+                result_attribution_window="default", cost_per_result="20",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_SEM_SUPORTE)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    def test_cpl_lead_continua_igual_ao_custo_por_resultado(self):
+        linhas = self._lead()
+        custo_resultado = m.resultado_campanha(linhas)["cost_per_result"]
+        cpl = m.painel(linhas)["cpl_meta"]
+        self.assertEqual(custo_resultado, cpl)
+
+    def test_reach_continua_nao_aditivo(self):
+        linhas = self._lead()
+        linhas[0]["reach"] = Decimal(100)
+        linhas[1]["reach"] = Decimal(80)
+        self.assertIsNone(m.agregar(linhas)["reach"])
+
+    def test_tabela_de_campanhas_declara_as_tres_novas_colunas(self):
+        fonte = (BASE_DIR / "dashboard" / "app.py").read_text(encoding="utf-8")
+        for coluna in ("Resultado", "Tipo de resultado", "Custo por resultado"):
+            with self.subTest(coluna=coluna):
+                self.assertIn(f'"{coluna}"', fonte)
+
+
+class TestContratoOpcionalDeResultado(unittest.TestCase):
+    """A v2 abre sem Resultado; a futura v3 entra inteira e tipada."""
+
+    def test_superficie_v2_recebe_null_sem_inventar_zero(self):
+        linha = carregar([linha_csv("2026-08-01", "Meta Ads")]).linhas[0]
+        for campo in dados.COLUNAS_RESULTADO_OPCIONAIS:
+            self.assertIsNone(linha[campo])
+
+    def test_grupo_futuro_incompleto_falha_fechado(self):
+        cabecalho = CABECALHO + ["result_type"]
+        with self.assertRaises(dados.ContratoInvalido):
+            carregar([linha_csv("2026-08-01", "Meta Ads") + ["lead"]], cabecalho)
+
+    def test_grupo_futuro_preserva_decimal(self):
+        linha = carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", result_type="lead",
+                result_count="9", result_attribution_window="default",
+                cost_per_result="15.35555556",
+            )
+        ], CABECALHO_RESULTADO).linhas[0]
+        self.assertEqual(linha["result_count"], Decimal(9))
+        self.assertEqual(linha["cost_per_result"], Decimal("15.35555556"))
 
 
 class TestSmokeStreamlitEPlotly(unittest.TestCase):

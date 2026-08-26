@@ -121,6 +121,18 @@ models:
         tests: [not_null]
       - name: impressions
         tests: [not_null]
+      - name: result_type
+        description: Indicator oficial de `results`; NULL quando nao reportado.
+      - name: result_count
+        description: Quantidade oficial no grao anuncio x dia; condicionalmente aditiva.
+      - name: result_attribution_window
+        description: Conjunto canonico de attribution windows pareado com o custo.
+      - name: cost_per_result
+        description: Razao oficial Meta no grao factual; nunca somar nem promediar.
+      - name: objective
+        description: Contexto oficial devolvido por AdsInsights; nao seleciona resultado.
+      - name: optimization_goal
+        description: Contexto oficial devolvido por AdsInsights; nao seleciona resultado.
 
   - name: vw_metricas_completas
     description: >

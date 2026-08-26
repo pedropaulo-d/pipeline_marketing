@@ -40,6 +40,10 @@
     - `video_views` tem definicao diferente em cada plataforma (TrueView de
       30s no Google, 3s no Meta). Valido dentro de cada uma, sem significado
       se somado entre elas.
+    - `cost_per_result` e uma razao Meta no grao original e nunca deve ser
+      somada nem promediada. No agregado, so existe para um unico
+      `result_type` + `result_attribution_window` e vale
+      `sum(spend) / sum(result_count)`.
 */
 
 {{ config(materialized='view') }}
@@ -96,7 +100,16 @@ select
     f.reach,
     f.profile_views,
     f.purchases,
-    f.purchase_value
+    f.purchase_value,
+
+    -- Resultado oficial Meta. No Google todos permanecem NULL por ausencia de
+    -- suporte; conversions/CPA nao sao reinterpretados como equivalentes.
+    f.result_type,
+    f.result_count,
+    f.result_attribution_window,
+    f.cost_per_result,
+    f.objective,
+    f.optimization_goal
 
 from {{ ref('fato_metricas') }} as f
 

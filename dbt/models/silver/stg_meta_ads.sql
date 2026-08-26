@@ -27,6 +27,30 @@ with ultimo_snapshot as (
         ['account_id', 'campaign_id', 'adset_id', 'ad_id']
     ) }}
 
+),
+
+validacao_resultado as (
+
+    select
+        *,
+        {{ resultado_meta_valido(
+            'payload', 'results', 'cost_per_result'
+        ) }} as resultado_valido
+    from ultimo_snapshot
+
+),
+
+resultado_parseado as (
+
+    select
+        *,
+        case
+            when resultado_valido then {{ resultado_meta_par(
+                'payload', 'results', 'cost_per_result'
+            ) }}
+        end as resultado
+    from validacao_resultado
+
 )
 
 select
@@ -83,6 +107,21 @@ select
     {{ acao_canonica('payload', 'action_values', ['omni_purchase', 'purchase']) }}::numeric
         as purchase_value,
 
+    -- Resultado oficial escolhido pela propria Meta. `resultado` so existe
+    -- quando `results` e `cost_per_result` formam exatamente um par por
+    -- indicator + conjunto canonico de attribution windows. Ausencia legitima
+    -- permanece NULL; ambiguidade deixa `resultado_valido = false` e bloqueia
+    -- o build pelo data test, sem escolher primeiro/maior/objetivo.
+    resultado->>'result_type'                            as result_type,
+    (resultado->>'result_count')::numeric                as result_count,
+    resultado->>'result_attribution_window'              as result_attribution_window,
+    (resultado->>'cost_per_result')::numeric             as cost_per_result,
+    payload->>'objective'                                as objective,
+    payload->>'optimization_goal'                        as optimization_goal,
+
+    -- Guarda interna da Silver; nao segue para o contrato unificado/Gold.
+    resultado_valido,
+
     extracted_at
 
-from ultimo_snapshot
+from resultado_parseado

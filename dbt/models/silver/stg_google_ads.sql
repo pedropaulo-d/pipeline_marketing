@@ -70,6 +70,20 @@ select
     0::int                                              as purchases,
     0::numeric                                          as purchase_value,
 
+    -- A familia Resultado/Custo por Resultado e semantica oficial do Meta.
+    -- NULL significa ausencia de suporte, nao resultado zero e nao conversao
+    -- Google reinterpretada.
+    null::text                                          as result_type,
+    null::numeric                                       as result_count,
+    null::text                                          as result_attribution_window,
+    null::numeric                                       as cost_per_result,
+    null::text                                          as objective,
+    null::text                                          as optimization_goal,
+
+    -- Simetria interna com a guarda do staging Meta. Google nao tem estrutura
+    -- Meta para validar, logo o contrato esta valido por ausencia de suporte.
+    true                                                as resultado_valido,
+
     extracted_at
 
 from ultimo_snapshot

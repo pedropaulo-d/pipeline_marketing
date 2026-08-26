@@ -276,6 +276,25 @@ class TestSchemaDeSaida(BaseExportacao):
     def test_nao_existe_linha_id(self):
         self.assertNotIn("linha_id", exportador.COLUNAS_SAIDA)
 
+    def test_resultado_fica_reservado_sem_mudar_contrato_v2(self):
+        reservadas = {
+            coluna for coluna, classe in exportador.CLASSIFICACAO.items()
+            if classe == exportador.RESERVADA_EXPOSICAO
+        }
+        self.assertEqual(reservadas, {
+            "result_type", "result_count", "result_attribution_window",
+            "cost_per_result",
+        })
+        self.assertTrue(reservadas.isdisjoint(exportador.COLUNAS_SAIDA))
+        self.assertEqual(exportador.VERSAO_CONTRATO, 2)
+
+    def test_contexto_de_resultado_fica_somente_no_dw(self):
+        somente_dw = {
+            coluna for coluna, classe in exportador.CLASSIFICACAO.items()
+            if classe == exportador.SOMENTE_DW
+        }
+        self.assertEqual(somente_dw, {"objective", "optimization_goal"})
+
 
 class TestFailClosed(BaseExportacao):
     """Evolucao do schema de origem nao pode passar em silencio."""
