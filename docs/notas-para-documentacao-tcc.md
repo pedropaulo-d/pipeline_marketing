@@ -981,26 +981,98 @@ dia, o que antes não existia. Ausência dentro de uma janela efetivamente
 consultada e ausência por conta nunca consultada são fatos distintos, e só o
 segundo impede afirmar completude.
 
-**A mesma classe permanece aberta do lado do Google — DÍVIDA TÉCNICA / RISCO
-LATENTE, NÃO DEFEITO ATIVO CONHECIDO.** A consulta de descoberta de subcontas
-(`GAQL_DISCOVERY`, em `extractors/google_ads.py`) filtra
-`customer_client.status = 'ENABLED'`. É filtro por estado corrente aplicado a
-uma consulta cujo produto é histórico — conceitualmente o mesmo defeito
-corrigido no Meta, um nível acima de onde já havia sido corrigido no Google: lá
-o filtro removido foi o de `campaign.status`, não o de conta.
+**A mesma classe existia do lado do Google, um nível acima do filtro já
+corrigido lá.** A consulta de descoberta de subcontas (`GAQL_DISCOVERY`, em
+`extractors/google_ads.py`) filtrava `customer_client.status = 'ENABLED'`. Era
+filtro por estado corrente aplicado a uma consulta cujo produto é histórico —
+conceitualmente o mesmo defeito corrigido no Meta, e um nível acima de onde já
+havia sido corrigido no Google: lá o filtro removido foi o de `campaign.status`,
+não o de conta.
 
-A classificação como risco latente, e não como defeito ativo, tem base
-verificável: a Bronze atual não apresenta perda conhecida do lado do Google, e
-`assert_reextracao_nao_perde_gasto` — que passou a percorrer todo o histórico e
-cobre as duas fontes com severidade de erro — está verde. Se uma subconta
-tivesse sido suprimida, esse teste teria falhado.
+**Correção (26/08/2026).** O predicado de estado saiu do WHERE e a classificação
+passou a acontecer em Python, sobre o enum `CustomerStatus` do SDK instalado —
+resolvido pela versão default da própria biblioteca, para não fixar versão de
+API nem duplicar número mágico. `ENABLED`, `CANCELED`, `SUSPENDED` e `CLOSED`
+descrevem contas que existem e podem ter servido anúncios nos dias consultados,
+e por isso entram; nenhum deles afirma ausência de histórico. `UNSPECIFIED`
+(campo ausente) e `UNKNOWN` ("valor desconhecido nesta versão") não são estado
+de conta, e sim contrato ausente ou mais novo do que a biblioteca: abortam a
+descoberta, junto com qualquer valor fora do enum. O único predicado que
+permanece no WHERE é `customer_client.manager = FALSE`, que não é estado de
+entrega e sim o tipo do nó da árvore — conta gestora não tem `ad_group_ad`.
 
-O motivo de não corrigir junto é de método, não de conveniência: alterar a
-descoberta muda o conjunto de contas consultadas e, portanto, a cobertura
-histórica. Isso reabriria o recorte experimental recém-validado e exigiria um
-ciclo próprio de reextração, auditoria e recongelamento. Correção e validação
-de um snapshot não devem competir pelo mesmo ciclo — foi justamente essa
-disciplina que permitiu decompor os deltas do incidente do Meta até o centavo.
+**A assimetria com o Meta é do contrato, não de rigor.** O desvio opt-in criado
+para o Meta existe porque a descoberta de lá *declara* indisponibilidade de
+acesso (`temporarily_unavailable`), e uma conta presa nesse estado bloquearia
+toda a extração. A descoberta do Google não declara nada equivalente:
+indisponibilidade de acesso só se manifesta como erro na consulta da conta
+(`CUSTOMER_NOT_ENABLED`). Não havendo estado de descoberta que uma válvula
+pudesse liberar, não foi criada válvula — copiar a do Meta seria cerimônia sem
+contrato que a sustente.
+
+**A dimensão do filtro só apareceu com medição.** Uma sonda de descoberta
+autorizada, executada em 26/08/2026 — somente listagem de subcontas e estados,
+sem métricas e sem escrita na Bronze — encontrou **117 subcontas não gestoras**
+no MCC: 66 `ENABLED`, 48 `CANCELED` e 3 `CLOSED`. Nenhuma `SUSPENDED`, nenhum
+status fora do enum. As **51 não-`ENABLED` estavam todas ausentes da Bronze**.
+O filtro antigo, portanto, não era risco latente: ele excluía 51 subcontas de
+toda extração, inclusive do *backfill* de 2026-04-07, que foi consultado em
+2026-08-05 — 120 dias depois da data de referência.
+
+**Uma segunda sonda mediu se essas contas ainda podem ser consultadas.** Para
+as 51, uma consulta mínima de acessibilidade (`SELECT customer.id FROM
+customer`, sem métricas e sem data): **1 conta `CANCELED` respondeu
+normalmente; 47 `CANCELED` e as 3 `CLOSED` recusaram com
+`CUSTOMER_NOT_ENABLED`** — *"the customer account can't be accessed because it
+is not yet enabled or has been deactivated"*. Nenhum outro erro apareceu.
+Nenhuma das 51 é conta de teste (`customer_client.test_account = false` em
+todas), o que descarta a explicação mais conveniente para as `CLOSED`.
+
+Na única conta acessível, a consulta histórica cobriu exatamente as datas do
+recorte congelado — 2026-04-07 e 2026-07-26 a 2026-08-24 — e devolveu **zero
+observações**: nenhuma linha, nenhum investimento, nenhuma impressão. Essa
+conta específica está verificada e não esconde história.
+
+**Limitação de cobertura do snapshot — registro explícito.** As outras **50
+contas (47 `CANCELED` e 3 `CLOSED`) não podem ter seu histórico verificado pela
+API no estado atual.** Elas nunca apareceram na Bronze, e a recusa do servidor
+**não** é evidência de que não tiveram entrega: `CUSTOMER_NOT_ENABLED` fala
+sobre acesso hoje, não sobre atividade no passado. Portanto o histórico dessas
+contas **não pode ser afirmado como zero**, e a correção **não** pode ser
+descrita como puramente preventiva. O que se pode afirmar é mais estreito e
+mais honesto: o pipeline deixou de excluí-las em silêncio, e a verificação do
+que elas podem ter entregue é **impossível com as credenciais e o estado atual
+das contas**. O recorte experimental do Google carrega essa limitação
+declarada; ele não é um snapshot comprovadamente completo.
+
+O caso é metodologicamente diferente do Meta, onde a mesma classe de defeito
+elevou a descoberta de 87 para 95 contas e permitiu recuperar R$ 455,62 de
+gasto real. Lá as contas suprimidas continuavam acessíveis e a lacuna foi
+fechada por reextração autorizada. Aqui a porta está fechada do lado do
+servidor, e o resultado é uma limitação documentada em vez de uma recuperação.
+
+**A correção criou um risco operacional próprio, resolvido na mesma sessão.**
+A descoberta passou a oferecer 117 contas em vez de 66, e `executar_extracao`
+não isola falha por conta: uma exceção em qualquer uma aborta a extração
+inteira. Com 50 contas recusando a consulta, a extração Google passaria a
+falhar sempre. A borda `_extrair_conta_tolerando_desativacao` resolve isso da
+forma mais estreita que a evidência sustenta: captura `GoogleAdsException`,
+exige que **todos** os erros da falha sejam o código oficial
+`CUSTOMER_NOT_ENABLED` — comparação por código do enum, nunca por texto de
+mensagem — e só então exclui a conta, **e apenas se ela for `CANCELED` ou
+`CLOSED`**, que são os estados em que a recusa foi medida. A conta excluída
+devolve lista vazia, que é **ausência de observação, não linha zerada**; a
+Silver preserva a última observação conhecida de entidade ausente, então nada
+de histórico é apagado por isso. O log final é agregado por status e sem
+identificador.
+
+Tudo o mais continua abortando: recusa vinda de conta `ENABLED` (anomalia),
+qualquer erro de outra família, falha mista e exceção que não seja do SDK. E
+`SUSPENDED` fica **fora** da tolerância de propósito — nenhuma subconta nesse
+estado apareceu na medição, então não há evidência sobre o comportamento do
+servidor, e inventar política sem medição é exatamente o hábito que este
+trabalho documenta como origem de número errado. Na dúvida, *fail closed*; a
+política muda quando houver medição, não antes.
 
 ### 5.14 Dado sintético de teste que envelhece para dentro do dado real
 
