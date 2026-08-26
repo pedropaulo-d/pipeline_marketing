@@ -1,19 +1,9 @@
-"""Graficos Plotly do dashboard.
+"""Visualizacoes Plotly integradas ao tema dark do dashboard.
 
-Este modulo e a unica fronteira em que `Decimal` vira `float`. A conversao
-acontece aqui porque Plotly serializa para JSON e nao entende `Decimal`; toda
-agregacao a montante permanece exata, e os rotulos exibidos no tooltip sao os
-textos ja formatados por `metricas.formatar`, nao o `float` reconvertido.
-
-Escolhas visuais
-----------------
-- Uma metrica por grafico. Metricas com escalas incompativeis no mesmo eixo
-  produzem uma serie achatada contra o eixo e outra ilegivel.
-- Cor por plataforma, sempre a mesma em toda a aplicacao, para o leitor nao
-  reaprender a legenda a cada secao.
-- `plotly_white`, grade discreta e fonte grande o suficiente para projetor.
-- Sem titulo dentro do grafico: o titulo e o cabecalho da secao no Streamlit,
-  o que evita duplicacao e economiza altura util.
+Este modulo e a unica fronteira em que ``Decimal`` vira ``float``. Os textos
+visiveis continuam vindo dos formatadores exatos de :mod:`dashboard.metricas`.
+Todos os graficos passam por :func:`aplicar_tema`, que centraliza superficie,
+tipografia, eixos, hover e densidade.
 """
 
 from decimal import Decimal
@@ -22,263 +12,294 @@ import plotly.graph_objects as go
 
 from dashboard import metricas as m
 
-# Cores das plataformas: referencia moderada, nao reproducao de identidade
-# visual. Azul para o Meta, ambar para o Google, ambos rebaixados em saturacao
-# para conviverem com o fundo claro sem vibrar no projetor.
+
 COR_PLATAFORMA: dict[str, str] = {
-    "Meta Ads": "#3B6FE0",
-    "Google Ads": "#D9902B",
+    "Meta Ads": "#4F7CFF",
+    "Google Ads": "#F59E0B",
 }
-
-COR_PADRAO: str = "#98A2B3"
-COR_TEXTO: str = "#172033"
-COR_SUAVE: str = "#667085"
-COR_GRADE: str = "#EAEDF2"
-
+COR_PADRAO: str = "#64748B"
+COR_TEXTO: str = "#F1F5F9"
+COR_SECUNDARIA: str = "#94A3B8"
+COR_MUTED: str = "#7C899D"
+COR_GRADE: str = "rgba(148, 163, 184, 0.12)"
+COR_BORDA: str = "#27303D"
+COR_HOVER: str = "#161D27"
+TRANSPARENTE: str = "rgba(0,0,0,0)"
 FONTE: str = (
-    "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 )
+MESES: tuple[str, ...] = (
+    "jan", "fev", "mar", "abr", "mai", "jun",
+    "jul", "ago", "set", "out", "nov", "dez",
+)
+CONFIG_PLOTLY: dict = {
+    "displayModeBar": False,
+    "displaylogo": False,
+    "responsive": True,
+    "scrollZoom": False,
+    "locale": "pt-BR",
+}
 
 
 def cor(plataforma: str) -> str:
-    """Devolve a cor associada a uma plataforma.
-
-    Args:
-        plataforma: Nome da plataforma.
-
-    Returns:
-        Cor em hexadecimal; cinza neutro para plataforma desconhecida — uma
-        fonte nova nao deve herdar a cor de outra.
-    """
+    """Devolve a cor de uma plataforma ou um neutro para fonte desconhecida."""
     return COR_PLATAFORMA.get(plataforma, COR_PADRAO)
 
 
 def _float(valor) -> float:
-    """Converte para `float` na fronteira de apresentacao.
-
-    Args:
-        valor: Valor agregado, normalmente `Decimal`.
-
-    Returns:
-        O mesmo valor como `float`.
-    """
+    """Converte um agregado para float apenas na fronteira do Plotly."""
     return float(valor if valor is not None else Decimal(0))
 
 
-def _aplicar_layout(figura: go.Figure, altura: int) -> go.Figure:
-    """Aplica o layout comum a todos os graficos.
+def aplicar_tema(figura: go.Figure, altura: int) -> go.Figure:
+    """Aplica o sistema visual comum a qualquer figura do dashboard.
 
     Args:
-        figura: Figura a ajustar.
-        altura: Altura em pixels.
+        figura: Figura Plotly a integrar ao produto.
+        altura: Altura final em pixels.
 
     Returns:
-        A propria figura, ajustada.
+        A propria figura com tema, hover e eixos normalizados.
     """
     figura.update_layout(
-        template="plotly_white",
+        template=None,
         height=altura,
-        margin=dict(l=6, r=10, t=26, b=6),
-        font=dict(family=FONTE, size=12.5, color=COR_TEXTO),
-        hoverlabel=dict(font_size=13, font_family=FONTE),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-            title_text="",
+        margin=dict(l=12, r=18, t=24, b=10),
+        font=dict(family=FONTE, size=12, color=COR_TEXTO),
+        separators=",.",
+        paper_bgcolor=TRANSPARENTE,
+        plot_bgcolor=TRANSPARENTE,
+        hoverlabel=dict(
+            bgcolor=COR_HOVER,
+            bordercolor=COR_BORDA,
+            font=dict(family=FONTE, size=12, color=COR_TEXTO),
+            namelength=-1,
         ),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="left", x=0, title_text="",
+            font=dict(size=11, color=COR_SECUNDARIA),
+        ),
+        hoverdistance=40,
+        spikedistance=-1,
     )
     figura.update_xaxes(
-        showgrid=False, linecolor=COR_GRADE, tickfont=dict(color=COR_SUAVE)
+        showgrid=False,
+        zeroline=False,
+        showline=True,
+        linecolor=COR_BORDA,
+        tickfont=dict(size=11, color=COR_MUTED),
+        title_font=dict(size=11, color=COR_MUTED),
+        fixedrange=True,
+        automargin=True,
     )
     figura.update_yaxes(
-        gridcolor=COR_GRADE, zerolinecolor=COR_GRADE,
-        tickfont=dict(color=COR_SUAVE),
+        showgrid=True,
+        gridcolor=COR_GRADE,
+        gridwidth=1,
+        zeroline=False,
+        showline=False,
+        tickfont=dict(size=11, color=COR_MUTED),
+        title_font=dict(size=11, color=COR_MUTED),
+        fixedrange=True,
+        automargin=True,
     )
     return figura
 
 
-def serie_temporal(series: dict, metrica: str, altura: int = 340) -> go.Figure:
-    """Desenha a evolucao diaria de uma metrica.
-
-    Args:
-        series: Saida de `metricas.serie_diaria`: ``serie -> [(data, valor)]``.
-        metrica: Chave da metrica base, usada para rotulo e formatacao.
-        altura: Altura do grafico em pixels.
-
-    Returns:
-        Figura com uma linha por serie, tooltip unificado por dia e rotulos
-        formatados em pt-BR.
-    """
-    figura = go.Figure()
-    for nome, pontos in series.items():
-        datas = [ponto[0] for ponto in pontos]
-        valores = [_float(ponto[1]) for ponto in pontos]
-        rotulos = [m.formatar_metrica(metrica, ponto[1]) for ponto in pontos]
-        figura.add_trace(go.Scatter(
-            x=datas,
-            y=valores,
-            name=nome,
-            mode="lines+markers",
-            line=dict(color=cor(nome), width=2.5, shape="spline", smoothing=0.4),
-            marker=dict(size=5),
-            customdata=rotulos,
-            hovertemplate="%{customdata}<extra>%{fullData.name}</extra>",
-        ))
-
-    _aplicar_layout(figura, altura)
-    figura.update_layout(hovermode="x unified")
-    figura.update_xaxes(tickformat="%d/%m", dtick="D1" if _poucos_dias(series) else None)
-    figura.update_yaxes(title_text=m.CATALOGO[metrica].rotulo, rangemode="tozero")
-    return figura
+def _formato_eixo(metrica: str) -> dict:
+    """Define tickformat e unidade sem alterar os valores da figura."""
+    formato = m.CATALOGO[metrica].formato
+    if formato == m.MOEDA:
+        return {"tickprefix": "R$ ", "tickformat": ",.0f"}
+    if formato == m.INTEIRO:
+        return {"tickformat": ",.0f"}
+    return {"tickformat": ",.2f"}
 
 
 def _poucos_dias(series: dict) -> bool:
-    """Diz se a serie e curta o bastante para marcar todos os dias no eixo.
-
-    Args:
-        series: Series por nome.
-
-    Returns:
-        ``True`` quando ha no maximo 15 dias distintos.
-    """
+    """Informa se ha no maximo quinze datas na serie."""
     dias = {ponto[0] for pontos in series.values() for ponto in pontos}
     return len(dias) <= 15
 
 
-def barras_plataforma(
-    valores: dict, metrica: str, altura: int = 210
-) -> go.Figure:
-    """Compara uma metrica entre plataformas.
+def _data_pt(data, com_ano: bool = True) -> str:
+    """Formata uma data em portugues sem depender do locale do Plotly."""
+    base = f"{data.day:02d} {MESES[data.month - 1]}"
+    return f"{base} {data.year}" if com_ano else base
 
-    Plataforma que nao coleta a metrica neste grao recebe barra vazia e o
-    rotulo "nao disponibilizado nesta origem": exibir o zero sem contexto
-    sugeriria desempenho nulo onde nao houve medicao.
 
-    Args:
-        valores: ``plataforma -> valor agregado``.
-        metrica: Chave da metrica base.
-        altura: Altura do grafico em pixels.
+def serie_temporal(series: dict, metrica: str, altura: int = 350) -> go.Figure:
+    """Desenha uma serie diaria com linha premium e hover unificado."""
+    figura = go.Figure()
+    dias = sorted({ponto[0] for pontos in series.values() for ponto in pontos})
+    categorias = [_data_pt(dia) for dia in dias]
+    for nome, pontos in series.items():
+        figura.add_trace(go.Scatter(
+            x=[_data_pt(ponto[0]) for ponto in pontos],
+            y=[_float(ponto[1]) for ponto in pontos],
+            name=nome,
+            mode="lines+markers" if len(pontos) <= 15 else "lines",
+            line=dict(color=cor(nome), width=2.6, shape="linear"),
+            marker=dict(size=5, color=cor(nome), line=dict(width=0)),
+            customdata=[m.formatar_metrica(metrica, ponto[1]) for ponto in pontos],
+            hovertemplate=(
+                "<b>%{fullData.name}</b><br>%{customdata}<extra></extra>"
+            ),
+            connectgaps=False,
+        ))
+    aplicar_tema(figura, altura)
+    figura.update_layout(hovermode="x unified")
+    passo = 1 if _poucos_dias(series) else max(1, len(dias) // 8)
+    figura.update_xaxes(
+        type="category",
+        categoryorder="array",
+        categoryarray=categorias,
+        tickmode="array",
+        tickvals=categorias[::passo],
+        ticktext=[_data_pt(dia, com_ano=False) for dia in dias[::passo]],
+    )
+    figura.update_yaxes(rangemode="tozero", title_text="", **_formato_eixo(metrica))
+    return figura
 
-    Returns:
-        Figura de barras verticais, uma por plataforma.
-    """
-    plataformas = sorted(valores)
-    suportadas = [m.suportada(metrica, p) for p in plataformas]
-    alturas = [
-        _float(valores[p]) if ok else 0.0
-        for p, ok in zip(plataformas, suportadas)
+
+def barras_plataforma(valores: dict, metrica: str,
+                      altura: int = 190) -> go.Figure:
+    """Compara Meta e Google em barras horizontais com valores reais."""
+    plataformas = sorted(valores, key=lambda nome: _float(valores[nome]))
+    suportadas = [m.suportada(metrica, plataforma) for plataforma in plataformas]
+    numeros = [
+        _float(valores[plataforma]) if suportada else 0.0
+        for plataforma, suportada in zip(plataformas, suportadas)
     ]
     rotulos = [
-        m.formatar_metrica(metrica, valores[p]) if ok else m.AVISO_NAO_DISPONIVEL
-        for p, ok in zip(plataformas, suportadas)
+        m.formatar_metrica(metrica, valores[plataforma])
+        if suportada else m.AVISO_NAO_DISPONIVEL
+        for plataforma, suportada in zip(plataformas, suportadas)
     ]
-
     figura = go.Figure(go.Bar(
-        x=plataformas,
-        y=alturas,
-        marker_color=[cor(p) if ok else "#CBD5E1"
-                      for p, ok in zip(plataformas, suportadas)],
+        x=numeros,
+        y=plataformas,
+        orientation="h",
+        marker=dict(
+            color=[cor(p) if ok else COR_MUTED
+                   for p, ok in zip(plataformas, suportadas)],
+            line=dict(width=0),
+        ),
+        width=0.48,
         text=rotulos,
         textposition="outside",
+        textfont=dict(size=11, color=COR_TEXTO),
         cliponaxis=False,
         customdata=rotulos,
-        hovertemplate="%{x}: %{customdata}<extra></extra>",
-        width=0.45,
+        hovertemplate="<b>%{y}</b><br>%{customdata}<extra></extra>",
     ))
-    _aplicar_layout(figura, altura)
+    aplicar_tema(figura, altura)
+    maior = max(numeros, default=0)
     figura.update_layout(
         showlegend=False,
-        margin=dict(l=6, r=10, t=18, b=6),
+        margin=dict(l=10, r=100, t=8, b=8),
+        bargap=0.42,
     )
-    figura.update_yaxes(rangemode="tozero", showticklabels=False)
+    figura.update_xaxes(
+        visible=False,
+        range=[0, maior * 1.34] if maior else None,
+    )
+    figura.update_yaxes(
+        showgrid=False,
+        tickfont=dict(size=11, color=COR_SECUNDARIA),
+    )
     return figura
 
 
-def barras_ranking(
-    itens: list[dict], metrica: str, altura: int | None = None
-) -> go.Figure:
-    """Desenha o ranking de entidades por uma metrica.
-
-    Args:
-        itens: Saida de `metricas.ranking`, ja recortada no Top N.
-        metrica: Chave da metrica usada na ordenacao.
-        altura: Altura em pixels; calculada a partir da quantidade de itens
-            quando omitida.
-
-    Returns:
-        Figura de barras horizontais, do maior para o menor de cima para
-        baixo, colorida por plataforma.
-    """
-    # Plotly desenha o eixo Y de baixo para cima: inverter aqui poe o maior no
-    # topo, que e como se le um ranking.
+def barras_ranking(itens: list[dict], metrica: str,
+                   altura: int | None = None) -> go.Figure:
+    """Desenha um ranking horizontal com origem legivel junto da entidade."""
     ordenados = list(reversed(itens))
-    identificadores = [item["id"] for item in ordenados]
     valores = [_float(item[metrica]) for item in ordenados]
     rotulos = [m.formatar_metrica(metrica, item[metrica]) for item in ordenados]
-    cores = [cor(item["plataforma"]) for item in ordenados]
-
+    ticktext = [
+        f"{item['id']}<br><span style='color:{COR_MUTED};font-size:10px'>"
+        f"{item['plataforma']}</span>" for item in ordenados
+    ]
     figura = go.Figure(go.Bar(
         x=valores,
-        y=identificadores,
+        y=list(range(len(ordenados))),
         orientation="h",
-        marker_color=cores,
+        marker=dict(
+            color=[cor(item["plataforma"]) for item in ordenados],
+            line=dict(width=0),
+        ),
+        width=0.56,
         text=rotulos,
-        textposition="auto",
-        customdata=[[item["plataforma"], rotulo]
-                    for item, rotulo in zip(ordenados, rotulos)],
-        hovertemplate="%{y}<br>%{customdata[0]}: %{customdata[1]}<extra></extra>",
+        textposition="outside",
+        textfont=dict(size=11, color=COR_TEXTO),
+        cliponaxis=False,
+        customdata=[
+            [item["id"], item["plataforma"], rotulo]
+            for item, rotulo in zip(ordenados, rotulos)
+        ],
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>"
+            "%{customdata[2]}<extra></extra>"
+        ),
     ))
-    _aplicar_layout(figura, altura or max(230, 30 * len(itens) + 55))
-    figura.update_layout(showlegend=False)
-    figura.update_xaxes(showticklabels=False, showgrid=False)
-    figura.update_yaxes(gridcolor="white", tickfont=dict(size=12))
+    aplicar_tema(figura, altura or max(250, 34 * len(itens) + 52))
+    maior = max(valores, default=0)
+    figura.update_layout(
+        showlegend=False,
+        margin=dict(l=12, r=110, t=8, b=8),
+        bargap=0.34,
+    )
+    figura.update_xaxes(
+        visible=False,
+        range=[0, maior * 1.28] if maior else None,
+    )
+    figura.update_yaxes(
+        showgrid=False,
+        tickmode="array",
+        tickvals=list(range(len(ordenados))),
+        ticktext=ticktext,
+        tickfont=dict(size=11, color=COR_TEXTO),
+    )
     return figura
 
 
-def barras_participacao(
-    valores: dict, metrica: str, altura: int = 104
-) -> go.Figure:
-    """Desenha a participacao de cada plataforma numa metrica consolidavel.
-
-    Args:
-        valores: ``plataforma -> valor agregado``.
-        metrica: Chave da metrica base.
-        altura: Altura em pixels.
-
-    Returns:
-        Figura de barra unica empilhada horizontalmente.
-    """
-    total = sum(_float(v) for v in valores.values())
+def barras_participacao(valores: dict, metrica: str,
+                        altura: int = 126) -> go.Figure:
+    """Desenha uma barra de participacao 100% horizontal e compacta."""
+    total = sum(_float(valor) for valor in valores.values())
     figura = go.Figure()
     for plataforma in sorted(valores):
         valor = _float(valores[plataforma])
-        fracao = (valor / total * 100) if total else 0.0
+        percentual = (valor / total * 100) if total else 0.0
+        percentual_formatado = m.formatar(
+            Decimal(str(percentual)), m.PERCENTUAL
+        )
         figura.add_trace(go.Bar(
-            x=[valor],
-            y=[m.CATALOGO[metrica].rotulo],
+            x=[percentual],
+            y=["participacao"],
             orientation="h",
-            name=plataforma,
-            marker_color=cor(plataforma),
-            text=f"{plataforma} · {m.formatar(Decimal(str(fracao)), m.PERCENTUAL)}",
+            name=f"{plataforma} · {percentual_formatado}",
+            marker=dict(color=cor(plataforma), line=dict(width=0)),
+            text=percentual_formatado if percentual >= 13 else "",
             textposition="inside",
             insidetextanchor="middle",
+            textfont=dict(size=11, color="#FFFFFF"),
+            customdata=[[m.formatar_metrica(metrica, valores[plataforma]),
+                         percentual_formatado]],
             hovertemplate=(
-                f"{plataforma}: "
-                f"{m.formatar_metrica(metrica, valores[plataforma])}"
-                "<extra></extra>"
+                f"<b>{plataforma}</b><br>%{{customdata[0]}}"
+                "<br>%{customdata[1]} do total<extra></extra>"
             ),
         ))
-    _aplicar_layout(figura, altura)
+    aplicar_tema(figura, altura)
     figura.update_layout(
-        barmode="stack", showlegend=False,
-        margin=dict(l=6, r=6, t=6, b=6),
-        bargap=0.35,
+        barmode="stack",
+        barnorm="percent",
+        margin=dict(l=4, r=4, t=28, b=4),
+        bargap=0.5,
     )
-    figura.update_xaxes(showticklabels=False, showgrid=False)
-    figura.update_yaxes(showticklabels=False)
+    figura.update_xaxes(visible=False, range=[0, 100])
+    figura.update_yaxes(visible=False, showgrid=False)
     return figura

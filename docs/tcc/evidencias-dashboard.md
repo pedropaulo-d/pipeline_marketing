@@ -12,7 +12,7 @@ humana e a revisão visual que se seguiu.
 
 **Limitação geral desta auditoria.** A validação do dashboard foi repetida
 em 25/08/2026 com o Docker disponível: imagem reconstruída, container saudável,
-Chromium/Playwright contra `localhost:8501` e os 127 testes executados dentro
+Chromium/Playwright contra `localhost:8501` e os 139 testes executados dentro
 da imagem com Streamlit e Plotly. A checagem geométrica continua sendo roteiro
 de sessão em `/tmp`, não teste permanente de screenshot no repositório.
 
@@ -77,7 +77,7 @@ pseudonimização nos demais módulos.
 Evidência: `dashboard/Dockerfile` (`COPY dashboard/ /app/dashboard/`,
 `pip install -r dashboard/requirements.txt`);
 `dashboard/requirements.txt` (apenas `streamlit` e `plotly`).
-Observação: imagem reconstruída nesta sessão; os 127 testes foram
+Observação: imagem reconstruída nesta sessão; os 139 testes foram
 executados nela e o serviço permaneceu saudável durante a matriz visual.
 Confiança: **ALTO**.
 
@@ -197,6 +197,26 @@ Confiança: **ALTO**.
 Evidência: `metricas.agregar_por()`.
 Teste: `test_soma_por_plataforma_fecha_com_o_total` — mesma verificação que o
 pipeline faz contra inflação de join.
+Confiança: **ALTO**.
+
+### 3.8 ROAS mantém a fórmula e explicita a unidade
+
+Evidência: `metricas.DERIVADAS["roas"]` preserva numerador
+`conversion_value`, denominador `spend` e fator 1; apenas o formato passa a
+`MULTIPLICADOR`. Valores abaixo de `0,1` usam três casas e os demais duas:
+`4 / 142,46` é exibido como `0,028x`, sem alterar o quociente.
+Testes: `TestFormatacaoDeMultiplicador`, inclusive fórmula intacta, piso de
+exibição e indisponibilidade.
+Confiança: **ALTO**.
+
+### 3.9 Ajuda contextual é nativa e focável
+
+Evidência: `componentes.cartao_kpi()` usa `st.metric(help=...)`; o DOM medido
+contém botão com `aria-label="Help for Investimento"`. O conteúdo vem de
+`Metrica.ajuda` / `Derivada.ajuda`, e a ressalva de cobertura é concatenada
+quando aplicável.
+Testes: `TestAjudaContextual` cobre as seis métricas principais, os cinco
+derivados, a equivalência conceitual do CPA no Google e o exemplo do ROAS.
 Confiança: **ALTO**.
 
 ## 4. Período anterior
@@ -361,9 +381,9 @@ Confiança: **ALTO**.
 
 ### 7.3 Métrica sem suporte não aparece como desempenho zero
 
-Evidência: `graficos.barras_plataforma()` pinta a barra de cinza e escreve
-`metricas.AVISO_NAO_DISPONIVEL`; `app.py::nota_cobertura()` acrescenta a
-ressalva ao cartão; o quadro de cobertura lista os pares métrica × plataforma.
+Evidência: `graficos.barras_plataforma()` escreve
+`metricas.AVISO_NAO_DISPONIVEL`; `componentes.quadro_cobertura()` apresenta
+`✓ Disponível` / `— Não disponível`, sem usar zero como proxy.
 Teste: `TestSmokeStreamlitEPlotly::test_graficos_produzem_figura` afirma que o
 texto da barra de `reach` contém `não disponibilizado nesta origem`.
 Confiança: **ALTO**.
@@ -376,7 +396,7 @@ Confiança: **ALTO**.
 
 ### 7.5 Cores de plataforma consistentes e moderadas
 
-Evidência: `graficos.COR_PLATAFORMA` — azul `#3B6FE0` (Meta), âmbar `#D9902B`
+Evidência: `graficos.COR_PLATAFORMA` — azul `#4F7CFF` (Meta), âmbar `#F59E0B`
 (Google), com fallback cinza para origem desconhecida.
 Teste: `test_cores_de_plataforma_sao_distintas`.
 Observação: referência moderada, não reprodução de identidade visual oficial.
@@ -384,15 +404,13 @@ Confiança: **ALTO**.
 
 ### 7.6 Layout legível de 1024×768 a 1920×1080
 
-Evidência: `componentes.ESTILO` — `max-width: 1376px` centralizado, grid CSS
-próprio para KPIs e media queries em 1439/1299/1099/991/640 px. A grade
-principal usa 3 colunas em 1366 e 1920, 2 em 1280 e 1 em 1024; eficiência usa
-5/3/2 colunas nos mesmos intervalos.
-Verificação executada nesta sessão, com Chromium via Playwright contra o container:
-as quatro páginas em 1366×768 e 1920×1080, mais a Visão Geral em 1280×720 e
-1024×768. Em todas, `document.scrollWidth == clientWidth`, sem interseção
-entre elementos interativos não aninhados. Em 1366, os seis KPIs, os cinco
-derivados e o início de Evolução diária ficam na primeira dobra.
+Evidência: `componentes.ESTILO` — `max-width: 1440px` centralizado e media
+queries em 1439/1299/1099/767/520 px. A grade principal usa 3×2 em 1366; a
+eficiência usa 5 colunas quando cabe, 3+2 em notebook e duas/uma abaixo.
+Verificação Playwright: Visão Geral em 1920×1080, 1440×900, 1366×768,
+1280×720 e 1024×768; demais páginas em 1366×768. Em todas,
+`document.scrollWidth == clientWidth`; em 1366, header, onze indicadores e o
+início do card Evolução diária ficam na primeira dobra.
 Confiança: **ALTO** para o medido; a verificação não faz parte da suíte
 (limitação 1).
 
@@ -414,29 +432,22 @@ Verificação: viewport CSS equivalente a 90%, 100%, 110% e 125% sobre
 níveis; a grade passa de 3 para 2 e 1 coluna conforme o espaço diminui.
 Confiança: **ALTO**.
 
-### 7.7 Conteúdo claro independente do tema do navegador
+### 7.7 Dark mode independente do tema do navegador
 
-Evidência: `.streamlit/config.toml` — `[theme] base = "light"` e
-`[theme.sidebar]` com `backgroundColor = "#151A23"`,
-`secondaryBackgroundColor = "#232B39"` e `textColor = "#E7EAF0"`;
-`componentes.ESTILO` fixa `color-scheme: light` e repete os tokens dentro de
-`@media (prefers-color-scheme: dark)`.
-Verificação: computados no navegador — fundo da aplicação `rgb(246,247,249)`,
-campo de multisseleção `rgb(35,43,57)` com texto `rgb(231,234,240)` e borda
-`rgb(51,60,76)`.
-Observação: era a causa raiz dos "selects quase pretos". Controles do Streamlit
-são componentes React que derivam cores do tema; CSS de página não os alcança.
+Evidência: `.streamlit/config.toml` — `[theme] base = "dark"`, fundo
+`#080B10`, superfície `#11161E`; a sidebar usa `#0D1117` e campo `#161D27`.
+`componentes.ESTILO` fixa `color-scheme: dark` inclusive sob
+`prefers-color-scheme: light`.
+Verificação: Playwright foi criado deliberadamente com `colorScheme: "light"`;
+o fundo computado permaneceu `rgb(8, 11, 16)` em todos os viewports.
 Confiança: **ALTO**.
 
 ### 7.8 Contraste AA em todo texto medido
 
-Evidência: medição WCAG 2.1 no navegador, nesta sessão, sobre as cores
-computadas: rótulo de grupo na barra lateral 5,85; subtítulo e navegação
-inativa 6,77; rótulo de campo 6,77; rótulo de KPI e variação 4,97; descrição de
-página e apoio de seção 4,64; valor de KPI 16,27. Mínimo exigido para texto
-normal: 4,5.
-Observação: `--sb-rotulo` foi clareado de `#78849A` para `#8B96AB` justamente
-porque a medição apontou 4,4.
+Evidência: cálculo WCAG 2.1 sobre os tokens finais. Texto principal
+`#F1F5F9` tem 16,56:1 sobre card; secundário `#94A3B8`, 7,08:1; muted textual
+`#7C899D`, 5,12:1 sobre card e 5,34:1 sobre sidebar. O muted inicialmente
+sugerido (`#64748B`) foi rejeitado para texto pequeno por medir 3,81:1 no card.
 Confiança: **ALTO**.
 
 ### 7.9 Navegação sem bolinha, com acessibilidade preservada
@@ -453,11 +464,11 @@ Confiança: **ALTO**.
 
 ## 8. Testes e execução
 
-### 8.1 127 testes, sem dependência nova
+### 8.1 139 testes, sem dependência nova
 
 Evidência: `tests/test_dashboard.py`; dentro da imagem reconstruída do
 dashboard, com Streamlit e Plotly instalados, `python -m unittest
-tests.test_dashboard` → `Ran 127 tests ... OK (skipped=1)`. O único skip é o
+tests.test_dashboard` → `Ran 139 tests ... OK (skipped=1)`. O único skip é o
 auditor independente, cuja dependência pertence ao ETL e não à imagem
 deliberadamente mínima do dashboard.
 Confiança: **ALTO**.
@@ -533,5 +544,5 @@ Confiança: **MÉDIO**.
 
 A validação específica do dashboard está encerrada. A suíte completa do
 projeto continua fora deste passe visual; ela inclui dependências e estados do
-ETL que não foram alterados aqui. A validação permanente continua sendo os 127
+ETL que não foram alterados aqui. A validação permanente continua sendo os 139
 testes do dashboard; o roteiro Playwright permanece evidência de sessão.

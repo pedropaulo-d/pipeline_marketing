@@ -97,7 +97,7 @@ um grão mais fino do que recebeu.
 | Plotly (`graph_objects`) | Séries temporais, barras comparativas, rankings | `graficos.py` |
 | Python (stdlib) | Contrato, tipagem, agregação, indicadores, filtros | `dados.py`, `metricas.py`, `filtros.py` |
 | Docker Compose | Serviço sem credencial, driver ou dependência de inicialização do DW | `dashboard/Dockerfile`, `docker-compose.yml` |
-| Tema nativo do Streamlit | Cores dos controles (select, multiselect, data) e do modo claro forçado | `.streamlit/config.toml` |
+| Tema nativo do Streamlit | Cores dos controles e dark mode forçado | `.streamlit/config.toml` |
 
 Nenhuma dependência nova entrou em `requirements.txt`. As do painel vivem em
 `dashboard/requirements.txt` e são instaladas apenas na imagem do painel.
@@ -121,7 +121,7 @@ Ordem visual, do geral para o detalhe:
 2. **Indicadores do período** — seis cartões de KPI, em duas linhas de três,
    com variação contra o período anterior;
 3. **Eficiência** — cinco cartões menores (CTR, CPC, CPM, CPA, ROAS), com a
-   fórmula no tooltip, não dentro do cartão;
+   fórmula na ajuda nativa focável, não dentro do cartão;
 4. **Evolução diária** — seletor de métrica e alternância entre série
    consolidada e uma série por plataforma;
 5. **Meta Ads × Google Ads** — quatro gráficos de barras, uma métrica cada;
@@ -196,7 +196,7 @@ redescobri-la.
 | CPC | `spend / link_clicks` | moeda |
 | CPM | `spend / impressions × 1000` | moeda |
 | CPA | `spend / conversions` | moeda |
-| ROAS | `conversion_value / spend` | decimal |
+| ROAS | `conversion_value / spend` | multiplicador (`x`) |
 
 Todos os operandos são métricas **consolidáveis** — coletadas nas duas
 plataformas com a mesma definição. Há teste afirmando essa propriedade: um
@@ -404,7 +404,7 @@ A 8080 é de outro projeto e a 8081 é do callback OAuth.
 
 ## 13. Testes implementados
 
-`tests/test_dashboard.py`, `unittest`, sem dependência nova. **127 testes**,
+`tests/test_dashboard.py`, `unittest`, sem dependência nova. **139 testes**,
 distribuídos em 18 classes:
 
 | Área | O que cobre |
@@ -467,25 +467,26 @@ screenshot.
 
 ## 15. Identidade visual
 
-A primeira versão da interface foi reprovada em inspeção visual: sidebar sem
-contraste, controles quase pretos destoando do conteúdo claro, cartões grandes
-demais, conteúdo espalhado horizontalmente e hierarquia tipográfica fraca. A
-revisão de 25/08/2026 tratou disso sem tocar em arquitetura, contrato de
-segurança, métricas ou fórmulas.
+A revisão final de 25/08/2026 adotou uma identidade **dark SaaS analytics** em
+toda a aplicação. A mudança é exclusivamente de apresentação: arquitetura,
+contrato de segurança, filtros, período padrão, métricas e fórmulas não foram
+alterados.
 
 ### 15.1 Paleta
 
 | Papel | Cor |
 |---|---|
-| Fundo do conteúdo | `#F6F7F9` |
-| Cartão | `#FFFFFF` |
-| Borda | `#E4E7EC` |
-| Texto principal | `#172033` |
-| Texto secundário | `#667085` |
-| Destaque (item ativo, foco, toggle) | `#E84A5F` |
-| Fundo da barra lateral | `#151A23` |
-| Campo na barra lateral | `#232B39` |
-| Texto na barra lateral | `#E7EAF0` |
+| Fundo do conteúdo | `#080B10` |
+| Fundo da barra lateral | `#0D1117` |
+| Cartão | `#11161E` |
+| Superfície elevada / campo | `#161D27` |
+| Borda | `#27303D` |
+| Texto principal | `#F1F5F9` |
+| Texto secundário | `#94A3B8` |
+| Texto muted | `#7C899D` (ajuste AA sobre cards) |
+| Destaque global | `#8B5CF6` |
+| Meta Ads nos gráficos | `#4F7CFF` |
+| Google Ads nos gráficos | `#F59E0B` |
 
 A cor de destaque aparece em poucos lugares: a barra do item de navegação
 ativo, o foco dos controles e o toggle. As cores de plataforma (azul para o
@@ -494,27 +495,19 @@ legendas — não são a identidade da aplicação.
 
 ### 15.2 Onde cada camada é declarada
 
-- **`.streamlit/config.toml`** — tema nativo. Fixa `base = "light"` no
-  conteúdo, o que torna a aplicação clara **independentemente** do
-  `prefers-color-scheme` do navegador, e declara um tema próprio para a barra
-  lateral (`[theme.sidebar]`) com fundo escuro e `secondaryBackgroundColor` um
-  degrau acima, que é o preenchimento dos campos. Era o problema dos "selects
-  quase pretos": eles são componentes React e não obedecem a CSS de página.
-- **`componentes.py`** — CSS de layout: container central de 1376 px,
-  densidade, cartões, cabeçalho de página e de seção, tipografia e a barra
-  lateral.
+- **`.streamlit/config.toml`** — fixa `base = "dark"` independentemente do
+  navegador e fornece os tokens usados pelos widgets React nativos.
+- **`componentes.py`** — completa layout, densidade, container central de
+  1440 px, estados de foco/hover, sidebar e componentes de apresentação.
+- **`graficos.py`** — `aplicar_tema()` centraliza fundo transparente,
+  tipografia, grid, eixos, hoverlabel e margens de toda figura Plotly.
 
 ### 15.3 Tipografia e densidade
 
-`Inter, system-ui, …` — pilha de sistema, sem fonte externa. Título de página
-1,8 rem; título de seção 1,1 rem; valor de KPI 1,9 rem (1,35 rem nos cartões de
-eficiência); rótulo de KPI 0,72 rem em caixa alta discreta; texto auxiliar
-0,78–0,83 rem.
-
-Os cartões têm altura mínima uniforme (124 px nos principais, 92 px nos de
-eficiência). A grade é CSS, não `st.columns`: três colunas a partir de 1300
-px, duas entre 1100 e 1299 px e uma abaixo de 1100 px. Os indicadores de
-eficiência usam cinco, três e duas colunas nesses mesmos intervalos.
+`Inter, system-ui, …` — pilha local, sem fonte externa. KPI principal usa valor
+entre 28 e 32 px; eficiência usa cerca de 23 px. Os seis KPIs formam 3×2; os
+cinco derivados ficam em uma linha quando há espaço e quebram em 3+2 e 2+2+1
+nos breakpoints menores.
 
 Em 1366×768 cabem, sem rolagem: cabeçalho, filtros, os seis KPIs, os cinco
 cartões de eficiência e o início da seção seguinte.
@@ -525,7 +518,24 @@ chip usa ellipsis e os chips adicionais quebram linha dentro do campo. Ao
 recolher a sidebar, sua largura efetiva vira zero e o conteúdo usa toda a
 largura disponível; ao reabrir, os 288 px são restaurados.
 
-### 15.4 Navegação
+### 15.4 Componentes e visualizações
+
+- KPIs usam `st.metric(help=...)`: definição e fórmula ficam no ícone nativo
+  de ajuda, acessível por foco, teclado e clique, e não em tooltip CSS próprio.
+- Variação continua neutra: a seta informa direção, sem verde/vermelho.
+- ROAS é apresentado como multiplicador. Abaixo de `0,1`, usa três casas;
+  a partir de `0,1`, duas casas (`0,028x`, `1,24x`).
+- Série temporal tem hover unificado, datas em português, linhas de 2,6 px e
+  grid horizontal discreto.
+- Meta × Google usa quatro cards 2×2 com barras horizontais em escala real de
+  cada métrica; não há normalização cruzada.
+- Participação usa barra 100% horizontal; cobertura usa `✓ Disponível` e
+  `— Não disponível`, nunca zero como proxy.
+- Rankings de campanha e anúncio são horizontais, com a plataforma escrita
+  junto da entidade. O anúncio selecionado ganha card de detalhe antes da sua
+  série temporal.
+
+### 15.5 Navegação
 
 A navegação continua sendo um `st.radio` — acessível e navegável pelo teclado —
 mas sem a bolinha, que não acrescenta significado quando os itens já são uma
@@ -533,43 +543,21 @@ lista de páginas. O item ativo recebe fundo levemente mais claro e uma barra
 vertical na cor de destaque. O `input` permanece no DOM: leitor de tela e
 teclado continuam funcionando.
 
-### 15.5 Ruído do Streamlit
+### 15.6 Ruído do Streamlit
 
 `toolbarMode = "minimal"` remove o botão de deploy e o menu de desenvolvedor;
 o CSS esconde a faixa decorativa e o rodapé. O cabeçalho **não** é removido —
 é nele que mora o controle de recolher a barra lateral.
 
-### 15.6 Verificação visual
+### 15.7 Verificação visual
 
-Chromium controlado por Playwright contra o serviço Docker, nas quatro
-páginas em 1366×768 e 1920×1080; a Visão Geral também em 1280×720 e
-1024×768:
+Chromium controlado por Playwright contra o serviço Docker, com capturas da
+Visão Geral em 1366×768 e 1920×1080; Campanhas, Anúncios e Sobre os dados em
+1366×768; comparação Meta × Google e hovers em capturas próprias. A matriz
+geométrica também cobriu 1440×900, 1280×720 e 1024×768.
 
-| Resolução | Grade principal | Overflow | Overlap interativo |
-|---|---:|---|---|
-| 1024×768 | 1 coluna | nenhum | nenhum |
-| 1280×720 | 2 colunas | nenhum | nenhum |
-| 1366×768 | 3 colunas | nenhum | nenhum |
-| 1920×1080 | 3 colunas | nenhum | nenhum |
-
-Em 1366×768 com uma conta selecionada, foram medidos separadamente label,
-chip, botão de remoção, input, clear, dropdown e botão Limpar filtros:
-nenhum par indevido se intersecta. A mesma checagem cobriu toggle, seletor de
-métrica, badge e metadados do cabeçalho. Zoom equivalente a 90%, 100%, 110%
-e 125% teve zero overflow e zero overlap. Sidebar aberta, recolhida e reaberta
-mediu respectivamente 1078, 1366 e 1078 px de conteúdo.
-
-Contraste medido (WCAG 2.1, texto normal exige 4,5:1):
-
-| Texto | Razão |
-|---|---|
-| Rótulo de grupo na barra lateral | 5,85 |
-| Subtítulo e navegação inativa | 6,77 |
-| Rótulo de campo na barra lateral | 6,77 |
-| Rótulo de KPI e variação | 4,97 |
-| Descrição da página e apoio de seção | 4,64 |
-| Valor de KPI | 16,27 |
-
-Log do container revisado: zero erro, zero aviso e zero mensagem de
-depreciação. A imagem foi reconstruída e o tema de `/app/.streamlit` foi
-confirmado pela paleta computada dos widgets.
+Em todos os tamanhos: fundo computado `rgb(8, 11, 16)`, zero overflow
+horizontal, zero exceção Streamlit e zero erro/aviso de console. Nas figuras:
+zero título interno, zero modebar visível e nenhuma label SVG fora do limite.
+Em 1366×768 a primeira dobra contém header, seis KPIs, eficiência e o início
+do card de evolução diária.

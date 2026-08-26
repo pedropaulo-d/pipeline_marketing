@@ -111,19 +111,18 @@ continua livre.
 ## Tema
 
 As cores estruturais vivem em `.streamlit/config.toml`, na raiz do
-repositório — não em CSS. Os controles do Streamlit (select, multiselect, data)
-são componentes React que derivam suas cores do tema e ignoram CSS de página;
-foi por isso que a primeira versão exibia campos quase pretos num conteúdo
-claro. O arquivo fixa `base = "light"` no conteúdo (independente do
-`prefers-color-scheme` do navegador) e declara um `[theme.sidebar]` escuro
-próprio.
+repositório. Os controles do Streamlit (select, multiselect, data e popover)
+são componentes React que derivam suas cores do tema e ignoram CSS de página.
+O arquivo fixa `base = "dark"` independentemente do
+`prefers-color-scheme` do navegador e declara um `[theme.sidebar]` coerente.
 
 O Dockerfile copia esse arquivo para `/app/.streamlit/config.toml`, que é o
 diretório de trabalho do container. Localmente ele é lido da raiz do
 repositório, de onde se roda `streamlit run dashboard/app.py`.
 
 O CSS de layout — container central, densidade, cartões, tipografia, barra
-lateral — fica em `componentes.py`.
+lateral — fica em `componentes.py`. O acabamento dos gráficos é centralizado
+em `graficos.aplicar_tema()`.
 
 ## Testes
 

@@ -57,7 +57,7 @@ ROTULOS_PAGINAS: dict[str, str] = {
 
 DESCRICAO: dict[str, str] = {
     "Visao Geral": (
-        "Acompanhe o desempenho consolidado das campanhas de mídia paga."
+        "Performance consolidada das campanhas de mídia paga."
     ),
     "Campanhas": (
         "Compare as campanhas pseudonimizadas do período selecionado."
@@ -66,7 +66,7 @@ DESCRICAO: dict[str, str] = {
         "Identifique os anúncios que sustentam o resultado do período."
     ),
     "Sobre os dados": (
-        "O que existe no dataset carregado e por onde ele chega ate aqui."
+        "O que existe no dataset carregado e por onde ele chega até aqui."
     ),
 }
 
@@ -98,9 +98,9 @@ MESES: tuple[str, ...] = (
 )
 
 TEXTO_FRONTEIRA: str = (
-    "Este dashboard consome exclusivamente a superficie de exposicao do "
+    "Este dashboard consome exclusivamente a superfície de exposição do "
     "pipeline. Identificadores reais de clientes, contas, campanhas e "
-    "anuncios nao sao disponibilizados nesta camada."
+    "anúncios não são disponibilizados nesta camada."
 )
 
 
@@ -317,8 +317,8 @@ def tag_cobertura(metrica: str, plataformas: list[str]) -> tuple[str, str]:
     com_suporte = [p for p in plataformas if m.suportada(metrica, p)]
     tag = "Parcial · " + ", ".join(com_suporte) if com_suporte else "Indisponivel"
     tooltip = (
-        f"{', '.join(sem_suporte)} nao disponibiliza esta metrica neste "
-        "nivel. O total reflete apenas as demais origens."
+        f"{', '.join(sem_suporte)} não disponibiliza esta métrica neste "
+        "nível. O total reflete apenas as demais origens."
     )
     return tag, tooltip
 
@@ -340,18 +340,23 @@ def bloco_kpis(atual: list[dict], anterior: list[dict] | None,
         for metrica in grupo:
             base = totais_anteriores[metrica] if totais_anteriores else None
             variacao = m.variacao(totais[metrica], base)
-            tag, tooltip = tag_cobertura(metrica, plataformas)
+            tag, cobertura = tag_cobertura(metrica, plataformas)
+            definicao = m.CATALOGO[metrica]
+            # A definicao da metrica vem primeiro; a ressalva de cobertura (ou
+            # a observacao do catalogo) fecha o texto. As duas convivem: saber
+            # o que o numero conta nao dispensa saber de onde ele nao vem.
+            partes = (definicao.ajuda, cobertura or definicao.observacao)
             cartoes.append({
-                "rotulo": m.CATALOGO[metrica].rotulo,
+                "rotulo": definicao.rotulo,
                 "valor": m.formatar_metrica(metrica, totais[metrica]),
                 "delta": (
                     m.formatar_variacao(variacao)
                     if variacao is not None else None
                 ),
                 "tag": tag,
-                "tooltip": tooltip or m.CATALOGO[metrica].observacao,
+                "tooltip": " ".join(parte for parte in partes if parte),
             })
-    ui.linha_kpis(cartoes)
+    ui.linha_kpis(cartoes, chave="grade_kpis")
 
 
 def bloco_eficiencia(atual: list[dict],
@@ -380,11 +385,15 @@ def bloco_eficiencia(atual: list[dict],
             "delta": (
                 m.formatar_variacao(variacao) if variacao is not None else None
             ),
-            # A formula fica no tooltip: dentro do cartao ela roubava o peso
-            # visual do numero e desalinhava a linha.
-            "tooltip": f"{definicao.rotulo} = {definicao.descricao}",
+            # A definicao e a formula ficam na ajuda contextual: dentro do
+            # cartao elas roubavam o peso visual do numero e desalinhavam a
+            # linha.
+            "tooltip": (
+                definicao.ajuda
+                or f"{definicao.rotulo} = {definicao.descricao}"
+            ),
         })
-    ui.linha_kpis(cartoes, compacto=True)
+    ui.linha_kpis(cartoes, compacto=True, chave="grade_eficiencia")
 
 
 def seletor_metrica(rotulo: str, opcoes: tuple[str, ...], chave: str) -> str:
@@ -418,7 +427,7 @@ def tabela_ranking(itens: list[dict], nivel: str) -> list[dict]:
     """
     rotulo_id = {
         "conta": "Conta", "campanha": "Campanha",
-        "adset": "Ad set", "anuncio": "Anuncio",
+        "adset": "Ad set", "anuncio": "Anúncio",
     }[nivel]
 
     linhas = []
@@ -430,11 +439,11 @@ def tabela_ranking(itens: list[dict], nivel: str) -> list[dict]:
                 linha[f"{rotulo} (pai)"] = item[pai]
         linha.update({
             "Investimento": m.formatar_metrica("spend", item["spend"]),
-            "Impressoes": m.formatar_metrica(
+            "Impressões": m.formatar_metrica(
                 "impressions", item["impressions"]),
             "Cliques": m.formatar_metrica(
                 "link_clicks", item["link_clicks"]),
-            "Conversoes": m.formatar_metrica(
+            "Conversões": m.formatar_metrica(
                 "conversions", item["conversions"]),
             "CTR": m.formatar_derivada("ctr", item["ctr"]),
             "CPC": m.formatar_derivada("cpc", item["cpc"]),
@@ -459,27 +468,34 @@ def pagina_ranking(linhas: list[dict], nivel: str, titulo: str,
     """
     ui.secao(titulo, apoio)
 
-    with st.container(key=f"controles_ranking_{nivel}"):
-        coluna_metrica, coluna_topo = st.columns(
-            [2, 1], vertical_alignment="bottom"
+    with st.container(border=True, key=f"cartao_ranking_{nivel}"):
+        ui.titulo_grafico(
+            "Desempenho no período",
+            "A barra usa o valor real da métrica; a origem aparece junto à entidade.",
         )
-        with coluna_metrica:
-            metrica = seletor_metrica(
-                "Ordenar por", m.METRICAS, f"metrica_{nivel}"
+        with st.container(key=f"controles_ranking_{nivel}"):
+            coluna_metrica, coluna_topo = st.columns(
+                [2, 1], vertical_alignment="bottom"
             )
-        with coluna_topo:
-            topo = st.selectbox("Exibir", (10, 15), key=f"topo_{nivel}")
+            with coluna_metrica:
+                metrica = seletor_metrica(
+                    "Ordenar por", m.METRICAS, f"metrica_{nivel}"
+                )
+            with coluna_topo:
+                topo = st.selectbox("Exibir", (10, 15), key=f"topo_{nivel}")
 
-    completo = m.ranking(linhas, nivel, metrica)
-    if not completo:
-        ui.tabela([])
-        return
+        completo = m.ranking(linhas, nivel, metrica)
+        if not completo:
+            ui.estado_vazio(
+                "Nenhum dado encontrado", "Ajuste os filtros ou o período."
+            )
+            return
 
-    st.plotly_chart(
-        graficos.barras_ranking(completo[:topo], metrica),
-        width="stretch",
-        config={"displayModeBar": False},
-    )
+        st.plotly_chart(
+            graficos.barras_ranking(completo[:topo], metrica),
+            width="stretch",
+            config=graficos.CONFIG_PLOTLY,
+        )
 
     observacao = m.CATALOGO[metrica].observacao
     if observacao:
@@ -491,9 +507,9 @@ def pagina_ranking(linhas: list[dict], nivel: str, titulo: str,
     ui.secao(
         "Detalhamento",
         f"{len(completo)} {plural} no recorte atual — a tabela mostra o "
-        "conjunto completo, nao apenas o Top N.",
+        "conjunto completo, não apenas o Top N.",
     )
-    ui.tabela(tabela_ranking(completo, nivel), altura=360)
+    ui.tabela(tabela_ranking(completo, nivel), altura=330)
 
 
 # ── Paginas ───────────────────────────────────────────────────────────────
@@ -527,80 +543,107 @@ def pagina_visao_geral(dataset, selecao: filtros.Selecao,
     ui.secao("Eficiência", "Indicadores derivados do período selecionado.")
     bloco_eficiencia(linhas, anteriores or None)
 
-    ui.secao(
-        "Evolução diária",
-        "Acompanhe o comportamento da métrica selecionada ao longo do período.",
-    )
-    with st.container(key="controles_serie"):
-        coluna_metrica, coluna_modo = st.columns(
-            [1.35, 1], vertical_alignment="bottom"
+    ui.secao("Evolução diária", "")
+    with st.container(border=True, key="cartao_evolucao"):
+        ui.titulo_grafico(
+            "Evolução diária",
+            "Visualize a evolução da métrica no período selecionado.",
         )
-        with coluna_metrica:
-            metrica = seletor_metrica(
-                "Métrica", m.METRICAS, "metrica_serie"
+        with st.container(key="controles_serie"):
+            coluna_metrica, coluna_modo = st.columns(
+                [1.35, 1], vertical_alignment="bottom"
             )
-        with coluna_modo:
-            separar = st.toggle(
-                "Comparar plataformas",
-                value=len(plataformas) > 1,
-                key="serie_por_plataforma",
-            )
+            with coluna_metrica:
+                metrica = seletor_metrica(
+                    "Métrica", m.METRICAS, "metrica_serie"
+                )
+            with coluna_modo:
+                separar = st.toggle(
+                    "Comparar plataformas",
+                    value=len(plataformas) > 1,
+                    key="serie_por_plataforma",
+                )
 
-    series = m.serie_diaria(linhas, metrica, por_plataforma=separar)
-    st.plotly_chart(
-        graficos.serie_temporal(series, metrica),
-        width="stretch",
-        config={"displayModeBar": False},
-    )
-    observacao = m.CATALOGO[metrica].observacao
-    if observacao:
-        ui.nota(f"{m.CATALOGO[metrica].rotulo}: {observacao}")
+        series = m.serie_diaria(linhas, metrica, por_plataforma=separar)
+        if series:
+            st.plotly_chart(
+                graficos.serie_temporal(series, metrica),
+                width="stretch",
+                config=graficos.CONFIG_PLOTLY,
+            )
+        else:
+            ui.estado_vazio(
+                "Nenhum dado encontrado", "Ajuste os filtros ou o período."
+            )
+        observacao = m.CATALOGO[metrica].observacao
+        if observacao:
+            ui.nota(f"{m.CATALOGO[metrica].rotulo}: {observacao}")
 
     ui.secao(
-        "Meta Ads x Google Ads",
+        "Meta Ads × Google Ads",
         "Compare métricas coletadas nas duas origens com a mesma definição.",
     )
     valores = m.agregar_por(linhas, lambda linha: linha["plataforma"])
 
-    with st.container(key="graficos_plataforma"):
+    with st.container(key="grade_comparacao"):
         colunas = st.columns(2, gap="small")
         for indice, metrica_comparada in enumerate(COMPARACAO_PLATAFORMA):
             with colunas[indice % 2]:
-                ui.titulo_grafico(m.CATALOGO[metrica_comparada].rotulo)
-                st.plotly_chart(
-                    graficos.barras_plataforma(
-                        {p: t[metrica_comparada] for p, t in valores.items()},
-                        metrica_comparada,
-                    ),
-                    width="stretch",
-                    config={"displayModeBar": False},
-                )
+                with st.container(
+                    border=True, key=f"comparacao_{metrica_comparada}"
+                ):
+                    ui.titulo_grafico(m.CATALOGO[metrica_comparada].rotulo)
+                    st.plotly_chart(
+                        graficos.barras_plataforma(
+                            {
+                                p: t[metrica_comparada]
+                                for p, t in valores.items()
+                            },
+                            metrica_comparada,
+                        ),
+                        width="stretch",
+                        config=graficos.CONFIG_PLOTLY,
+                    )
 
     ui.secao(
-        "Participacao e cobertura",
-        "Como o investimento se divide e o que cada origem nao fornece.",
+        "Participação e cobertura",
+        "Como o investimento se divide e quais métricas cada origem fornece.",
     )
-    if len(plataformas) > 1:
-        st.plotly_chart(
-            graficos.barras_participacao(
-                {p: t["spend"] for p, t in valores.items()}, "spend"
-            ),
-            width="stretch",
-            config={"displayModeBar": False},
-        )
-
-    cobertura = [
-        f"{m.CATALOGO[metrica_base].rotulo} — {plataforma}"
-        for metrica_base in m.METRICAS
-        for plataforma in plataformas
-        if not m.suportada(metrica_base, plataforma)
-    ]
-    if cobertura:
-        ui.nota(
-            "Nao disponibilizado nesta origem: " + " · ".join(cobertura)
-            + ". Zero nessas celulas significa ausencia de suporte, nao "
-            "desempenho nulo."
-        )
+    with st.container(key="grade_participacao"):
+        coluna_participacao, coluna_cobertura = st.columns(2, gap="small")
+        with coluna_participacao:
+            with st.container(border=True, key="card_participacao"):
+                ui.titulo_grafico(
+                    "Participação no investimento",
+                    "Distribuição percentual do valor investido no recorte.",
+                )
+                if len(plataformas) > 1:
+                    st.plotly_chart(
+                        graficos.barras_participacao(
+                            {p: t["spend"] for p, t in valores.items()}, "spend"
+                        ),
+                        width="stretch",
+                        config=graficos.CONFIG_PLOTLY,
+                    )
+                else:
+                    ui.estado_vazio(
+                        "Comparação indisponível",
+                        "Selecione as duas plataformas para visualizar a participação.",
+                    )
+        with coluna_cobertura:
+            with st.container(border=True, key="card_cobertura"):
+                ui.titulo_grafico(
+                    "Cobertura das métricas",
+                    "Indisponibilidade nunca é apresentada como desempenho zero.",
+                )
+                ui.quadro_cobertura([
+                    (
+                        m.CATALOGO[chave].rotulo,
+                        m.suportada(chave, "Meta Ads"),
+                        m.suportada(chave, "Google Ads"),
+                    )
+                    for chave in ("reach", "purchases", "conversions")
+                ])
 
     ui.secao("Indicadores por plataforma", "")
     comparativo = []
@@ -610,11 +653,11 @@ def pagina_visao_geral(dataset, selecao: filtros.Selecao,
         comparativo.append({
             "Plataforma": plataforma,
             "Investimento": m.formatar_metrica("spend", totais["spend"]),
-            "Impressoes": m.formatar_metrica(
+            "Impressões": m.formatar_metrica(
                 "impressions", totais["impressions"]),
             "Cliques": m.formatar_metrica(
                 "link_clicks", totais["link_clicks"]),
-            "Conversoes": m.formatar_metrica(
+            "Conversões": m.formatar_metrica(
                 "conversions", totais["conversions"]),
             "CTR": m.formatar_derivada("ctr", derivadas["ctr"]),
             "CPC": m.formatar_derivada("cpc", derivadas["cpc"]),
@@ -638,31 +681,45 @@ def pagina_anuncios(linhas: list[dict]) -> None:
 
     identificadores = sorted({linha["anuncio_id"] for linha in linhas})
     ui.secao(
-        "Evolução de um anúncio",
-        "Série diária de um anúncio do recorte atual.",
+        "Detalhe do anúncio",
+        "Contexto essencial e evolução temporal sem ampliar a superfície de dados.",
     )
-    with st.container(key="controles_anuncio"):
-        coluna_anuncio, coluna_metrica = st.columns(
-            [1, 1], vertical_alignment="bottom"
-        )
-        with coluna_anuncio:
-            anuncio = st.selectbox(
-                "Anúncio", identificadores, key="anuncio_detalhe"
+    with st.container(border=True, key="cartao_detalhe_anuncio"):
+        with st.container(key="controles_anuncio"):
+            coluna_anuncio, coluna_metrica = st.columns(
+                [1, 1], vertical_alignment="bottom"
             )
-        with coluna_metrica:
-            metrica = seletor_metrica(
-                "Métrica", m.METRICAS, "metrica_anuncio_detalhe"
-            )
+            with coluna_anuncio:
+                anuncio = st.selectbox(
+                    "Anúncio", identificadores, key="anuncio_detalhe"
+                )
+            with coluna_metrica:
+                metrica = seletor_metrica(
+                    "Métrica", m.METRICAS, "metrica_anuncio_detalhe"
+                )
 
-    do_anuncio = [
-        linha for linha in linhas if linha["anuncio_id"] == anuncio
-    ]
-    series = m.serie_diaria(do_anuncio, metrica, por_plataforma=True)
-    st.plotly_chart(
-        graficos.serie_temporal(series, metrica, altura=300),
-        width="stretch",
-        config={"displayModeBar": False},
-    )
+        do_anuncio = [
+            linha for linha in linhas if linha["anuncio_id"] == anuncio
+        ]
+        totais = m.agregar(do_anuncio)
+        referencia = do_anuncio[0]
+        ui.detalhe_anuncio(anuncio, [
+            ("Plataforma", referencia["plataforma"]),
+            ("Campanha", referencia["campanha_id"]),
+            ("Investimento", m.formatar_metrica("spend", totais["spend"])),
+            ("Cliques", m.formatar_metrica("link_clicks", totais["link_clicks"])),
+            ("Conversões", m.formatar_metrica("conversions", totais["conversions"])),
+        ])
+        ui.titulo_grafico(
+            "Evolução temporal",
+            "Série diária do anúncio no período e nos filtros atuais.",
+        )
+        series = m.serie_diaria(do_anuncio, metrica, por_plataforma=True)
+        st.plotly_chart(
+            graficos.serie_temporal(series, metrica, altura=310),
+            width="stretch",
+            config=graficos.CONFIG_PLOTLY,
+        )
 
 
 def pagina_sobre(dataset, linhas: list[dict]) -> None:
@@ -682,57 +739,59 @@ def pagina_sobre(dataset, linhas: list[dict]) -> None:
 
     ui.secao("Dataset carregado", dataset.fonte.caminho_relativo)
     ui.linha_kpis([
-        {"rotulo": "Periodo", "valor": periodo,
+        {"rotulo": "Período", "valor": periodo,
          "tooltip": f"{resumo['dias']} dias com dado"},
         {"rotulo": "Plataformas",
          "valor": str(len(resumo["plataformas"])),
          "tag": ", ".join(resumo["plataformas"])},
         {"rotulo": "Linhas", "valor": m.formatar(resumo["linhas"], m.INTEIRO),
-         "tag": "grao: anuncio x dia"},
-    ], compacto=True)
+         "tag": "grão: anúncio × dia"},
+    ], compacto=True, chave="grade_resumo")
     ui.linha_kpis([
         {"rotulo": "Contas", "valor": m.formatar(resumo["contas"], m.INTEIRO)},
         {"rotulo": "Campanhas",
          "valor": m.formatar(resumo["campanhas"], m.INTEIRO)},
         {"rotulo": "Ad sets",
          "valor": m.formatar(resumo["adsets"], m.INTEIRO)},
-        {"rotulo": "Anuncios",
+        {"rotulo": "Anúncios",
          "valor": m.formatar(resumo["anuncios"], m.INTEIRO)},
         {"rotulo": "No recorte atual",
          "valor": m.formatar(len(linhas), m.INTEIRO),
-         "tag": "apos os filtros"},
-    ], compacto=True)
+         "tag": "após os filtros"},
+    ], compacto=True, chave="grade_resumo_entidades")
 
     ui.secao("Segurança e privacidade", "")
     st.markdown(
         f"{TEXTO_FRONTEIRA}\n\n"
         "- Os identificadores exibidos (`Cliente-`, `Campanha-`, `AdSet-`, "
-        "`Anuncio-`) sao pseudonimos gerados **fora** desta camada.\n"
-        "- Metricas e datas sao reais e intactas: a pseudonimizacao troca "
-        "identidade, nunca numero.\n"
-        "- O painel nao acessa o Data Warehouse nem as APIs de anuncios; a "
-        "unica entrada e um arquivo que satisfaz o contrato de exposicao.\n"
+        "`Anuncio-`) são pseudônimos gerados **fora** desta camada.\n"
+        "- Métricas e datas são reais e intactas: a pseudonimização troca "
+        "identidade, nunca número.\n"
+        "- O painel não acessa o Data Warehouse nem as APIs de anúncios; a "
+        "única entrada é um arquivo que satisfaz o contrato de exposição.\n"
         "- Coluna terminada em `_nk`, `_sk`, `_external_id` ou `_nome` faz o "
         "arquivo inteiro ser recusado."
     )
 
     ui.secao(
         "Métricas por origem",
-        '"nao coletado" = a origem nao disponibiliza a metrica neste nivel. '
-        "Zero nessas celulas nao e desempenho nulo.",
+        '"— Não disponível" = a origem não fornece a métrica neste nível. '
+        "Zero nunca é usado como sinônimo de indisponibilidade.",
     )
     ui.tabela([
         {
-            "Metrica": definicao.rotulo,
+            "Métrica": definicao.rotulo,
             "Coluna": definicao.chave,
             # Rotulo curto: a coluna e estreita e o texto longo era cortado
             # pela tabela. O significado esta no apoio da secao.
-            "Meta Ads": "sim" if m.suportada(definicao.chave, "Meta Ads")
-            else "nao coletado",
-            "Google Ads": "sim" if m.suportada(definicao.chave, "Google Ads")
-            else "nao coletado",
-            "Somavel entre plataformas": (
-                "sim" if definicao.comparavel_entre_plataformas else "nao"
+            "Meta Ads": "✓ Disponível"
+            if m.suportada(definicao.chave, "Meta Ads")
+            else "— Não disponível",
+            "Google Ads": "✓ Disponível"
+            if m.suportada(definicao.chave, "Google Ads")
+            else "— Não disponível",
+            "Somável entre plataformas": (
+                "✓ Sim" if definicao.comparavel_entre_plataformas else "— Não"
             ),
         }
         for definicao in m.CATALOGO.values()
@@ -740,12 +799,12 @@ def pagina_sobre(dataset, linhas: list[dict]) -> None:
 
     with st.expander("Indicadores derivados e manifesto do artefato"):
         ui.tabela([
-            {"Indicador": definicao.rotulo, "Formula": definicao.descricao}
+            {"Indicador": definicao.rotulo, "Fórmula": definicao.descricao}
             for definicao in m.DERIVADAS.values()
         ])
         if manifesto:
             itens = {
-                "Versao do contrato": manifesto.get("versao_contrato"),
+                "Versão do contrato": manifesto.get("versao_contrato"),
                 "Gerado em": manifesto.get("gerado_em"),
                 "Linhas declaradas": manifesto.get("linhas"),
                 "Intervalo declarado": (
@@ -795,11 +854,14 @@ def linha_registros(dataset, quantidade: int) -> str:
     if gerado:
         try:
             data_geracao = date.fromisoformat(str(gerado)[:10])
-            texto += f" · dataset de {_dia_mes(data_geracao)} {data_geracao.year}"
+            texto += (
+                f" · atualizado em {_dia_mes(data_geracao)} "
+                f"{data_geracao.year}"
+            )
         except ValueError:
             # Manifesto antigo ou de terceiro: manter uma representacao curta
             # sem impedir que um dataset valido seja visualizado.
-            texto += f" · dataset de {str(gerado)[:10]}"
+            texto += f" · atualizado em {str(gerado)[:10]}"
     return texto
 
 

@@ -41,6 +41,11 @@ MOEDA: str = "moeda"
 INTEIRO: str = "inteiro"
 DECIMAL: str = "decimal"
 PERCENTUAL: str = "percentual"
+MULTIPLICADOR: str = "multiplicador"
+
+# Abaixo deste valor um multiplicador arredondado viraria `0,000x` e seria
+# lido como zero. Zero e resultado legitimo; "muito pequeno" nao e zero.
+PISO_MULTIPLICADOR: Decimal = Decimal("0.001")
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,8 @@ class Metrica:
             interpretavel.
         aditiva_no_tempo: Se somar dias distintos produz um total valido.
         observacao: Ressalva exibida junto do numero, quando houver.
+        ajuda: Definicao da metrica, exibida na ajuda contextual do cartao.
+            Responde "o que este numero conta", nao a ressalva de cobertura.
     """
 
     chave: str
@@ -66,17 +73,34 @@ class Metrica:
     comparavel_entre_plataformas: bool = True
     aditiva_no_tempo: bool = True
     observacao: str = ""
+    ajuda: str = ""
 
 
 CATALOGO: dict[str, Metrica] = {
-    "spend": Metrica("spend", "Investimento", MOEDA),
-    "impressions": Metrica("impressions", "Impressões", INTEIRO),
-    "link_clicks": Metrica("link_clicks", "Cliques no link", INTEIRO),
+    "spend": Metrica(
+        "spend", "Investimento", MOEDA,
+        ajuda="Total gasto em mídia no período selecionado.",
+    ),
+    "impressions": Metrica(
+        "impressions", "Impressões", INTEIRO,
+        ajuda="Quantidade de vezes em que os anúncios foram exibidos.",
+    ),
+    "link_clicks": Metrica(
+        "link_clicks", "Cliques no link", INTEIRO,
+        ajuda=(
+            "Quantidade de cliques contabilizados na métrica consolidada de "
+            "cliques do pipeline."
+        ),
+    ),
     "conversions": Metrica(
         "conversions", "Conversões", DECIMAL,
         observacao=(
             "Fracionária no Google Ads por modelagem de atribuição; o valor "
             "não é arredondado."
+        ),
+        ajuda=(
+            "Quantidade de conversões reportadas pela plataforma para o "
+            "recorte utilizado."
         ),
     ),
     "conversion_value": Metrica(
@@ -84,6 +108,10 @@ CATALOGO: dict[str, Metrica] = {
         observacao=(
             "Depende de o valor de conversão estar configurado na conta de "
             "origem; conta sem valor configurado reporta zero."
+        ),
+        ajuda=(
+            "Soma do valor monetário atribuído às conversões pela "
+            "plataforma. Não representa custo por conversão."
         ),
     ),
     "video_views": Metrica(
@@ -116,6 +144,10 @@ CATALOGO: dict[str, Metrica] = {
         plataformas_sem_suporte=frozenset({"Google Ads"}),
         comparavel_entre_plataformas=False,
         observacao="Não disponibilizado pela GAQL neste grão.",
+        ajuda=(
+            "Quantidade de eventos classificados como compra quando "
+            "disponibilizados pela origem."
+        ),
     ),
 }
 
@@ -141,6 +173,8 @@ class Derivada:
         fator: Multiplicador aplicado ao quociente.
         formato: Formato de exibicao.
         descricao: Formula, em texto, para a tela "Sobre os dados".
+        ajuda: Definicao e formula em texto corrido, exibida na ajuda
+            contextual do cartao.
     """
 
     chave: str
@@ -150,6 +184,7 @@ class Derivada:
     fator: Decimal
     formato: str
     descricao: str
+    ajuda: str = ""
 
 
 # Todos os operandos abaixo sao metricas consolidaveis: os indicadores valem
@@ -158,22 +193,47 @@ DERIVADAS: dict[str, Derivada] = {
     "ctr": Derivada(
         "ctr", "CTR", "link_clicks", "impressions", Decimal(100), PERCENTUAL,
         "cliques no link / impressões x 100",
+        ajuda=(
+            "Click-Through Rate: taxa de cliques sobre impressões. "
+            "Fórmula: cliques / impressões × 100."
+        ),
     ),
     "cpc": Derivada(
         "cpc", "CPC", "spend", "link_clicks", Decimal(1), MOEDA,
         "investimento / cliques no link",
+        ajuda=(
+            "Custo por Clique: custo médio por clique. "
+            "Fórmula: investimento / cliques."
+        ),
     ),
     "cpm": Derivada(
         "cpm", "CPM", "spend", "impressions", Decimal(1000), MOEDA,
         "investimento / impressoes x 1000",
+        ajuda=(
+            "Custo por Mil Impressões: custo médio para cada mil "
+            "impressões. Fórmula: investimento / impressões × 1.000."
+        ),
     ),
     "cpa": Derivada(
         "cpa", "CPA", "spend", "conversions", Decimal(1), MOEDA,
         "investimento / conversões",
+        ajuda=(
+            "Custo por Aquisição: custo médio para gerar uma conversão. "
+            "Fórmula: investimento / conversões. No Google Ads, corresponde "
+            "conceitualmente à métrica Custo / conv."
+        ),
     ),
+    # A apresentacao do ROAS e de multiplicador ("2,00x"); o calculo segue
+    # sendo valor de conversao / investimento, com fator 1.
     "roas": Derivada(
-        "roas", "ROAS", "conversion_value", "spend", Decimal(1), DECIMAL,
-        "valor de conversão / investimento",
+        "roas", "ROAS", "conversion_value", "spend", Decimal(1),
+        MULTIPLICADOR, "valor de conversão / investimento",
+        ajuda=(
+            "Return on Ad Spend: relação entre o valor atribuído às "
+            "conversões e o investimento. Fórmula: valor de conversão / "
+            "investimento. Um ROAS de 2,00x representa R$ 2,00 de valor de "
+            "conversão para cada R$ 1,00 investido."
+        ),
     ),
 }
 
@@ -370,12 +430,61 @@ def _numero(valor: Decimal, casas: int) -> str:
     return f"{sinal}{inteiro},{decimal}" if casas else f"{sinal}{inteiro}"
 
 
+def _casas_multiplicador(valor: Decimal) -> int:
+    """Escolhe as casas decimais de um multiplicador pela ordem de grandeza.
+
+    Duas casas fixas achatariam `0,028x` em `0,03x` — uma diferenca de
+    interpretacao, nao de arredondamento. A regra tem duas faixas:
+
+    ===============  ======  ==========
+    Faixa            Casas   Exemplo
+    ===============  ======  ==========
+    ``< 0,1``        3       ``0,028x``
+    ``>= 0,1``       2       ``12,54x``
+    ===============  ======  ==========
+
+    Args:
+        valor: Multiplicador ja calculado.
+
+    Returns:
+        Quantidade de casas decimais.
+    """
+    absoluto = abs(valor)
+    if absoluto == 0:
+        # Zero e resultado legitimo, nao valor minusculo: exibi-lo com tres
+        # casas (`0,000x`) sugeriria uma precisao que nao esta em jogo.
+        return 2
+    if absoluto < Decimal("0.1"):
+        return 3
+    return 2
+
+
+def _multiplicador(valor: Decimal, casas: int | None) -> str:
+    """Formata um multiplicador com o sufixo `x`.
+
+    Args:
+        valor: Multiplicador ja calculado.
+        casas: Sobrescreve a regra de magnitude quando informado.
+
+    Returns:
+        Texto como ``2,00x`` ou ``0,028x``. Valor nao nulo pequeno demais
+        para as tres casas sai como ``< 0,001x``, nunca como ``0,000x``.
+    """
+    valor = Decimal(str(valor))
+    if casas is not None:
+        return f"{_numero(valor, casas)}x"
+    if valor != 0 and abs(valor) < PISO_MULTIPLICADOR:
+        return "< 0,001x" if valor > 0 else "> -0,001x"
+    return f"{_numero(valor, _casas_multiplicador(valor))}x"
+
+
 def formatar(valor, formato: str, casas: int | None = None) -> str:
     """Formata um valor conforme o formato declarado no catalogo.
 
     Args:
         valor: Valor a formatar, ou ``None``.
-        formato: Um de `moeda`, `inteiro`, `decimal`, `percentual`.
+        formato: Um de `moeda`, `inteiro`, `decimal`, `percentual`,
+            `multiplicador`.
         casas: Sobrescreve as casas decimais padrao do formato.
 
     Returns:
@@ -390,6 +499,8 @@ def formatar(valor, formato: str, casas: int | None = None) -> str:
         return _numero(valor, 0 if casas is None else casas)
     if formato == PERCENTUAL:
         return f"{_numero(valor, 2 if casas is None else casas)}%"
+    if formato == MULTIPLICADOR:
+        return _multiplicador(valor, casas)
     return _numero(valor, 2 if casas is None else casas)
 
 

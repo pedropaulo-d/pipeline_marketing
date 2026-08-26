@@ -1,22 +1,9 @@
 """Componentes visuais reutilizaveis do dashboard.
 
-Concentra o CSS e os blocos de interface que se repetem entre as paginas —
-cartao de KPI, cabecalho de pagina, cabecalho de secao, selo de origem e
-tabela — para que `app.py` fique com a composicao das telas e nao com
-marcacao.
-
-Identidade visual
------------------
-Conteudo claro, barra lateral escura, uma unica cor de destaque. As cores
-estruturais (fundo, campo, texto, borda) vivem no tema declarado em
-`.streamlit/config.toml`, porque os controles do Streamlit sao componentes
-React que derivam suas cores do tema e ignoram CSS de pagina. O que sobra para
-este modulo e a camada de layout: densidade, tipografia, cartoes e a barra
-lateral.
-
-A variacao percentual e apresentada em cinza nos dois sentidos: alta de
-investimento e alta de CPA nao tem a mesma leitura, e o dashboard nao decide
-isso pelo usuario.
+O tema nativo cuida das cores dos widgets React do Streamlit. Este modulo
+completa a identidade dark com layout, densidade e componentes de apresentacao.
+A ajuda dos indicadores usa ``st.metric(help=...)``: o icone e o tooltip sao
+nativos, alcancaveis por teclado e nao dependem de interacao CSS artesanal.
 """
 
 import html
@@ -25,425 +12,455 @@ import streamlit as st
 
 from dashboard import metricas as m
 
-# As mesmas cores do tema, repetidas aqui porque o CSS precisa delas e o
-# Streamlit nao expoe os tokens do tema como variaveis CSS estaveis. Mudar uma
-# cor exige mudar nos dois lugares — o preco de os controles nativos e o
-# layout proprio conviverem.
+
 ESTILO: str = """
 <style>
     :root {
-        --fundo: #F6F7F9;
-        --cartao: #FFFFFF;
-        --borda: #E4E7EC;
-        --tinta: #172033;
-        --tinta-media: #3D4757;
-        --tinta-suave: #667085;
-        --destaque: #E84A5F;
-        --chip: #F2F4F7;
-
-        --sb-fundo: #151A23;
-        --sb-campo: #232B39;
-        --sb-texto: #E7EAF0;
-        --sb-suave: #98A2B3;
-        --sb-rotulo: #8B96AB;
-        --sb-ativo: #212A38;
-
-        --espaco-1: 4px;
-        --espaco-2: 8px;
-        --espaco-3: 12px;
-        --espaco-4: 16px;
-        --espaco-6: 24px;
-        --espaco-8: 32px;
-        --raio: 10px;
-
+        --fundo: #080B10;
+        --sidebar: #0D1117;
+        --cartao: #11161E;
+        --elevado: #161D27;
+        --borda: #27303D;
+        --borda-suave: #242C37;
+        --texto: #F1F5F9;
+        --texto-secundario: #94A3B8;
+        --texto-muted: #7C899D;
+        --accent: #8B5CF6;
+        --accent-claro: #A78BFA;
+        --raio: 11px;
         --fonte: Inter, system-ui, -apple-system, BlinkMacSystemFont,
-                 "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+                 "Segoe UI", sans-serif;
     }
 
-    /* O conteudo e claro independentemente do tema do navegador. Sem isto,
-       `prefers-color-scheme: dark` puxava partes da interface para escuro e a
-       pagina ficava com duas identidades ao mesmo tempo. */
     html, body, .stApp, [data-testid="stAppViewContainer"] {
-        color-scheme: light;
+        color-scheme: dark;
         background: var(--fundo);
-        color: var(--tinta);
+        color: var(--texto);
         font-family: var(--fonte);
     }
-    @media (prefers-color-scheme: dark) {
+    @media (prefers-color-scheme: light) {
         html, body, .stApp, [data-testid="stAppViewContainer"] {
-            color-scheme: light;
+            color-scheme: dark;
             background: var(--fundo);
-            color: var(--tinta);
+            color: var(--texto);
         }
     }
-
-    /* Ruido do chrome do Streamlit. O cabecalho continua existindo — e nele
-       que mora o controle de recolher a barra lateral —, apenas transparente. */
     [data-testid="stDecoration"] { display: none; }
     [data-testid="stHeader"] { background: transparent; }
     [data-testid="stToolbarActions"] { display: none; }
     footer { display: none; }
 
-    /* Container central: limitado em telas grandes e sem margem fantasma
-       quando a sidebar e recolhida. */
     .block-container {
         width: 100%;
-        max-width: 1376px;
+        max-width: 1440px;
         margin-inline: auto;
-        padding: 24px 32px 48px;
+        padding: 20px 32px 48px;
     }
-
-    /* Densidade. O padrao do Streamlit reserva espaco vertical generoso entre
-       elementos; em 1366x768 isso custa uma secao inteira de conteudo. */
     [data-testid="stVerticalBlock"] { gap: 8px; }
     [data-testid="stHorizontalBlock"] { gap: 12px; }
     [data-testid="stElementContainer"] { margin-bottom: 0; }
+    h1, h2, h3, h4, p, span, label, button, input { font-family: var(--fonte); }
+    h1, h2, h3, h4 { color: var(--texto); }
+    a { color: var(--accent-claro); }
 
-    h1, h2, h3, h4 {
-        color: var(--tinta);
-        font-family: var(--fonte);
-        letter-spacing: -0.015em;
-    }
-
-    /* ── Cabecalho da pagina ─────────────────────────────────────────── */
+    /* Cabecalho de pagina */
     .pg-titulo {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: var(--tinta);
         margin: 0;
-        line-height: 1.2;
+        color: var(--texto);
+        font-size: 1.82rem;
+        font-weight: 680;
+        letter-spacing: -0.025em;
+        line-height: 1.18;
     }
     .pg-desc {
-        font-size: 0.95rem;
-        color: var(--tinta-suave);
-        margin: 4px 0 0;
-        max-width: 70ch;
+        max-width: 72ch;
+        margin: 5px 0 0;
+        color: var(--texto-secundario);
+        font-size: 0.93rem;
         line-height: 1.45;
     }
     .pg-meta {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
+        align-items: end;
         gap: 16px 24px;
         margin-top: 12px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid var(--borda);
+        padding-bottom: 4px;
     }
-    .pg-info {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        min-width: 0;
-    }
+    .pg-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .pg-periodo {
-        font-size: 0.93rem;
-        font-weight: 650;
-        color: var(--tinta);
+        color: var(--texto);
+        font-size: 0.84rem;
+        font-weight: 580;
         line-height: 1.35;
     }
     .pg-registros {
-        font-size: 0.82rem;
-        color: var(--tinta-suave);
+        color: var(--texto-muted);
+        font-size: 0.76rem;
         line-height: 1.35;
     }
-
     .selo {
-        display: inline-block;
-        font-size: 0.66rem;
-        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 4px 9px;
+        border: 1px solid rgba(139, 92, 246, 0.35);
+        border-radius: 7px;
+        background: rgba(139, 92, 246, 0.09);
+        color: #C4B5FD;
+        font-size: 0.64rem;
+        font-weight: 650;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        padding: 5px 9px;
-        border-radius: 6px;
         white-space: nowrap;
     }
-    .selo-real { background: #EEF2FF; color: #313E7A; border: 1px solid #D3DBF5; }
-    .selo-demo { background: #FDF1E3; color: #7C4A03; border: 1px solid #F2DCBC; }
-
-    /* ── Cabecalho de secao ──────────────────────────────────────────── */
-    .secao {
-        display: block;
-        margin: 24px 0 12px;
+    .selo-demo {
+        border-color: rgba(245, 158, 11, 0.34);
+        background: rgba(245, 158, 11, 0.09);
+        color: #FBBF24;
     }
+
+    /* Titulos e microcopy */
+    .secao { margin: 18px 0 9px; }
     .secao-titulo {
-        font-size: 1.1rem;
-        font-weight: 645;
-        color: var(--tinta);
         margin: 0;
+        color: var(--texto);
+        font-size: 1rem;
+        font-weight: 620;
+        letter-spacing: -0.012em;
     }
-    .secao-apoio {
-        font-size: 0.83rem;
-        color: var(--tinta-suave);
-        margin: 4px 0 0;
-        line-height: 1.45;
-        max-width: 76ch;
-    }
-
-    /* ── Cartao de KPI ───────────────────────────────────────────────── */
-    .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-        width: 100%;
-    }
-    .kpi-grid.compacta {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-    .kpi-grid.compacta.qtd-3 {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .kpi {
-        background: var(--cartao);
-        border: 1px solid var(--borda);
-        border-radius: var(--raio);
-        padding: 16px;
-        min-height: 124px;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-    }
-    .kpi-rotulo {
-        font-size: 0.72rem;
-        font-weight: 650;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        color: var(--tinta-suave);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .kpi-valor {
-        font-size: 1.9rem;
-        font-weight: 700;
-        color: var(--tinta);
-        line-height: 1.18;
-        margin-top: 6px;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .kpi-delta {
-        margin-top: 6px;
+    .secao-apoio, .grafico-apoio {
+        max-width: 78ch;
+        margin: 3px 0 0;
+        color: var(--texto-muted);
         font-size: 0.78rem;
-        color: var(--tinta-suave);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        line-height: 1.45;
     }
-    .kpi-delta b { color: var(--tinta-media); font-weight: 620; }
-    .kpi-tag {
-        align-self: flex-start;
-        margin-top: 0.28rem;
+    .grafico-titulo {
+        margin: 0;
+        color: var(--texto);
+        font-size: 0.9rem;
+        font-weight: 620;
+        letter-spacing: -0.01em;
+    }
+
+    /* KPI nativo: o help de st.metric fornece o icone acessivel. */
+    [data-testid="stMetric"] {
+        box-sizing: border-box;
+        min-height: 116px;
+        padding: 15px 16px 13px;
+        border: 1px solid var(--borda) !important;
+        border-radius: var(--raio) !important;
+        background: var(--cartao);
+        transition: background-color 180ms ease, border-color 180ms ease;
+    }
+    [data-testid="stMetric"]:hover {
+        background: var(--elevado);
+        border-color: #354154 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: var(--texto-muted);
         font-size: 0.7rem;
-        color: var(--tinta-suave);
-        background: var(--chip);
-        border-radius: 4px;
-        padding: 0.1rem 0.4rem;
-        white-space: nowrap;
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        font-weight: 620;
+        letter-spacing: 0.075em;
+        text-transform: uppercase;
     }
-
-    .kpi.compacto { padding: 12px 14px; min-height: 92px; }
-    .kpi.compacto .kpi-rotulo { font-size: 0.68rem; }
-    .kpi.compacto .kpi-valor { font-size: 1.35rem; margin-top: 4px; }
-    .kpi.compacto .kpi-delta { font-size: 0.73rem; margin-top: 4px; }
-
-    /* ── Nota / ressalva ─────────────────────────────────────────────── */
-    .nota {
-        background: var(--cartao);
-        border: 1px solid var(--borda);
-        border-left: 3px solid #CBD5E1;
-        border-radius: 8px;
-        padding: 0.65rem 0.85rem;
-        font-size: 0.82rem;
-        color: var(--tinta-suave);
-        line-height: 1.5;
+    [data-testid="stMetricValue"] {
+        margin-top: 3px;
+        color: var(--texto);
+        font-size: clamp(1.65rem, 2.1vw, 2rem);
+        font-weight: 670;
+        letter-spacing: -0.035em;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
     }
-
-    /* ── Graficos e tabelas ganham o mesmo acabamento dos cartoes ────── */
-    .stPlotlyChart {
+    [data-testid="stMetricDelta"] {
+        overflow: visible !important;
+        padding: 0 !important;
+        background: transparent !important;
+        color: var(--texto-secundario) !important;
+        font-size: 0.74rem;
+        line-height: 1.25;
+    }
+    [data-testid="stMetricDelta"] p {
+        overflow: visible !important;
+        white-space: normal !important;
+        text-overflow: clip !important;
+    }
+    [data-testid="stMetric"] button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+    .st-key-grade_eficiencia [data-testid="stMetric"],
+    .st-key-grade_resumo [data-testid="stMetric"],
+    .st-key-grade_resumo_entidades [data-testid="stMetric"] {
+        min-height: 88px;
+        padding: 11px 13px 10px;
+    }
+    .st-key-grade_eficiencia [data-testid="stMetricValue"],
+    .st-key-grade_resumo [data-testid="stMetricValue"],
+    .st-key-grade_resumo_entidades [data-testid="stMetricValue"] {
+        font-size: 1.45rem;
+    }
+    /* Cards e Plotly compartilham superficie. */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: var(--borda) !important;
+        border-radius: var(--raio) !important;
         background: var(--cartao);
+        transition: background-color 180ms ease, border-color 180ms ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: #354154 !important;
+    }
+    .st-key-cartao_evolucao [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-cartao_ranking_campanha [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-cartao_ranking_anuncio [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-cartao_detalhe_anuncio [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-card_participacao [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-card_cobertura [data-testid="stVerticalBlockBorderWrapper"] {
+        padding: 15px 16px 12px;
+    }
+    .stPlotlyChart { border-radius: 8px; overflow: hidden; }
+    .modebar { display: none !important; }
+
+    /* Controles da area principal. */
+    .block-container [data-testid="stWidgetLabel"] p {
+        color: var(--texto-secundario);
+        font-size: 0.75rem;
+        font-weight: 560;
+    }
+    .block-container [data-baseweb="select"] > div,
+    .block-container [data-baseweb="input"],
+    .block-container [data-baseweb="base-input"] {
+        border-color: var(--borda) !important;
+        background: var(--elevado) !important;
+    }
+    .block-container [data-baseweb="select"] > div:focus-within,
+    .block-container [data-baseweb="input"]:focus-within,
+    .block-container [data-baseweb="base-input"]:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
+    }
+    .st-key-controles_serie { max-width: 690px; }
+    .st-key-controles_ranking_campanha,
+    .st-key-controles_ranking_anuncio { max-width: 520px; }
+    .st-key-controles_anuncio { max-width: 720px; }
+
+    /* Notas, empty state e detalhe. */
+    .nota, .estado-vazio {
         border: 1px solid var(--borda);
         border-radius: var(--raio);
-        padding: 12px 12px 8px;
-        overflow: hidden;
+        background: var(--cartao);
+        color: var(--texto-secundario);
     }
-    [data-testid="stDataFrame"] { border-radius: var(--raio); }
-    .grafico-titulo {
-        color: var(--tinta);
-        font-size: 0.84rem;
-        font-weight: 650;
-        margin: 0 0 6px;
+    .nota {
+        padding: 10px 12px;
+        border-left: 2px solid var(--texto-muted);
+        font-size: 0.77rem;
+        line-height: 1.48;
     }
-
-    /* ── Controles na area de conteudo ───────────────────────────────── */
-    .block-container [data-testid="stWidgetLabel"] p {
+    .estado-vazio { padding: 28px 24px; text-align: center; }
+    .estado-vazio strong {
+        display: block;
+        color: var(--texto);
+        font-size: 0.95rem;
+        font-weight: 610;
+    }
+    .estado-vazio span {
+        display: block;
+        margin-top: 4px;
+        color: var(--texto-muted);
         font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--tinta-suave);
     }
-    .block-container [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-        min-height: 44px;
+    .detalhe-titulo {
+        margin: 0 0 10px;
+        color: var(--texto);
+        font-size: 1rem;
+        font-weight: 620;
     }
-    .st-key-controles_serie [data-testid="stHorizontalBlock"],
-    .st-key-controles_ranking_campanha [data-testid="stHorizontalBlock"],
-    .st-key-controles_ranking_anuncio [data-testid="stHorizontalBlock"],
-    .st-key-controles_anuncio [data-testid="stHorizontalBlock"] {
-        align-items: end;
+    .detalhe-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 8px;
     }
-    .st-key-controles_serie { max-width: 760px; }
-    .st-key-controles_ranking_campanha,
-    .st-key-controles_ranking_anuncio { max-width: 560px; }
-    .st-key-controles_anuncio { max-width: 760px; }
+    .detalhe-item {
+        min-width: 0;
+        padding: 9px 10px;
+        border: 1px solid var(--borda-suave);
+        border-radius: 8px;
+        background: #0D1219;
+    }
+    .detalhe-item span {
+        display: block;
+        color: var(--texto-muted);
+        font-size: 0.64rem;
+        font-weight: 620;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .detalhe-item strong {
+        display: block;
+        margin-top: 4px;
+        overflow: hidden;
+        color: var(--texto);
+        font-size: 0.82rem;
+        font-weight: 570;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 
-    /* ── Barra lateral ───────────────────────────────────────────────── */
+    /* Cobertura: zero nunca representa indisponibilidade. */
+    .cobertura { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+    .cobertura th {
+        padding: 7px 8px;
+        color: var(--texto-muted);
+        font-size: 0.64rem;
+        font-weight: 620;
+        letter-spacing: 0.06em;
+        text-align: center;
+        text-transform: uppercase;
+    }
+    .cobertura th:first-child, .cobertura td:first-child { text-align: left; }
+    .cobertura td {
+        padding: 8px;
+        border-top: 1px solid var(--borda-suave);
+        color: var(--texto-secundario);
+        text-align: center;
+    }
+    .disponivel { color: #7DD3A8; }
+    .indisponivel { color: var(--texto-muted); }
+
+    /* Dataframe, expander e popover em dark coerente. */
+    [data-testid="stDataFrame"] {
+        overflow: hidden;
+        border: 1px solid var(--borda);
+        border-radius: var(--raio);
+        background: var(--cartao);
+    }
+    [data-testid="stExpander"] {
+        border-color: var(--borda) !important;
+        border-radius: var(--raio) !important;
+        background: var(--cartao);
+    }
+    [data-testid="stPopoverBody"] {
+        border-color: var(--borda) !important;
+        background: var(--elevado) !important;
+        color: var(--texto);
+    }
+
+    /* Sidebar */
     section[data-testid="stSidebar"] {
-        background: var(--sb-fundo);
         width: 288px !important;
         min-width: 288px !important;
+        border-right: 1px solid #1D2530;
+        background: var(--sidebar);
     }
     section[data-testid="stSidebar"][aria-expanded="false"] {
         width: 0 !important;
         min-width: 0 !important;
     }
-    section[data-testid="stSidebar"] > div { background: var(--sb-fundo); }
-    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        padding: 0 !important;
-    }
-    section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
-        padding: 0 20px 24px;
-    }
-    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        gap: 4px;
-    }
-    /* O cabecalho do Streamlit reserva altura dentro da barra lateral para o
-       controle de recolher; sem isto sobrava um vao de quase 90 px antes da
-       marca. */
+    section[data-testid="stSidebar"] > div { background: var(--sidebar); }
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding: 0 !important; }
+    section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding: 0 20px 24px; }
+    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 4px; }
     section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
         height: 40px;
         padding: 4px 20px 0 !important;
     }
-
+    .sb-marca { padding-bottom: 12px; border-bottom: 1px solid #202834; }
     .sb-titulo {
+        margin: 0;
         color: #FFFFFF;
         font-size: 1rem;
-        font-weight: 680;
+        font-weight: 660;
         line-height: 1.25;
-        margin: 0;
     }
     .sb-produto {
-        color: var(--sb-texto);
-        font-size: 0.82rem;
-        font-weight: 600;
         margin: 3px 0 0;
+        color: var(--texto);
+        font-size: 0.82rem;
+        font-weight: 560;
     }
-    .sb-sub {
-        color: var(--sb-suave);
-        font-size: 0.75rem;
-        margin: 2px 0 0;
-    }
-    .sb-marca {
-        padding-bottom: 12px;
-        border-bottom: 1px solid #2A3342;
-        margin-bottom: 0;
-    }
+    .sb-sub { margin: 2px 0 0; color: var(--texto-muted); font-size: 0.73rem; }
     .sb-rotulo {
-        color: var(--sb-rotulo);
-        font-size: 0.67rem;
-        font-weight: 700;
+        margin: 15px 0 6px;
+        color: var(--texto-muted);
+        font-size: 0.64rem;
+        font-weight: 650;
         letter-spacing: 0.11em;
         text-transform: uppercase;
-        margin: 16px 0 6px;
     }
     .sb-rodape {
-        color: var(--sb-rotulo);
-        font-size: 0.71rem;
-        line-height: 1.5;
-        margin-top: 16px;
-        padding-top: 12px;
-        border-top: 1px solid #2A3342;
+        margin-top: 15px;
+        padding-top: 11px;
         overflow-wrap: anywhere;
+        border-top: 1px solid #202834;
+        color: var(--texto-muted);
+        font-size: 0.68rem;
+        line-height: 1.45;
     }
-    .sb-rodape b { color: var(--sb-suave); font-weight: 600; }
+    .sb-rodape b { color: var(--texto-secundario); font-weight: 560; }
 
-    /* Navegacao: o radio continua sendo um radio — acessivel e navegavel
-       pelo teclado —, mas sem a bolinha, que nao acrescenta significado
-       quando os itens ja sao uma lista de paginas. */
-    section[data-testid="stSidebar"] [data-testid="stRadioGroup"] {
-        gap: 0.12rem;
-    }
+    section[data-testid="stSidebar"] [data-testid="stRadioGroup"] { gap: 2px; }
     section[data-testid="stSidebar"] [data-testid="stRadioOption"] {
         width: 100%;
         margin: 0;
         padding: 8px 10px;
         border-radius: 7px;
         box-shadow: inset 2px 0 0 transparent;
-        transition: background 0.12s ease;
         cursor: pointer;
+        transition: background-color 160ms ease, box-shadow 160ms ease;
     }
-    section[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover {
-        background: #1D2431;
-    }
-    /* Esconde so o circulo do radio: a linha que contem o rotulo tem o
-       marcador como primeiro filho e o texto como segundo. O `input` continua
-       no DOM, entao teclado e leitor de tela seguem funcionando. */
+    section[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover { background: var(--elevado); }
     section[data-testid="stSidebar"] [data-testid="stRadioOption"]
         div:has(> [data-testid="stMarkdownContainer"]) > div:first-child {
         display: none !important;
     }
     section[data-testid="stSidebar"] [data-testid="stRadioOption"] p {
-        color: var(--sb-suave);
-        font-size: 0.875rem;
-        font-weight: 500;
+        color: var(--texto-secundario);
+        font-size: 0.84rem;
+        font-weight: 480;
     }
     section[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] {
-        background: var(--sb-ativo);
-        box-shadow: inset 2px 0 0 var(--destaque);
+        background: #171D27;
+        box-shadow: inset 2px 0 0 var(--accent);
     }
     section[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p {
         color: #FFFFFF;
-        font-weight: 620;
+        font-weight: 580;
     }
-
-    /* Campos: preenchimento um degrau acima do fundo da barra, borda
-       discreta, texto claro. O tema ja entrega a maior parte disto; o que
-       sobra aqui e o acabamento. */
+    section[data-testid="stSidebar"] [data-testid="stRadioOption"]:focus-within {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+    }
     section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
-        color: var(--sb-suave);
-        font-size: 0.78rem;
-        font-weight: 600;
+        color: var(--texto-secundario);
+        font-size: 0.74rem;
+        font-weight: 540;
     }
-    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
-        margin-bottom: 4px;
-    }
+    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] { margin-bottom: 3px; }
     section[data-testid="stSidebar"] [data-baseweb="select"] > div,
     section[data-testid="stSidebar"] [data-baseweb="input"],
     section[data-testid="stSidebar"] [data-baseweb="base-input"] {
-        background-color: var(--sb-campo) !important;
-        border-color: #38425380 !important;
+        border-color: var(--borda) !important;
+        background: var(--elevado) !important;
     }
     section[data-testid="stSidebar"] [data-baseweb="select"] > div,
     section[data-testid="stSidebar"] [data-testid="stDateInputField"],
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] {
-        min-height: 44px;
+    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] { min-height: 42px; }
+    section[data-testid="stSidebar"] [data-rac][role="group"]:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
     }
-    section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--sb-suave); }
-
-    /* Streamlit 1.62 nao usa mais `data-baseweb="tag"` nos chips. Estes
-       seletores partem do testid estavel do multiselect e do atributo
-       semantico `data-tag`, sem depender de classes geradas por Emotion. */
     section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] {
         align-content: center;
-        max-height: 128px;
+        max-height: 118px;
         overflow-x: hidden;
         overflow-y: auto;
         padding: 4px;
     }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"]
-        > span[role="group"] {
+    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] > span[role="group"] {
         display: flex;
         flex: 0 1 calc(100% - 40px);
         flex-wrap: wrap;
@@ -452,149 +469,120 @@ ESTILO: str = """
         min-width: 0;
         max-width: calc(100% - 40px);
     }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"]
-        [data-tag] {
+    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] [data-tag] {
         display: inline-flex;
         align-items: center;
         gap: 4px;
         max-width: 100%;
-        min-height: 28px;
+        min-height: 27px;
         padding: 3px 6px 3px 8px;
         overflow: hidden;
-        color: #FFD8DE !important;
-        background: rgba(232, 74, 95, 0.16) !important;
-        border: 1px solid rgba(232, 74, 95, 0.42);
+        border: 1px solid rgba(139, 92, 246, 0.36);
         border-radius: 6px;
+        background: rgba(139, 92, 246, 0.14) !important;
+        color: #DDD6FE !important;
     }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"]
-        [data-tag] > span[title] {
+    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] [data-tag] > span[title] {
         min-width: 0;
         max-width: 150px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"]
-        [data-tag] button {
-        flex: 0 0 20px;
-        width: 20px;
-        height: 20px;
-        padding: 5px;
-        color: #FFD8DE;
-    }
-    /* O input de busca mantinha 114 px mesmo depois da selecao e forcava um
-       unico chip para outra linha. Ele continua focavel e digitavel, mas pode
-       ocupar apenas o espaco restante da linha. */
-    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"]
-        input[role="combobox"] {
+    section[data-testid="stSidebar"] [data-testid="stMultiSelectTagsContainer"] input[role="combobox"] {
         flex: 1 1 32px !important;
         width: 32px !important;
         min-width: 32px !important;
     }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelect"]
-        button[aria-label="Clear all"] {
-        flex: 0 0 28px;
-        width: 28px;
-        height: 40px;
-        padding: 6px;
-    }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelect"]
-        button[aria-label="Open"] {
-        flex: 0 0 32px;
-        width: 32px;
-        height: 40px;
-    }
-    section[data-testid="stSidebar"] [data-testid="stMultiSelect"]
-        [data-rac][role="group"]:focus-within {
-        border-color: var(--destaque) !important;
-        box-shadow: 0 0 0 2px rgba(232, 74, 95, 0.2);
-    }
     section[data-testid="stSidebar"] .stButton > button {
         width: 100%;
+        min-height: 40px;
+        border: 1px solid var(--borda);
         background: transparent;
-        color: var(--sb-suave);
-        border: 1px solid #38425380;
-        font-size: 0.8rem;
-        font-weight: 560;
-        min-height: 42px;
-        padding: 8px 12px;
+        color: var(--texto-secundario);
+        font-size: 0.76rem;
+        font-weight: 540;
     }
     section[data-testid="stSidebar"] .stButton > button:hover {
+        border-color: var(--accent);
+        background: var(--elevado);
         color: #FFFFFF;
-        border-color: var(--destaque);
-        background: #1D2431;
     }
 
-    /* ── Breakpoints explicitos ──────────────────────────────────────── */
-    @media (max-width: 1439px) {
-        .block-container { padding-inline: 24px; }
-    }
+    /* Breakpoints validados. */
+    @media (max-width: 1439px) { .block-container { padding-inline: 24px; } }
     @media (max-width: 1299px) {
-        .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .kpi-grid.compacta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        .kpi-valor { font-size: 1.72rem; }
+        .st-key-grade_eficiencia [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        .st-key-grade_eficiencia [data-testid="stColumn"] {
+            min-width: calc(33.333% - 8px) !important;
+            flex: 1 1 calc(33.333% - 8px) !important;
+        }
+        .detalhe-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (max-width: 1099px) {
         .block-container { padding-inline: 20px; }
-        .kpi-grid { grid-template-columns: minmax(0, 1fr); }
-        .kpi-grid.compacta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .pg-titulo { font-size: 1.58rem; }
-
+        .pg-titulo { font-size: 1.62rem; }
+        .st-key-grade_kpis [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        .st-key-grade_kpis [data-testid="stColumn"] {
+            min-width: calc(50% - 6px) !important;
+            flex: 1 1 calc(50% - 6px) !important;
+        }
+        .st-key-grade_comparacao [data-testid="stHorizontalBlock"],
+        .st-key-grade_participacao [data-testid="stHorizontalBlock"],
         .st-key-controles_serie [data-testid="stHorizontalBlock"],
         .st-key-controles_ranking_campanha [data-testid="stHorizontalBlock"],
         .st-key-controles_ranking_anuncio [data-testid="stHorizontalBlock"],
-        .st-key-controles_anuncio [data-testid="stHorizontalBlock"],
-        .st-key-graficos_plataforma [data-testid="stHorizontalBlock"] {
+        .st-key-controles_anuncio [data-testid="stHorizontalBlock"] {
             flex-direction: column;
             align-items: stretch;
-            gap: 12px;
         }
+        .st-key-grade_comparacao [data-testid="stColumn"],
+        .st-key-grade_participacao [data-testid="stColumn"],
         .st-key-controles_serie [data-testid="stColumn"],
         .st-key-controles_ranking_campanha [data-testid="stColumn"],
         .st-key-controles_ranking_anuncio [data-testid="stColumn"],
-        .st-key-controles_anuncio [data-testid="stColumn"],
-        .st-key-graficos_plataforma [data-testid="stColumn"] {
+        .st-key-controles_anuncio [data-testid="stColumn"] {
             width: 100% !important;
             flex: 1 1 100% !important;
         }
     }
-    @media (max-width: 991px) {
+    @media (max-width: 767px) {
+        .block-container { padding: 18px 16px 40px; }
         .pg-meta { grid-template-columns: minmax(0, 1fr); }
         .selo { justify-self: start; }
+        .st-key-grade_eficiencia [data-testid="stColumn"] {
+            min-width: calc(50% - 6px) !important;
+            flex-basis: calc(50% - 6px) !important;
+        }
+        .detalhe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    @media (max-width: 640px) {
-        .block-container { padding: 20px 16px 40px; }
-        .kpi-grid.compacta { grid-template-columns: minmax(0, 1fr); }
+    @media (max-width: 520px) {
+        .st-key-grade_kpis [data-testid="stColumn"],
+        .st-key-grade_eficiencia [data-testid="stColumn"] {
+            min-width: 100% !important;
+            flex-basis: 100% !important;
+        }
+        .detalhe-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { transition-duration: 0.01ms !important; }
     }
 </style>
 """
 
 
 def injetar_estilo() -> None:
-    """Injeta o CSS da aplicacao. Chamar uma vez, no inicio da pagina."""
+    """Injeta o CSS da aplicacao uma vez no inicio da pagina."""
     st.markdown(ESTILO, unsafe_allow_html=True)
 
 
 def _escapar(texto) -> str:
-    """Escapa texto antes de interpola-lo em HTML.
-
-    Args:
-        texto: Valor a escapar.
-
-    Returns:
-        Texto seguro para interpolacao.
-    """
+    """Escapa texto antes de interpola-lo em HTML."""
     return html.escape(str(texto))
 
 
 def marca_lateral(titulo: str, produto: str, subtitulo: str) -> None:
-    """Desenha a marca no topo da barra lateral.
-
-    Args:
-        titulo: Nome do painel.
-        produto: Linha que identifica o produto.
-        subtitulo: Linha de apoio.
-    """
+    """Desenha a marca no topo da barra lateral."""
     st.markdown(
         f'<div class="sb-marca"><p class="sb-titulo">{_escapar(titulo)}</p>'
         f'<p class="sb-produto">{_escapar(produto)}</p>'
@@ -604,271 +592,167 @@ def marca_lateral(titulo: str, produto: str, subtitulo: str) -> None:
 
 
 def rotulo_lateral(texto: str) -> None:
-    """Desenha um rotulo de grupo na barra lateral.
-
-    Args:
-        texto: Texto do rotulo, exibido em caixa alta discreta.
-    """
-    st.markdown(
-        f'<p class="sb-rotulo">{_escapar(texto)}</p>', unsafe_allow_html=True
-    )
+    """Desenha o rotulo discreto de um grupo da sidebar."""
+    st.markdown(f'<p class="sb-rotulo">{_escapar(texto)}</p>', unsafe_allow_html=True)
 
 
 def rodape_lateral(origem: str, modo: str) -> None:
-    """Desenha o rodape da barra lateral com a origem dos dados.
-
-    Args:
-        origem: Caminho relativo do dataset.
-        modo: Rotulo do modo de operacao.
-    """
+    """Desenha origem e modo no rodape da sidebar."""
     st.markdown(
-        f'<div class="sb-rodape"><b>{_escapar(modo)}</b><br>'
-        f"{_escapar(origem)}</div>",
+        f'<div class="sb-rodape"><b>{_escapar(modo)}</b><br>{_escapar(origem)}</div>',
         unsafe_allow_html=True,
     )
 
 
-def cabecalho(
-    titulo: str,
-    descricao: str,
-    periodo: str,
-    registros: str,
-    selo: str,
-    modo: str,
-) -> None:
-    """Desenha o cabecalho da pagina.
-
-    Args:
-        titulo: Nome da pagina.
-        descricao: Uma frase sobre o que a pagina responde.
-        periodo: Periodo selecionado, ja formatado.
-        registros: Linha secundaria com a contagem de registros.
-        selo: Texto do selo de origem.
-        modo: `pseudonimizado` ou `demonstracao`, define a cor do selo.
-    """
+def cabecalho(titulo: str, descricao: str, periodo: str, registros: str,
+              selo: str, modo: str) -> None:
+    """Desenha o cabecalho SaaS da pagina."""
     classe = "selo-demo" if modo == "demonstracao" else "selo-real"
     st.markdown(
-        f"""
-        <p class="pg-titulo">{_escapar(titulo)}</p>
-        <p class="pg-desc">{_escapar(descricao)}</p>
-        <div class="pg-meta">
-            <div class="pg-info">
-                <span class="pg-periodo">{_escapar(periodo)}</span>
-                <span class="pg-registros">{_escapar(registros)}</span>
-            </div>
-            <span class="selo {classe}">{_escapar(selo)}</span>
-        </div>
-        """,
+        f'<p class="pg-titulo">{_escapar(titulo)}</p>'
+        f'<p class="pg-desc">{_escapar(descricao)}</p>'
+        '<div class="pg-meta"><div class="pg-info">'
+        f'<span class="pg-periodo">{_escapar(periodo)}</span>'
+        f'<span class="pg-registros">{_escapar(registros)}</span></div>'
+        f'<span class="selo {classe}">{_escapar(selo)}</span></div>',
         unsafe_allow_html=True,
     )
 
 
 def secao(titulo: str, apoio: str = "") -> None:
-    """Desenha o cabecalho de uma secao.
-
-    Args:
-        titulo: Titulo da secao.
-        apoio: Linha explicativa opcional, exibida abaixo do titulo.
-    """
-    linha_apoio = (
-        f'<p class="secao-apoio">{_escapar(apoio)}</p>' if apoio else ""
-    )
+    """Desenha titulo e microcopy de uma secao."""
+    linha = f'<p class="secao-apoio">{_escapar(apoio)}</p>' if apoio else ""
     st.markdown(
-        f'<div class="secao"><p class="secao-titulo">{_escapar(titulo)}</p>'
-        f"{linha_apoio}</div>",
+        f'<div class="secao"><p class="secao-titulo">{_escapar(titulo)}</p>{linha}</div>',
         unsafe_allow_html=True,
     )
 
 
-def cartao_kpi(
-    rotulo: str,
-    valor: str,
-    delta: str | None = None,
-    com_comparacao: bool = False,
-    tag: str = "",
-    tooltip: str = "",
-    compacto: bool = False,
-) -> None:
-    """Desenha um cartao de indicador.
-
-    Args:
-        rotulo: Nome do indicador, em caixa alta discreta.
-        valor: Valor ja formatado. E o elemento dominante do cartao.
-        delta: Variacao ja formatada, ou ``None`` quando nao calculavel.
-        com_comparacao: Se este cartao participa da comparacao com o periodo
-            anterior. Quando `True` e `delta` e ``None``, o cartao diz "sem
-            base de comparacao"; quando `False`, nao ha linha de comparacao —
-            um cartao descritivo (quantas contas, quantas linhas) nao tem
-            periodo anterior com que se comparar.
-        tag: Marcador curto de cobertura (ex: ``Parcial · Meta Ads``).
-        tooltip: Explicacao exibida ao passar o mouse — formula do indicador
-            ou motivo da cobertura parcial. Fica fora do fluxo visual de
-            proposito: paragrafo dentro do cartao desequilibra a linha.
-        compacto: Tipografia menor, para a linha de eficiencia.
-    """
-    st.markdown(
-        _html_cartao_kpi(
-            rotulo, valor, delta, com_comparacao, tag, tooltip, compacto
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def _html_cartao_kpi(
-    rotulo: str,
-    valor: str,
-    delta: str | None,
-    com_comparacao: bool,
-    tag: str,
-    tooltip: str,
-    compacto: bool,
-) -> str:
-    """Monta o HTML seguro de um cartao de KPI.
-
-    O helper permite reunir varios cartoes num unico grid CSS responsivo sem
-    trocar os controles funcionais do Streamlit por HTML.
-
-    Args:
-        rotulo: Nome do indicador.
-        valor: Valor formatado.
-        delta: Variacao formatada.
-        com_comparacao: Se deve exibir a linha de comparacao.
-        tag: Marcador curto de cobertura.
-        tooltip: Texto nativo exibido no hover.
-        compacto: Se usa a variacao compacta do cartao.
-
-    Returns:
-        Marcacao HTML do cartao.
-    """
-    classe = "kpi compacto" if compacto else "kpi"
-    titulo = f' title="{_escapar(tooltip)}"' if tooltip else ""
-
+def _delta_cartao(delta: str | None, com_comparacao: bool,
+                  tag: str = "") -> str | None:
+    """Monta a linha neutra de comparacao de um KPI."""
     if not com_comparacao:
-        bloco_delta = ""
-    elif delta is None:
-        bloco_delta = '<div class="kpi-delta">sem base de comparacao</div>'
-    else:
-        bloco_delta = (
-            f'<div class="kpi-delta"><b>{_escapar(delta)}</b> '
-            "vs. periodo anterior</div>"
-        )
-    bloco_tag = f'<span class="kpi-tag">{_escapar(tag)}</span>' if tag else ""
+        return tag or None
+    texto = (
+        "Sem base de comparação"
+        if delta is None else f"{delta} · vs. período anterior"
+    )
+    return f"{texto} · {tag}" if tag else texto
 
-    return (
-        f'<article class="{classe}"{titulo}>'
-        f'<div class="kpi-rotulo">{_escapar(rotulo)}</div>'
-        f'<div class="kpi-valor">{_escapar(valor)}</div>'
-        f"{bloco_delta}{bloco_tag}</article>"
+
+def cartao_kpi(rotulo: str, valor: str, delta: str | None = None,
+               com_comparacao: bool = False, tag: str = "",
+               tooltip: str = "", compacto: bool = False) -> None:
+    """Desenha um KPI com ajuda nativa, delta neutro e valor formatado."""
+    del compacto
+    st.metric(
+        label=rotulo, value=valor,
+        delta=_delta_cartao(delta, com_comparacao, tag),
+        delta_color="off", delta_arrow="off", help=tooltip or None,
+        border=True,
+    )
+
+
+def linha_kpis(cartoes: list[dict], compacto: bool = False,
+               chave: str = "grade_kpis") -> None:
+    """Desenha KPIs em 3 colunas ou a grade compacta de eficiencia."""
+    if not cartoes:
+        return
+    quantidade = len(cartoes) if compacto else min(3, len(cartoes))
+    with st.container(key=chave):
+        for inicio in range(0, len(cartoes), quantidade):
+            grupo = cartoes[inicio:inicio + quantidade]
+            colunas = st.columns(quantidade, gap="small")
+            for indice, dados_cartao in enumerate(grupo):
+                with colunas[indice]:
+                    cartao_kpi(
+                        dados_cartao["rotulo"], dados_cartao["valor"],
+                        dados_cartao.get("delta"), "delta" in dados_cartao,
+                        dados_cartao.get("tag", ""),
+                        dados_cartao.get("tooltip", ""), compacto,
+                    )
+
+
+def titulo_grafico(texto: str, apoio: str = "") -> None:
+    """Desenha titulo e apoio fora da area interna do Plotly."""
+    complemento = f'<p class="grafico-apoio">{_escapar(apoio)}</p>' if apoio else ""
+    st.markdown(
+        f'<p class="grafico-titulo">{_escapar(texto)}</p>{complemento}',
+        unsafe_allow_html=True,
     )
 
 
 def nota(texto: str) -> None:
-    """Desenha uma ressalva metodologica.
-
-    Args:
-        texto: Conteudo da nota.
-    """
-    st.markdown(
-        f'<div class="nota">{_escapar(texto)}</div>', unsafe_allow_html=True
-    )
-
-
-def linha_kpis(cartoes: list[dict], compacto: bool = False) -> None:
-    """Desenha uma linha de cartoes de KPI.
-
-    Args:
-        cartoes: Um dicionario por cartao, com `rotulo`, `valor`, `delta`,
-            `tag` e `tooltip`. A presenca da chave `delta` — mesmo com valor
-            ``None`` — e o que marca o cartao como participante da comparacao
-            com o periodo anterior.
-        compacto: Define a densidade e a grade de indicadores secundarios.
-    """
-    if not cartoes:
-        return
-    classe = "kpi-grid compacta" if compacto else "kpi-grid"
-    classe += f" qtd-{len(cartoes)}"
-    html_cartoes = "".join(
-        _html_cartao_kpi(
-            dados_cartao["rotulo"],
-            dados_cartao["valor"],
-            dados_cartao.get("delta"),
-            "delta" in dados_cartao,
-            dados_cartao.get("tag", ""),
-            dados_cartao.get("tooltip", ""),
-            compacto,
-        )
-        for dados_cartao in cartoes
-    )
-    st.markdown(
-        f'<div class="{classe}">{html_cartoes}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def titulo_grafico(texto: str) -> None:
-    """Desenha um titulo curto fora da area interna do Plotly.
-
-    Args:
-        texto: Titulo da visualizacao.
-    """
-    st.markdown(
-        f'<p class="grafico-titulo">{_escapar(texto)}</p>',
-        unsafe_allow_html=True,
-    )
+    """Desenha uma ressalva metodologica discreta."""
+    st.markdown(f'<div class="nota">{_escapar(texto)}</div>', unsafe_allow_html=True)
 
 
 def tabela(linhas: list[dict], altura: int | None = None) -> None:
-    """Renderiza uma tabela ja formatada.
-
-    Args:
-        linhas: Lista de dicionarios com valores em texto.
-        altura: Altura em pixels; deixa o Streamlit decidir quando omitida.
-    """
+    """Renderiza uma tabela formatada, com scroll restrito ao componente."""
     if not linhas:
-        st.info("Nenhum registro no recorte atual.")
+        estado_vazio("Nenhum registro encontrado", "Ajuste os filtros ou o período.")
         return
-    # `height` so e passado quando ha valor: versoes recentes do Streamlit
-    # recusam `None` explicito nesse parametro.
     extras = {"height": altura} if altura else {}
     st.dataframe(linhas, width="stretch", hide_index=True, **extras)
 
 
-def aviso_sem_dados(periodo: str) -> None:
-    """Mensagem padrao para recorte vazio.
+def estado_vazio(titulo: str, texto: str) -> None:
+    """Renderiza um empty state no lugar de uma visualizacao vazia."""
+    st.markdown(
+        f'<div class="estado-vazio"><strong>{_escapar(titulo)}</strong>'
+        f'<span>{_escapar(texto)}</span></div>', unsafe_allow_html=True,
+    )
 
-    Args:
-        periodo: Descricao do periodo selecionado.
-    """
-    st.warning(
-        f"Nenhum registro em {periodo} com os filtros atuais. "
-        "Amplie o periodo ou limpe os filtros."
+
+def aviso_sem_dados(periodo: str) -> None:
+    """Mostra o empty state padrao para um recorte sem linhas."""
+    estado_vazio(
+        "Nenhum dado encontrado",
+        f"Ajuste os filtros ou selecione outro período. Recorte atual: {periodo}.",
+    )
+
+
+def quadro_cobertura(metricas: list[tuple[str, bool, bool]]) -> None:
+    """Desenha uma matriz discreta de disponibilidade por plataforma."""
+    linhas = []
+    for rotulo, meta, google in metricas:
+        linhas.append(
+            "<tr>" + f"<td>{_escapar(rotulo)}</td>" +
+            f'<td><span class="{("disponivel" if meta else "indisponivel")}">'
+            f'{("✓ Disponível" if meta else "— Não disponível")}</span></td>' +
+            f'<td><span class="{("disponivel" if google else "indisponivel")}">'
+            f'{("✓ Disponível" if google else "— Não disponível")}</span></td></tr>'
+        )
+    st.markdown(
+        '<table class="cobertura" aria-label="Cobertura das métricas por origem">'
+        '<thead><tr><th>Métrica</th><th>Meta</th><th>Google</th></tr></thead>'
+        f'<tbody>{"".join(linhas)}</tbody></table>', unsafe_allow_html=True,
+    )
+
+
+def detalhe_anuncio(titulo: str, itens: list[tuple[str, str]]) -> None:
+    """Desenha os atributos e totais essenciais do anuncio selecionado."""
+    blocos = "".join(
+        '<div class="detalhe-item">'
+        f'<span>{_escapar(rotulo)}</span><strong title="{_escapar(valor)}">'
+        f'{_escapar(valor)}</strong></div>' for rotulo, valor in itens
+    )
+    st.markdown(
+        f'<p class="detalhe-titulo">{_escapar(titulo)}</p>'
+        f'<div class="detalhe-grid">{blocos}</div>', unsafe_allow_html=True,
     )
 
 
 def erro_de_contrato(mensagem: str) -> None:
-    """Apresenta uma falha de contrato sem stack trace.
-
-    Args:
-        mensagem: Texto da excecao `dados.ContratoInvalido`.
-    """
-    st.error("O dataset apresentado nao satisfaz o contrato de exposicao.")
+    """Apresenta uma falha de contrato sem stack trace."""
+    st.error("O dataset apresentado não satisfaz o contrato de exposição.")
+    nota(mensagem)
     st.markdown(
-        f'<div class="nota">{_escapar(mensagem)}</div>', unsafe_allow_html=True
-    )
-    st.markdown(
-        "O dashboard consome **apenas** a superficie de exposicao "
-        "pseudonimizada ou o dataset sintetico de demonstracao. Ele nao "
-        "consulta o Data Warehouse nem as APIs de anuncios."
+        "O dashboard consome **apenas** a superfície de exposição "
+        "pseudonimizada ou o dataset sintético de demonstração."
     )
 
 
 def rotulo_metrica(metrica: str) -> str:
-    """Rotulo de exibicao de uma metrica base.
-
-    Args:
-        metrica: Chave da metrica.
-
-    Returns:
-        Rotulo do catalogo.
-    """
+    """Devolve o rotulo de exibicao de uma metrica base."""
     return m.CATALOGO[metrica].rotulo

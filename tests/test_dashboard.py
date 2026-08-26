@@ -978,7 +978,8 @@ class TestDivisaoSegura(unittest.TestCase):
         self.assertIsNone(m.calcular_derivada("roas", totais_sem_gasto))
 
     def test_nenhuma_formatacao_produz_nan_ou_infinity(self):
-        for formato in (m.MOEDA, m.INTEIRO, m.DECIMAL, m.PERCENTUAL):
+        for formato in (m.MOEDA, m.INTEIRO, m.DECIMAL, m.PERCENTUAL,
+                        m.MULTIPLICADOR):
             texto = m.formatar(None, formato)
             self.assertEqual(texto, m.INDISPONIVEL)
             self.assertNotIn("nan", texto.lower())
@@ -1013,6 +1014,99 @@ class TestFormatacao(unittest.TestCase):
         self.assertEqual(
             m.formatar_metrica("impressions", Decimal(1000)), "1.000"
         )
+
+
+class TestFormatacaoDeMultiplicador(unittest.TestCase):
+    """O ROAS e um multiplicador, e a apresentacao precisa dizer isso.
+
+    A formula nao muda — `conversion_value / spend`, fator 1. O que muda e a
+    leitura: `0,03` sugere um numero arredondado sem unidade, `0,028x` diz
+    que sao 2,8 centavos de valor de conversao por real investido.
+    """
+
+    def test_sufixo_de_multiplicador(self):
+        self.assertEqual(m.formatar(Decimal(2), m.MULTIPLICADOR), "2,00x")
+
+    def test_valor_pequeno_nao_e_achatado_em_duas_casas(self):
+        # Caso real da validacao contra o Google Ads: R$ 4,00 de valor de
+        # conversao sobre R$ 142,46 de investimento. Duas casas exibiriam
+        # `0,03x` e perderiam a ordem de grandeza.
+        roas = m.dividir(Decimal("4.00"), Decimal("142.46"))
+        self.assertEqual(m.formatar(roas, m.MULTIPLICADOR), "0,028x")
+
+    def test_casas_seguem_a_ordem_de_grandeza(self):
+        for valor, esperado in (
+            ("0", "0,00x"),
+            ("0.028078", "0,028x"),
+            ("0.45", "0,45x"),
+            ("1", "1,00x"),
+            ("9.5", "9,50x"),
+            ("12.543", "12,54x"),
+            ("1234.5", "1.234,50x"),
+        ):
+            with self.subTest(valor=valor):
+                self.assertEqual(
+                    m.formatar(Decimal(valor), m.MULTIPLICADOR), esperado
+                )
+
+    def test_valor_minusculo_nao_vira_zero(self):
+        # `0,000x` seria lido como ausencia de retorno; o piso diz que ha
+        # valor, so abaixo da resolucao exibida.
+        self.assertEqual(
+            m.formatar(Decimal("0.0005"), m.MULTIPLICADOR), "< 0,001x"
+        )
+
+    def test_indisponivel_continua_indisponivel(self):
+        self.assertEqual(
+            m.formatar(None, m.MULTIPLICADOR), m.INDISPONIVEL
+        )
+
+    def test_roas_do_catalogo_usa_o_formato_de_multiplicador(self):
+        self.assertEqual(m.DERIVADAS["roas"].formato, m.MULTIPLICADOR)
+        self.assertEqual(
+            m.formatar_derivada("roas", Decimal(5)), "5,00x"
+        )
+
+    def test_formula_do_roas_permanece_intacta(self):
+        definicao = m.DERIVADAS["roas"]
+        self.assertEqual(definicao.numerador, "conversion_value")
+        self.assertEqual(definicao.denominador, "spend")
+        self.assertEqual(definicao.fator, Decimal(1))
+
+
+class TestAjudaContextual(unittest.TestCase):
+    """Toda metrica exibida em cartao tem definicao para a ajuda."""
+
+    # As seis metricas dos cartoes principais de `app.KPIS_PRINCIPAIS`,
+    # repetidas aqui porque importar `dashboard.app` executaria a aplicacao
+    # inteira: o modulo chama `main()` no fim do arquivo.
+    METRICAS_EM_CARTAO = (
+        "spend", "impressions", "link_clicks",
+        "conversions", "conversion_value", "purchases",
+    )
+
+    def test_metricas_dos_cartoes_tem_ajuda(self):
+        for metrica in self.METRICAS_EM_CARTAO:
+            with self.subTest(metrica=metrica):
+                self.assertTrue(m.CATALOGO[metrica].ajuda)
+
+    def test_compras_mantem_a_ressalva_de_disponibilidade(self):
+        # A definicao nova nao substitui o aviso de que a GAQL nao entrega a
+        # metrica neste grao.
+        self.assertTrue(m.CATALOGO["purchases"].observacao)
+
+    def test_todos_os_derivados_tem_ajuda(self):
+        for chave, definicao in m.DERIVADAS.items():
+            with self.subTest(indicador=chave):
+                self.assertTrue(definicao.ajuda)
+
+    def test_ajuda_do_cpa_cita_a_metrica_equivalente_do_google(self):
+        # Validacao manual contra a interface: "Custo / conv." e o mesmo
+        # numero que o cartao de CPA.
+        self.assertIn("Custo / conv.", m.DERIVADAS["cpa"].ajuda)
+
+    def test_ajuda_do_roas_explica_o_multiplicador(self):
+        self.assertIn("2,00x", m.DERIVADAS["roas"].ajuda)
 
 
 class TestCatalogoDeMetricas(unittest.TestCase):

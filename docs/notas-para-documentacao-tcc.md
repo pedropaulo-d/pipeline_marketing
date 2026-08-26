@@ -839,6 +839,64 @@ coluna de identidade real. O dataset sintético de demonstração passa no **mes
 auditor independente** da superfície real, o que permite ao repositório
 continuar demonstrável sem nenhum dado de cliente.
 
+**Decisão visual final.** A interface adotou dark mode nativo e fixo, não
+dependente do sistema do avaliador. O acabamento não é apenas cosmético: o
+tema Plotly centralizado, os rankings e comparativos horizontais e a distinção
+textual `✓ Disponível` / `— Não disponível` reduzem ambiguidade de leitura.
+Meta e Google usam cor, rótulo e tooltip simultaneamente; a identidade global
+usa violeta apenas em foco e seleção. Na matriz Playwright de 1024×768 a
+1920×1080 houve zero overflow de página, zero label de gráfico cortada e zero
+toolbar Plotly visível. O muted inicialmente proposto precisou ser clareado
+para atingir contraste AA em texto pequeno sobre os cards dark — evidência de
+que inspeção visual e medição de acessibilidade são gates diferentes.
+
+
+### 5.12 Número correto e apresentação ambígua não são a mesma coisa
+
+Validação manual de 25/08/2026, conferindo o painel contra as interfaces do
+Google Ads e do Meta Ads. Nenhum erro de cálculo foi encontrado — e ainda
+assim duas leituras precisaram de correção, ambas na apresentação.
+
+**Nome diferente para o mesmo indicador.** O que o painel chama de **CPA**
+aparece no Google Ads como **"Custo / conv."**. Conferido no recorte de
+validação: investimento de R$ 142,46 sobre 5 conversões dá R$ 28,49, o mesmo
+valor exibido pela plataforma. O indicador estava certo; faltava dizer ao
+leitor que os dois nomes designam a mesma conta.
+
+**Mesma razão, duas convenções de escala.** O ROAS é
+`valor de conversão / investimento`. Para 4,00 sobre 142,46 isso dá
+aproximadamente 0,028078. O painel exibia `0,03` — arredondado a duas casas,
+sem unidade, e portanto lido como se fosse um número qualquer. O Google, numa
+métrica personalizada, apresentava a mesma razão como **2,81%**. Não há
+divergência: `0,028078x` e `2,8078%` são a mesma quantidade em convenções
+diferentes.
+
+Duas casas decimais fixas destroem justamente a faixa em que o ROAS é baixo,
+que é a faixa em que a leitura importa: `0,03` e `0,028` diferem em ordem de
+grandeza para quem decide. A correção foi de apresentação, não de fórmula — o
+cálculo permaneceu intacto — e tem duas partes: sufixo `x` explícito, para o
+número se declarar multiplicador; e casas decimais escolhidas pela ordem de
+grandeza (três abaixo de 0,1; duas a partir de 0,1), de modo que
+`0,028x`, `2,00x` e `12,54x` convivam sem achatamento.
+Valor não nulo abaixo de 0,001 sai como `< 0,001x`, porque `0,000x` seria
+lido como ausência de retorno.
+
+**Consequência para a redação.** Vale como quarto caso da família "número
+certo, alarme silencioso" das seções 5.1, 5.7 e 5.9 — com uma diferença que
+convém explicitar: aqui o pipeline estava correto de ponta a ponta e o defeito
+morava na última polegada, entre o número e o leitor. Rastreabilidade não
+termina no dado; termina na leitura. E a comparação com a interface da
+plataforma — nome do indicador, convenção de escala, casas exibidas — é um
+passo de validação distinto da conferência aritmética, porque encontra o que a
+aritmética não tem como encontrar.
+
+**Consequência para o painel.** As definições deixaram de ser conhecimento
+tácito e viraram ajuda contextual por métrica, no mesmo catálogo declarativo
+da seção 5.11 (`dashboard/metricas.py`): a fórmula, a leitura e a
+correspondência com o nome usado pela plataforma acompanham o indicador na
+tela, escondidas até serem pedidas.
+
+
 
 ## 6. Validação e evidências
 

@@ -1,15 +1,9 @@
-# Tema do painel analitico.
+# Tema dark fixo do painel analitico.
 #
-# Por que aqui, e nao so em CSS: os controles do Streamlit (select, multiselect,
-# date input, dropdown) sao componentes React que derivam suas cores do tema, e
-# nao do CSS da pagina. Sem declarar o tema, o navegador em modo escuro puxava
-# os campos para quase preto enquanto o conteudo permanecia claro — sidebar e
-# conteudo pareciam de dois produtos diferentes.
-#
-# Declarar `base = "light"` fixa o conteudo em claro **independente** do
-# `prefers-color-scheme` do navegador. A sidebar tem tema proprio, escuro, com
-# `secondaryBackgroundColor` um degrau acima do fundo: e o que da aos campos um
-# preenchimento levemente mais claro que a barra, com texto legivel.
+# Os controles do Streamlit sao componentes React e derivam suas cores do tema,
+# nao apenas do CSS da pagina. Declarar `base = "dark"` aqui faz selects,
+# multiselects, date picker, popovers e tabelas abrirem com a mesma identidade
+# independentemente do tema do navegador ou do sistema operacional.
 #
 # Este arquivo e lido do diretorio de trabalho. Localmente, isso e a raiz do
 # repositorio (`streamlit run dashboard/app.py`); no container, o Dockerfile o
@@ -25,23 +19,23 @@ gatherUsageStats = false
 toolbarMode = "minimal"
 
 [theme]
-base = "light"
-primaryColor = "#E84A5F"
-backgroundColor = "#F6F7F9"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#172033"
-borderColor = "#E4E7EC"
-linkColor = "#C43B4F"
+base = "dark"
+primaryColor = "#8B5CF6"
+backgroundColor = "#080B10"
+secondaryBackgroundColor = "#11161E"
+textColor = "#F1F5F9"
+borderColor = "#27303D"
+linkColor = "#A78BFA"
 baseRadius = "medium"
 showSidebarBorder = false
 font = "sans-serif"
 
 [theme.sidebar]
-backgroundColor = "#151A23"
-secondaryBackgroundColor = "#232B39"
-textColor = "#E7EAF0"
-primaryColor = "#E84A5F"
-borderColor = "#333C4C"
-linkColor = "#F08A97"
+backgroundColor = "#0D1117"
+secondaryBackgroundColor = "#161D27"
+textColor = "#F1F5F9"
+primaryColor = "#8B5CF6"
+borderColor = "#27303D"
+linkColor = "#A78BFA"
 showWidgetBorder = true
 baseRadius = "medium"
