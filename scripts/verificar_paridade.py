@@ -85,6 +85,11 @@ _CHAVES_NATURAIS: dict[str, tuple[str, ...]] = {
 _METRICAS: list[str] = [
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
+    # `purchase_value` entra na paridade porque e metrica financeira exibida
+    # no dashboard: valor que aparece em tela precisa estar coberto pela rede
+    # de seguranca, senao uma mudanca de mapeamento passa sem ninguem notar —
+    # que foi exatamente o que aconteceu com `conversion_value` do Meta.
+    "purchase_value",
 ]
 
 # Travessia da hierarquia resolvendo a versao vigente pela data do fato.

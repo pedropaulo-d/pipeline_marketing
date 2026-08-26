@@ -77,6 +77,7 @@ COLUNAS_ESPERADAS: tuple[str, ...] = (
     "reach",
     "profile_views",
     "purchases",
+    "purchase_value",
 )
 
 NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
@@ -84,6 +85,7 @@ NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
 METRICAS: tuple[str, ...] = (
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
+    "purchase_value",
 )
 
 PLATAFORMAS_ACEITAS: frozenset[str] = frozenset({"Meta Ads", "Google Ads"})

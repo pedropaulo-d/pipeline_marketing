@@ -67,7 +67,14 @@ NOME_CSV: str = "metricas.csv"
 NOME_MANIFESTO: str = "manifesto.json"
 SUFIXO_PARCIAL: str = ".parcial"
 
-VERSAO_CONTRATO: int = 1
+# Versao 2 desde 26/08/2026: `purchase_value` entrou como coluna publica.
+# Acrescentar coluna E mudanca de schema neste contrato — os consumidores
+# declaram a lista esperada e comparam por igualdade, nao por conjunto: o
+# dashboard (`dados.COLUNAS_OBRIGATORIAS`) e o auditor (`COLUNAS_ESPERADAS`)
+# recusam o artefato inteiro se a lista nao bater. Um artefato v2 lido por um
+# consumidor v1 falha fechado, que e o comportamento desejado; o numero e o
+# que permite dizer POR QUE falhou.
+VERSAO_CONTRATO: int = 2
 
 VIEW: str = "gold.vw_metricas_completas"
 
@@ -103,6 +110,10 @@ CLASSIFICACAO: dict[str, str] = {
     "reach": USADA,
     "profile_views": USADA,
     "purchases": USADA,
+    # Valor monetario canonico das compras atribuidas pelo Meta. Metrica
+    # agregavel; zero no Google por ausencia de suporte da GAQL neste grao.
+    # Nao e identificador nem carrega informacao reidentificavel.
+    "purchase_value": USADA,
 
     # Identidade real: os 4 nomes e os 4 external IDs. As 4 chaves naturais
     # aparecem como USADA acima porque sao a ENTRADA do HMAC — o teste
@@ -146,9 +157,10 @@ COLUNAS_ORIGEM: tuple[str, ...] = (
     "reach",
     "profile_views",
     "purchases",
+    "purchase_value",
 )
 
-# As 19 colunas do artefato. Nao ha coluna de nome publico: o proprio ID e o
+# As 20 colunas do artefato. Nao ha coluna de nome publico: o proprio ID e o
 # rotulo. Nao ha `linha_id`: o grao ja e `(anuncio_id, data)`.
 COLUNAS_SAIDA: tuple[str, ...] = (
     "data",
@@ -170,6 +182,7 @@ COLUNAS_SAIDA: tuple[str, ...] = (
     "reach",
     "profile_views",
     "purchases",
+    "purchase_value",
 )
 
 TIPOS_SAIDA: dict[str, str] = {
@@ -192,6 +205,7 @@ TIPOS_SAIDA: dict[str, str] = {
     "reach": "integer",
     "profile_views": "integer",
     "purchases": "integer",
+    "purchase_value": "decimal",
 }
 
 # Os 12 campos que NUNCA podem aparecer no artefato: 4 nomes, 4 external IDs
@@ -209,6 +223,7 @@ CAMPOS_NUNCA_EXPOSTOS: frozenset[str] = frozenset({
 METRICAS: tuple[str, ...] = (
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
+    "purchase_value",
 )
 
 NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
@@ -223,8 +238,11 @@ AVISO_VIDEO_VIEWS: str = (
 )
 
 AVISO_METRICAS_AUSENTES: str = (
-    "reach, profile_views e purchases sao zero no Google por ausencia de "
-    "suporte da GAQL neste grao — ausencia de suporte, nao ausencia de dado."
+    "reach, profile_views, purchases e purchase_value sao zero no Google por "
+    "ausencia de suporte da GAQL neste grao — ausencia de suporte, nao "
+    "ausencia de dado. purchase_value NAO e o equivalente Meta de "
+    "conversion_value: um mede compra, o outro mede todas as conversion "
+    "actions da conta."
 )
 
 logger = logging.getLogger(__name__)

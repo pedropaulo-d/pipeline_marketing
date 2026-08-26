@@ -95,6 +95,7 @@ def linhas_da_view() -> list[dict]:
                             "reach": 900,
                             "profile_views": 0,
                             "purchases": 0,
+                            "purchase_value": Decimal("0.000000"),
                             # Colunas proibidas, presentes na view real.
                             "conta_nome": NOME_PLANTADO,
                             "conta_external_id": EXTERNAL_ID_PLANTADO,
@@ -239,8 +240,11 @@ class BaseExportacao(unittest.TestCase):
 class TestSchemaDeSaida(BaseExportacao):
     """As 19 colunas, nem uma a mais."""
 
-    def test_schema_final_tem_dezenove_colunas(self):
-        self.assertEqual(len(exportador.COLUNAS_SAIDA), 19)
+    def test_schema_final_tem_vinte_colunas(self):
+        """Vinte desde o contrato v2: `purchase_value` entrou como coluna
+        publica, e acrescentar coluna e mudanca de schema neste contrato."""
+        self.assertEqual(len(exportador.COLUNAS_SAIDA), 20)
+        self.assertEqual(exportador.VERSAO_CONTRATO, 2)
         self.assertEqual(self.exportar(), 0)
 
         cabecalho = self.csv.read_text(encoding="utf-8").splitlines()[0]

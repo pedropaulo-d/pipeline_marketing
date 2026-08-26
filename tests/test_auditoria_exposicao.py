@@ -64,6 +64,7 @@ def linhas_validas() -> list[dict]:
                         "reach": "900",
                         "profile_views": "0",
                         "purchases": "0",
+                        "purchase_value": "0.000000",
                     })
     return linhas
 
@@ -98,7 +99,7 @@ def montar_manifesto(texto_csv: str, linhas: list[dict], colunas=None) -> dict:
     """
     datas = sorted(linha["data"] for linha in linhas)
     return {
-        "versao_contrato": 1,
+        "versao_contrato": 2,
         "gerado_em": "2026-08-18T00:00:00+00:00",
         "artefato": auditor.NOME_CSV,
         "sha256": hashlib.sha256(texto_csv.encode("utf-8")).hexdigest(),

@@ -1163,7 +1163,106 @@ continuam alinhados. A DAG foi **pausada de novo, deliberadamente**: a operaçã
 real está comprovada e a base fica congelada durante a escrita da monografia —
 não é falha operacional, é congelamento intencional.
 
-### 5.15 Dado sintético de teste que envelhece para dentro do dado real
+### 5.15 O erro que só a conferência manual revelou
+
+Um número correto na tela pode estar medindo a coisa errada. Foi a validação
+manual do dashboard contra as interfaces das plataformas — não um teste — que
+expôs a combinação `44 conversões · 0 compras · R$ 0,00 de valor`. O dado
+passava em 88 testes dbt e em toda a suíte Python.
+
+**Dois defeitos independentes, ambos no mapeamento do Meta.**
+
+O primeiro: `conversion_value` do Meta somava o valor de `action_values` com
+`action_type = 'lead'`. Lead não carrega valor monetário, e o Meta nunca emite
+`lead` nesse array — medido na Bronze: **zero ocorrências em 424 linhas que
+têm `action_values` preenchido**. A métrica era, portanto, **estruturalmente
+zero**: nenhuma configuração de conta a faria diferente de R$ 0,00, e o ROAS
+do Meta era eternamente `0,00x`. O valor real existia no payload bruto e era
+descartado.
+
+O segundo: `purchases` somava `purchase` **e** `omni_purchase`. O Meta descreve
+a mesma compra em oito `action_type` simultâneos. Medição na Bronze inteira:
+as duas representações coexistem em **132 de 132** payloads com compra em
+`actions` e em **128 de 128** em `action_values`, sempre com **valor idêntico**;
+nenhum payload traz apenas uma. Cada compra era contada **duas vezes**.
+
+**Correções.** As compras passaram de **130 para 65** no armazém — metade
+exata, o que é a assinatura da dupla contagem. E nasceu `purchase_value`,
+métrica nova que carrega o valor monetário canônico das compras do Meta:
+**R$ 62,00** no estado atual do Gold.
+
+**Regra canônica, e por que não somar.** A macro `acao_canonica` lê **uma**
+representação por ordem de prioridade — `omni_purchase`, com `purchase` como
+fallback — via `COALESCE` sobre subqueries com `LIMIT 1`. `omni_purchase` vem
+primeiro por ser a agregação omnichannel do Meta (web, app, offline, loja): se
+a conta passar a ter compra em app, ela captura; `purchase` poderia não
+capturar. A mesma ordem vale para quantidade e para valor, por exigência de
+coerência — regra divergente entre as duas tornaria o ticket médio implícito
+mentiroso. Quatro payloads têm compra em `actions` sem entrada em
+`action_values`: compra sem valor configurado, que resolve para zero sem
+inventar número.
+
+`conversion_value` do Meta foi **preservado como estava**, estruturalmente
+zero. Mudar duas coisas ao mesmo tempo teria confundido a auditoria do diff;
+quem quer valor do Meta usa `purchase_value`, e o modelo diz isso no cabeçalho.
+
+**A reconciliação R$ 306,00 → R$ 62,00.** A Bronze inteira soma R$ 306,00 de
+valor de compra em 132 ocorrências, espalhadas por 32 lotes e 21 dias. Aplicando
+a mesma semântica de `ultimo_snapshot` da Silver — partição por
+`(reference_date, account_id, campaign_id, adset_id, ad_id)` ordenada por
+`extracted_at desc` — sobram 22 linhas, 65 compras e R$ 62,00, que é exatamente
+o que Silver e Gold reportam. A diferença é integralmente redundância de
+snapshot: a Bronze Meta guarda 19.668 observações para 3.796 entidades×dia,
+5,18× de redundância legítima do append-only. Nenhuma outra causa.
+
+**Leads e compras são coisas diferentes, e a tela passou a dizer isso.**
+`conversions` do Meta conta `lead`; a do Google agrega **todas** as conversion
+actions da conta. Somá-las sob um cartão `Conversões` produzia um número que
+não responde pergunta nenhuma. O dashboard passou a nomear cada indicador pela
+plataforma:
+
+| conceito | Meta | Google |
+|---|---|---|
+| resultado | Leads | Conversões |
+| custo do resultado | **CPL** = investimento Meta / leads | **CPA** = investimento Google / conversões |
+| valor atribuído | Valor de compras = `purchase_value` | Valor de conversões = `conversion_value` |
+| retorno | ROAS Meta = valor de compras / investimento Meta | ROAS Google = valor de conversões / investimento Google |
+
+E três indicadores consolidados explícitos: **Valor de compras — Meta**,
+**Valor de conversões — Google** e **Valor atribuído total**, este último a
+soma dos dois. O nome importa: não é receita, não é faturamento, não é vendas
+totais — é a soma de dois valores que as plataformas atribuem por critérios
+próprios, e um teste proíbe essas três palavras no rótulo e na ajuda.
+
+**ROAS sai sempre das somas.** `ROAS total = valor atribuído total /
+investimento total`, nunca a média dos ROAS por plataforma. A diferença não é
+teórica: no estado atual o ROAS total é `0,0217x` contra `0,0175x` da média —
+a média dá peso igual a plataformas com investimentos muito diferentes.
+
+**Cliques, CTR e CPC também se separaram.** `link_clicks` guarda
+`inline_link_clicks` no Meta e `metrics.clicks` no Google: recortes diferentes.
+Os cartões passaram a ser **Cliques no link — Meta** e **Cliques — Google**, e
+CTR e CPC são calculados isolando a plataforma, sempre. O CPM continua
+consolidado, porque investimento e impressão têm semântica compatível entre as
+duas origens — a assimetria é deliberada e documentada, não esquecimento.
+
+**O princípio.** Nenhum desses números estava "errado" no sentido aritmético:
+todos somavam corretamente. O erro era de significado — somar conceitos
+incompatíveis sob um rótulo único, e procurar um valor onde a fonte nunca o
+coloca. Teste de schema não pega isso; teste de soma não pega isso. Pegou
+alguém abrindo a interface da plataforma e comparando.
+
+**Fechamento.** O golden passou a proteger `purchase_value` — métrica
+financeira exibida em tela precisa estar na rede de segurança, senão uma
+mudança de mapeamento passa despercebida, que é exatamente o que aconteceu
+aqui. A superfície de exposição ganhou a coluna e teve o **`versao_contrato`
+incrementado de 1 para 2**: acrescentar coluna é mudança de schema neste
+contrato, porque os consumidores — o dashboard e o auditor independente —
+declaram a lista esperada e comparam por igualdade, recusando o artefato
+inteiro se ela não bater. O número é o que permite dizer *por que* a leitura
+falhou.
+
+### 5.16 Dado sintético de teste que envelhece para dentro do dado real
 
 🔍 Achado pequeno, mas ilustrativo — e reincidente.
 
