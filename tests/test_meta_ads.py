@@ -1,5 +1,6 @@
 """Testes da descoberta de contas do extrator Meta, sem chamada a API."""
 
+import inspect
 import unittest
 from collections.abc import Iterator
 from unittest import mock
@@ -103,53 +104,34 @@ class TestEstadosConsultaveis(unittest.TestCase):
 
         self.assertEqual(meta_ads._selecionar_contas_consultaveis(contas), contas)
 
-    def test_indisponibilidade_aborta_em_vez_de_gerar_snapshot_parcial(
-        self,
-    ) -> None:
-        contas = [
-            conta("A", AdAccount.AccountStatus.active),
-            conta("B", AdAccount.AccountStatus.temporarily_unavailable),
-        ]
-
-        with self.assertRaises(RuntimeError) as erro:
-            meta_ads._selecionar_contas_consultaveis(contas)
-
-        self.assertNotIn("EXTERNAL_ID_B", str(erro.exception))
-        self.assertNotIn("EMPRESA_B", str(erro.exception))
-
     def test_status_novo_falha_fechado(self) -> None:
         with self.assertRaises(ValueError):
             meta_ads._selecionar_contas_consultaveis([conta("A", 999)])
 
 
-class TestDesvioExcepcionalDeIndisponibilidade(unittest.TestCase):
-    """O desvio para conta indisponivel e opt-in por execucao, nunca default.
+class TestLacunaDeCoberturaConhecida(unittest.TestCase):
+    """`temporarily_unavailable` e lacuna conhecida, nao motivo para abortar.
 
-    Uma conta presa em ``temporarily_unavailable`` bloqueia toda extracao
-    Meta. O desvio existe para recuperacao autorizada e precisa continuar
-    sendo excecao: default fechado, escopo minimo, status desconhecido
-    abortando de qualquer jeito.
+    A politica anterior abortava a extracao inteira. Ela protegia contra um
+    risco que deixou de existir: a Silver passou a escolher a observacao mais
+    recente por entidade x dia pela chave hierarquica, entao conta ausente num
+    snapshot nao apaga a observacao anterior. Medido em producao no DagRun
+    `scheduled__2026-08-26T09:00:00+00:00`: duas contas nesse estado
+    bloquearam as tres tentativas de `extrai_meta` e derrubaram a DAG inteira.
     """
 
-    def test_default_continua_abortando(self) -> None:
-        """Sem opt-in explicito, indisponibilidade aborta — inclusive quando o
-        parametro e passado como ``False``."""
+    def test_indisponibilidade_nao_aborta_mais(self) -> None:
         contas = [
             conta("A", AdAccount.AccountStatus.active),
             conta("B", AdAccount.AccountStatus.temporarily_unavailable),
         ]
 
-        with self.assertRaises(RuntimeError):
-            meta_ads._selecionar_contas_consultaveis(contas)
+        resultado = meta_ads._selecionar_contas_consultaveis(contas)
 
-        with self.assertRaises(RuntimeError):
-            meta_ads._selecionar_contas_consultaveis(
-                contas, permitir_contas_indisponiveis=False
-            )
+        self.assertEqual(resultado, [contas[0]])
 
-    def test_opt_in_exclui_apenas_temporariamente_indisponivel(self) -> None:
-        """O desvio remove so o estado indisponivel; todo estado consultavel
-        continua entrando, com a ordem preservada."""
+    def test_exclui_somente_a_conta_indisponivel(self) -> None:
+        """Todo estado consultavel continua entrando, na ordem em que veio."""
         consultaveis = [
             conta("A", AdAccount.AccountStatus.active),
             conta("C", AdAccount.AccountStatus.disabled),
@@ -161,65 +143,80 @@ class TestDesvioExcepcionalDeIndisponibilidade(unittest.TestCase):
         indisponivel = conta("B", AdAccount.AccountStatus.temporarily_unavailable)
 
         resultado = meta_ads._selecionar_contas_consultaveis(
-            [consultaveis[0], indisponivel, *consultaveis[1:]],
-            permitir_contas_indisponiveis=True,
+            [consultaveis[0], indisponivel, *consultaveis[1:]]
         )
 
         self.assertEqual(resultado, consultaveis)
 
-    def test_status_desconhecido_aborta_mesmo_com_opt_in(self) -> None:
-        """O desvio cobre indisponibilidade conhecida, nao contrato novo."""
-        with self.assertRaises(ValueError):
-            meta_ads._selecionar_contas_consultaveis(
-                [conta("A", AdAccount.AccountStatus.active), conta("Z", 999)],
-                permitir_contas_indisponiveis=True,
-            )
+    def test_varias_indisponiveis_sao_contabilizadas(self) -> None:
+        contas = [
+            conta("A", AdAccount.AccountStatus.active),
+            conta("B", AdAccount.AccountStatus.temporarily_unavailable),
+            conta("C", AdAccount.AccountStatus.temporarily_unavailable),
+            conta("D", AdAccount.AccountStatus.temporarily_unavailable),
+        ]
 
-        # Indisponivel + desconhecido na mesma descoberta: o desconhecido
-        # continua mandando, mesmo com o desvio ligado.
-        with self.assertRaises(ValueError):
-            meta_ads._selecionar_contas_consultaveis(
-                [
-                    conta("B", AdAccount.AccountStatus.temporarily_unavailable),
-                    conta("Z", 999),
-                ],
-                permitir_contas_indisponiveis=True,
-            )
+        with self.assertLogs(meta_ads.logger, level="WARNING") as registro:
+            resultado = meta_ads._selecionar_contas_consultaveis(contas)
 
-    def test_exclusao_e_registrada_em_log_sem_identificador(self) -> None:
-        """A exclusao precisa aparecer no log, e sem vazar identificador."""
+        self.assertEqual(resultado, [contas[0]])
+        self.assertIn("3 conta(s)", "\n".join(registro.output))
+
+    def test_ausencia_nao_vira_linha_zerada(self) -> None:
+        """A conta excluida contribui com NADA — nao com registro zerado. E o
+        que deixa a Silver preservar a ultima observacao conhecida."""
+        contas = [conta("B", AdAccount.AccountStatus.temporarily_unavailable)]
+
+        resultado = meta_ads._selecionar_contas_consultaveis(contas)
+
+        self.assertEqual(resultado, [])
+
+    def test_log_e_agregado_e_sem_identificador(self) -> None:
         contas = [
             conta("A", AdAccount.AccountStatus.active),
             conta("B", AdAccount.AccountStatus.temporarily_unavailable),
         ]
 
         with self.assertLogs(meta_ads.logger, level="WARNING") as registro:
-            meta_ads._selecionar_contas_consultaveis(
-                contas, permitir_contas_indisponiveis=True
-            )
+            meta_ads._selecionar_contas_consultaveis(contas)
 
         texto = "\n".join(registro.output)
-        self.assertIn("1", texto)
+        self.assertIn("1 conta(s)", texto)
         self.assertNotIn("EXTERNAL_ID_B", texto)
         self.assertNotIn("EMPRESA_B", texto)
 
-    @mock.patch.object(meta_ads, "_paginate_accounts")
-    @mock.patch.object(meta_ads, "Business")
-    def test_discover_accounts_propaga_o_desvio(
-        self, business: mock.Mock, paginar: mock.Mock
-    ) -> None:
-        """`discover_accounts` e a porta do desvio: fechada por default."""
+    def test_status_desconhecido_continua_abortando(self) -> None:
+        """A politica nova cobre indisponibilidade conhecida, nao contrato
+        novo — inclusive quando os dois aparecem juntos."""
+        with self.assertRaises(ValueError):
+            meta_ads._selecionar_contas_consultaveis(
+                [conta("A", AdAccount.AccountStatus.active), conta("Z", 999)]
+            )
+
+        with self.assertRaises(ValueError):
+            meta_ads._selecionar_contas_consultaveis(
+                [
+                    conta("B", AdAccount.AccountStatus.temporarily_unavailable),
+                    conta("Z", 999),
+                ]
+            )
+
+    def test_descoberta_nao_exige_flag_para_prosseguir(self) -> None:
+        """`discover_accounts` nao tem parametro de desvio: a politica normal
+        ja e a degradacao controlada."""
+        self.assertEqual(
+            list(inspect.signature(meta_ads.discover_accounts).parameters), []
+        )
+
         contas = {
             "A": conta("A", AdAccount.AccountStatus.active),
             "B": conta("B", AdAccount.AccountStatus.temporarily_unavailable),
         }
-        paginar.side_effect = [contas, {}]
-
-        with self.assertRaises(RuntimeError):
-            meta_ads.discover_accounts()
-
-        paginar.side_effect = [contas, {}]
-        resultado = meta_ads.discover_accounts(permitir_contas_indisponiveis=True)
+        with mock.patch.object(meta_ads, "Business"), \
+                mock.patch.object(
+                    meta_ads, "_paginate_accounts", side_effect=[contas, {}]
+                ):
+            resultado = meta_ads.discover_accounts()
 
         self.assertEqual([item["id"] for item in resultado], ["EXTERNAL_ID_A"])
 
@@ -252,41 +249,14 @@ class TestDescobertaOwnedEClient(unittest.TestCase):
         instancia.get_client_ad_accounts.assert_called_once()
 
 
-class TestFlagDeDesvioNoOrquestrador(unittest.TestCase):
-    """A flag existe no `main.py`, alcanca so o Meta e nao vaza para o resto.
+class TestCanalGenericoDeOpcoes(unittest.TestCase):
+    """`Plataforma.extrair(**opcoes)` sobreviveu a remocao do opt-in do Meta.
 
-    O desvio precisa ser visivel na linha de comando da execucao: e assim que
-    ele fica auditavel depois. Variavel de ambiente sobreviveria a execucao
-    seguinte sem ninguem notar.
+    Ele nao existe para o desvio que foi removido: e o canal generico de
+    desvio especifico de plataforma, e sua garantia util e que uma opcao
+    dirigida a plataforma errada estoura em vez de ser ignorada em silencio.
+    Sem essa propriedade, um desvio futuro poderia ser pedido e nao valer.
     """
-
-    def _args(self, *argv: str) -> object:
-        import sys
-
-        import main
-
-        with mock.patch.object(sys, "argv", ["main.py", *argv]):
-            return main.parse_args()
-
-    def test_default_da_cli_e_fail_closed(self) -> None:
-        self.assertFalse(self._args().permitir_contas_meta_indisponiveis)
-
-    def test_flag_liga_o_desvio(self) -> None:
-        args = self._args(
-            "--platforms", "meta", "--permitir-contas-meta-indisponiveis"
-        )
-
-        self.assertTrue(args.permitir_contas_meta_indisponiveis)
-
-    def test_flag_sem_meta_e_erro_de_uso(self) -> None:
-        with self.assertRaises(SystemExit):
-            self._args(
-                "--platforms", "google", "--permitir-contas-meta-indisponiveis"
-            )
-
-    def test_flag_com_skip_extract_e_erro_de_uso(self) -> None:
-        with self.assertRaises(SystemExit):
-            self._args("--skip-extract", "--permitir-contas-meta-indisponiveis")
 
     def test_opcao_alcanca_apenas_a_plataforma_declarada(self) -> None:
         import main
@@ -304,10 +274,10 @@ class TestFlagDeDesvioNoOrquestrador(unittest.TestCase):
                 "2026-08-09",
                 ["meta", "google"],
                 "run",
-                {"meta": {"permitir_contas_indisponiveis": True}},
+                {"meta": {"desvio_ficticio": True}},
             )
 
-        self.assertEqual(chamadas["meta"], {"permitir_contas_indisponiveis": True})
+        self.assertEqual(chamadas["meta"], {"desvio_ficticio": True})
         self.assertEqual(chamadas["google"], {})
 
     def test_sem_opcoes_a_extracao_nao_recebe_nada(self) -> None:
@@ -325,18 +295,9 @@ class TestFlagDeDesvioNoOrquestrador(unittest.TestCase):
 
         self.assertEqual(chamadas, {"meta": {}})
 
-
-class TestRepasseRealDaOpcao(unittest.TestCase):
-    """Os dois elos que so eram exercitados por execucao real.
-
-    Os testes do orquestrador fazem patch de `Plataforma.extrair`, entao a
-    linha que repassa as opcoes ao `run` do extrator nunca era executada. E
-    `meta_ads.run` monta a chamada de descoberta num lambda que tambem ficava
-    fora da suite. Sao os dois pontos onde um desvio pode se perder em
-    silencio: a opcao chega ao orquestrador e nao chega ao SDK.
-    """
-
     def test_extrair_repassa_opcoes_ao_run_do_extrator(self) -> None:
+        """O elo que so uma execucao real exercitaria: a opcao chega ao
+        orquestrador e nao chega ao `run` do extrator."""
         import importlib
 
         from plataformas import PLATAFORMAS
@@ -355,8 +316,7 @@ class TestRepasseRealDaOpcao(unittest.TestCase):
             importlib, "import_module", return_value=ModuloFalso
         ) as importar:
             total = PLATAFORMAS["meta"].extrair(
-                "2026-08-05", "2026-08-09", "run-1",
-                permitir_contas_indisponiveis=True,
+                "2026-08-05", "2026-08-09", "run-1", desvio_ficticio=True
             )
 
         importar.assert_called_once_with("extractors.meta_ads")
@@ -364,7 +324,7 @@ class TestRepasseRealDaOpcao(unittest.TestCase):
         self.assertEqual(recebido["start"], "2026-08-05")
         self.assertEqual(recebido["end"], "2026-08-09")
         self.assertEqual(recebido["run_id"], "run-1")
-        self.assertEqual(recebido["opcoes"], {"permitir_contas_indisponiveis": True})
+        self.assertEqual(recebido["opcoes"], {"desvio_ficticio": True})
 
     def test_extrair_sem_opcoes_nao_inventa_argumento(self) -> None:
         import importlib
@@ -384,38 +344,57 @@ class TestRepasseRealDaOpcao(unittest.TestCase):
 
         self.assertEqual(recebido["opcoes"], {})
 
-    def test_run_do_meta_encaminha_o_desvio_a_descoberta(self) -> None:
-        """`meta_ads.run` liga a flag ao lambda que chama a descoberta."""
-        registrado: list[bool] = []
+    def test_opcao_dirigida_a_plataforma_errada_estoura(self) -> None:
+        with mock.patch.object(meta_ads, "validate_env"), \
+                mock.patch.object(meta_ads, "init_api"), \
+                mock.patch.object(meta_ads, "executar_extracao", return_value=0):
+            from plataformas import PLATAFORMAS
 
-        def descoberta_falsa(permitir_contas_indisponiveis: bool = False):
-            registrado.append(permitir_contas_indisponiveis)
-            return []
+            with self.assertRaises(TypeError):
+                PLATAFORMAS["meta"].extrair(
+                    "2026-08-05", "2026-08-09", "run-1", opcao_inexistente=True
+                )
+
+
+class TestRunDoMetaLigaADescoberta(unittest.TestCase):
+    """`meta_ads.run` entrega a descoberta a casca comum sem intermediario.
+
+    Com a politica nova nao ha mais desvio para propagar: a casca chama
+    `discover_accounts` diretamente, e e ela quem aplica a degradacao.
+    """
+
+    def test_run_passa_discover_accounts_direto(self) -> None:
+        recebido: dict = {}
 
         def executar_falso(plataforma, descobrir_contas, **resto):
-            # A casca so chama `descobrir_contas()`; e essa chamada que carrega
-            # (ou perde) o desvio.
+            recebido["descobrir"] = descobrir_contas
             descobrir_contas()
             return 0
 
         with mock.patch.object(meta_ads, "validate_env"), \
                 mock.patch.object(meta_ads, "init_api"), \
-                mock.patch.object(meta_ads, "discover_accounts", descoberta_falsa), \
+                mock.patch.object(
+                    meta_ads, "discover_accounts", return_value=[]
+                ) as descoberta, \
                 mock.patch.object(meta_ads, "executar_extracao", executar_falso):
             meta_ads.run("2026-08-05", "2026-08-09", "run-1")
-            meta_ads.run(
-                "2026-08-05", "2026-08-09", "run-1",
-                permitir_contas_indisponiveis=True,
-            )
 
-        self.assertEqual(registrado, [False, True])
+        descoberta.assert_called_once_with()
+        self.assertEqual(
+            list(inspect.signature(meta_ads.run).parameters),
+            ["start_date", "end_date", "run_id"],
+        )
 
 
-class TestDagNaoUsaODesvio(unittest.TestCase):
-    """A DAG nunca liga o desvio: ela roda o extrator standalone, que nem o
-    aceita. Teste de codigo-fonte porque vale mesmo sem Airflow instalado."""
+class TestDagNaoPrecisaDeFlagExcepcional(unittest.TestCase):
+    """A DAG roda o extrator standalone e nao passa flag nenhuma.
 
-    def test_dag_nao_menciona_a_flag(self) -> None:
+    Antes isso era uma proibicao — a DAG nao podia ligar o desvio. Agora e uma
+    consequencia: a degradacao controlada e a politica normal, entao nao ha
+    flag a passar. Teste de codigo-fonte porque vale mesmo sem Airflow.
+    """
+
+    def test_dag_nao_menciona_flag_de_desvio(self) -> None:
         from pathlib import Path
 
         raiz = Path(__file__).resolve().parent.parent
@@ -425,6 +404,16 @@ class TestDagNaoUsaODesvio(unittest.TestCase):
 
         self.assertNotIn("permitir-contas-meta-indisponiveis", fonte)
         self.assertNotIn("permitir_contas_indisponiveis", fonte)
+
+    def test_cli_do_orquestrador_nao_expoe_mais_a_flag(self) -> None:
+        import sys
+
+        import main
+
+        with mock.patch.object(sys, "argv", ["main.py", "--skip-extract"]):
+            args = main.parse_args()
+
+        self.assertFalse(hasattr(args, "permitir_contas_meta_indisponiveis"))
 
     def test_cli_standalone_do_extrator_nao_expoe_a_flag(self) -> None:
         import sys

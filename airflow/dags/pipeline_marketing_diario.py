@@ -168,10 +168,12 @@ with DAG(
         doc_md=(
             "Insights API. Descobre as contas do Business ID e consulta as que "
             "estao em estados historicamente consultaveis — estado atual de "
-            "entrega nao decide participacao em consulta historica. Estado "
-            "indisponivel ou nao classificado aborta a extracao (fail closed), "
-            "para nao produzir snapshot parcial. Grava `temp_meta_raw.json` "
-            "mais o manifesto `temp_meta_raw.manifesto.json`, que carrega "
+            "entrega nao decide participacao em consulta historica. Conta "
+            "temporariamente indisponivel sai desta execucao com registro "
+            "agregado em log: e lacuna de cobertura conhecida, nao zero e nao "
+            "motivo para abortar o lote. Status nao classificado continua "
+            "abortando (fail closed). Grava `temp_meta_raw.json` mais o "
+            "manifesto `temp_meta_raw.manifesto.json`, que carrega "
             "fonte, `run_id`, janela e sha256. A duracao acompanha a "
             "quantidade de contas descobertas, que varia."
         ),

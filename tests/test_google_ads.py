@@ -486,22 +486,22 @@ class TestNaoAlcancaOMeta(unittest.TestCase):
             self.assertNotIn("facebook_business", linha_import)
             self.assertNotIn("meta_ads", linha_import)
 
-    def test_google_nao_aceita_o_desvio_opt_in_do_meta(self) -> None:
-        """O desvio do Meta existe porque a descoberta dele declara
-        indisponibilidade. A do Google nao declara — e a opcao dirigida a
-        plataforma errada tem de estourar, nao ser ignorada."""
+    def test_opcao_dirigida_ao_google_estoura_em_vez_de_ser_ignorada(self) -> None:
+        """`run` do Google nao declara desvio nenhum, e opcao dirigida a
+        plataforma errada tem de estourar em vez de ser ignorada."""
         from plataformas import PLATAFORMAS
 
-        parametros = inspect.signature(google_ads.run).parameters
-        self.assertNotIn("permitir_contas_indisponiveis", parametros)
+        self.assertEqual(
+            list(inspect.signature(google_ads.run).parameters),
+            ["start_date", "end_date", "run_id"],
+        )
 
         with mock.patch.object(google_ads, "validate_env"), \
                 mock.patch.object(google_ads, "init_client"), \
                 mock.patch.object(google_ads, "executar_extracao", return_value=0):
             with self.assertRaises(TypeError):
                 PLATAFORMAS["google"].extrair(
-                    "2026-08-05", "2026-08-09", "run-1",
-                    permitir_contas_indisponiveis=True,
+                    "2026-08-05", "2026-08-09", "run-1", opcao_inexistente=True
                 )
 
     def test_classificacao_do_meta_segue_com_os_proprios_estados(self) -> None:

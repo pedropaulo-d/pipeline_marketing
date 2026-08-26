@@ -43,6 +43,9 @@ ACCOUNT_STATUSES_CONSULTAVEIS: frozenset[int] = frozenset({
     AdAccount.AccountStatus.pending_closure,
 })
 
+# Estado em que a conta existe mas a API nao a serve agora. Nao entra na
+# extracao e nao aborta: e lacuna de cobertura conhecida, registrada em log
+# agregado. Ver `_selecionar_contas_consultaveis`.
 ACCOUNT_STATUSES_INDISPONIVEIS: frozenset[int] = frozenset({
     AdAccount.AccountStatus.temporarily_unavailable,
 })
@@ -91,46 +94,35 @@ def _paginate_accounts(cursor: Any) -> dict[str, dict]:
     return accounts
 
 
-def _selecionar_contas_consultaveis(
-    contas: list[dict], permitir_contas_indisponiveis: bool = False
-) -> list[dict]:
+def _selecionar_contas_consultaveis(contas: list[dict]) -> list[dict]:
     """Seleciona contas que podem participar de consultas historicas.
 
     O status descreve a situacao atual de entrega/faturamento, nao a
     existencia de metricas passadas. Por isso todos os estados conhecidos em
-    que a conta continua consultavel entram. Um estado indisponivel ou novo
-    aborta a extracao: seguir com as demais contas criaria um snapshot parcial
-    que substituiria historia valida na Silver.
+    que a conta continua consultavel entram.
 
-    O desvio para indisponibilidade temporaria e opt-in por execucao, nunca
-    default. Ele existe porque uma conta presa em ``temporarily_unavailable``
-    bloqueia TODA extracao Meta por tempo indeterminado, inclusive a de
-    periodos que nada tem a ver com ela. Quem liga a flag assume o desvio
-    naquele run; a Silver ja preserva a ultima observacao de entidade ausente
-    e ``assert_reextracao_nao_perde_gasto`` continua sendo a prova de que nada
-    historico se perdeu. Status desconhecido aborta de qualquer forma: ali o
-    contrato mudou e nao ha o que assumir.
+    ``temporarily_unavailable`` e **lacuna de cobertura conhecida e
+    auditavel**, nao motivo para abortar o lote inteiro. A conta nesse estado
+    sai desta execucao, e so ela; as demais seguem normalmente. Nada e
+    inventado no lugar dela: sem linha artificial, sem zero, sem tombstone. A
+    Silver escolhe a observacao mais recente por entidade × dia pela chave
+    hierarquica natural, entao ausencia numa execucao **nao** apaga a ultima
+    observacao conhecida — foi essa mudanca que tornou o aborto desnecessario.
+    Ausencia continua nao sendo prova de completude.
+
+    Status nao classificado continua abortando: ali o contrato mudou e nao ha
+    o que assumir.
 
     Args:
         contas: Contas deduplicadas retornadas pelo Business.
-        permitir_contas_indisponiveis: Se ``True``, contas temporariamente
-            indisponiveis sao excluidas com registro em log em vez de abortar.
-            Default ``False`` — a extracao falha fechado.
 
     Returns:
         Contas aptas a uma tentativa de consulta historica.
 
     Raises:
-        RuntimeError: Se alguma conta estiver temporariamente indisponivel e o
-            desvio nao tiver sido autorizado nesta execucao.
         ValueError: Se o SDK devolver um status ainda nao classificado.
     """
     por_status = Counter(conta["status"] for conta in contas)
-    indisponiveis = sum(
-        quantidade
-        for status, quantidade in por_status.items()
-        if status in ACCOUNT_STATUSES_INDISPONIVEIS
-    )
     desconhecidos = {
         status: quantidade
         for status, quantidade in por_status.items()
@@ -138,19 +130,8 @@ def _selecionar_contas_consultaveis(
         and status not in ACCOUNT_STATUSES_INDISPONIVEIS
     }
 
-    if indisponiveis and not permitir_contas_indisponiveis:
-        raise RuntimeError(
-            "Descoberta Meta incompleta: "
-            f"{indisponiveis} conta(s) temporariamente indisponivel(is). "
-            "A extracao foi abortada para nao produzir snapshot parcial."
-        )
-    if indisponiveis:
-        logger.warning(
-            "DESVIO AUTORIZADO NESTA EXECUCAO: %d conta(s) temporariamente "
-            "indisponivel(is) excluida(s) da descoberta. O snapshot Meta "
-            "resultante e parcial por decisao explicita do operador.",
-            indisponiveis,
-        )
+    # O desconhecido decide primeiro: contrato novo nao vira exclusao de
+    # rotina so porque veio junto de uma indisponibilidade conhecida.
     if desconhecidos:
         resumo = ", ".join(
             f"status {status}: {quantidade}"
@@ -161,6 +142,21 @@ def _selecionar_contas_consultaveis(
             f"({resumo}). A extracao foi abortada para revisao."
         )
 
+    indisponiveis = sum(
+        quantidade
+        for status, quantidade in por_status.items()
+        if status in ACCOUNT_STATUSES_INDISPONIVEIS
+    )
+    if indisponiveis:
+        # Agregado e sem identificador: registro de auditoria, nao relatorio
+        # de clientes.
+        logger.warning(
+            "LACUNA DE COBERTURA CONHECIDA: %d conta(s) temporariamente "
+            "indisponivel(is) fora desta execucao. Ausencia registrada como "
+            "ausencia — nenhuma linha zerada foi inventada para elas.",
+            indisponiveis,
+        )
+
     return [
         conta
         for conta in contas
@@ -168,12 +164,8 @@ def _selecionar_contas_consultaveis(
     ]
 
 
-def discover_accounts(permitir_contas_indisponiveis: bool = False) -> list[dict]:
+def discover_accounts() -> list[dict]:
     """Descobre contas consultaveis (owned + client) do Business.
-
-    Args:
-        permitir_contas_indisponiveis: Repassado a
-            :func:`_selecionar_contas_consultaveis`. Default ``False``.
 
     Returns:
         Lista de dicts com ``id``, ``name`` e ``status`` de cada conta que
@@ -201,9 +193,7 @@ def discover_accounts(permitir_contas_indisponiveis: bool = False) -> list[dict]
     )
 
     all_accounts = list(merged.values())
-    consultaveis = _selecionar_contas_consultaveis(
-        all_accounts, permitir_contas_indisponiveis
-    )
+    consultaveis = _selecionar_contas_consultaveis(all_accounts)
 
     logger.info(
         "Contas consultaveis para historico: %d", len(consultaveis)
@@ -250,21 +240,13 @@ def extract_daily_ads(
     return rows
 
 
-def run(
-    start_date: str,
-    end_date: str,
-    run_id: str | None = None,
-    permitir_contas_indisponiveis: bool = False,
-) -> int:
+def run(start_date: str, end_date: str, run_id: str | None = None) -> int:
     """Executa a extração completa do Meta Ads para o período informado.
 
     Args:
         start_date: Data inicial no formato ``YYYY-MM-DD``.
         end_date: Data final no formato ``YYYY-MM-DD``.
         run_id: Identificador da execução, gravado no manifesto do artefato.
-        permitir_contas_indisponiveis: Desvio opt-in, válido só nesta
-            execução, para contas temporariamente indisponíveis. Default
-            ``False`` — a descoberta falha fechado.
 
     Returns:
         Quantidade total de registros extraídos.
@@ -277,7 +259,7 @@ def run(
 
     return executar_extracao(
         PLATAFORMA,
-        descobrir_contas=lambda: discover_accounts(permitir_contas_indisponiveis),
+        descobrir_contas=discover_accounts,
         extrair_conta=extract_daily_ads,
         start_date=start_date,
         end_date=end_date,

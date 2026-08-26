@@ -1074,7 +1074,59 @@ servidor, e inventar política sem medição é exatamente o hábito que este
 trabalho documenta como origem de número errado. Na dúvida, *fail closed*; a
 política muda quando houver medição, não antes.
 
-### 5.14 Dado sintético de teste que envelhece para dentro do dado real
+### 5.14 Quando a proteção vira o bloqueio: revisão de decisão por evidência
+
+A regra de *fail closed* diante de `temporarily_unavailable` no Meta foi
+criada em 25/08/2026 e revista em 26/08/2026. A sequência importa mais do que
+o desfecho, porque ela é o argumento.
+
+1. **A regra nasceu certa para o problema de então.** Uma conta suprimida da
+   descoberta havia apagado logicamente 65 observações e R$ 429,34 da Silver.
+   Enquanto a deduplicação tratasse o lote mais recente como substituição
+   integral do dia, uma descoberta incompleta era de fato perigosa: abortar
+   protegia a recuperação histórica que estava em curso.
+2. **A premissa deixou de valer na mesma leva de correções.** A macro
+   `ultimo_snapshot` passou a escolher a observação mais recente por
+   entidade × dia pela chave hierárquica natural. A partir daí, conta ausente
+   de um snapshot **não** é zero e **não** é deleção da observação anterior —
+   a última observação conhecida permanece.
+3. **A evidência veio do primeiro DagRun agendado real sob a regra nova.** Em
+   26/08/2026, o run `scheduled__2026-08-26T09:00:00+00:00` encontrou as
+   mesmas duas contas ainda em `temporarily_unavailable`. `extrai_meta` falhou
+   nas três tentativas com a mesma mensagem, `carrega_bronze` e
+   `transforma_dbt` ficaram em `upstream_failed`, e a DAG inteira não
+   completou. A proteção passou a impedir a operação que deveria proteger.
+4. **No mesmo run, o Google demonstrou o modelo alternativo em produção.**
+   `extrai_google` descobriu 117 subcontas, consultou 67 e excluiu 50 que
+   responderam `CUSTOMER_NOT_ENABLED`, com log agregado, sem inventar linha e
+   sem derrubar a extração. O modelo de degradação controlada por conta
+   deixou de ser hipótese: rodou, com dado real, e produziu 1.440 registros.
+5. **A decisão foi revista.** `temporarily_unavailable` passa a ser
+   **lacuna de cobertura conhecida e auditável**. A conta nesse estado sai
+   daquela execução — e só ela; o número de excluídas vai para o log em
+   agregado, sem identificador; nenhuma linha artificial é criada; ausência
+   não vira zero nem tombstone; nenhuma história é apagada. Status não
+   classificado **continua abortando**, e erro inesperado também: a tolerância
+   cobre um estado conhecido, nunca contrato novo.
+
+Lacuna conhecida **não é completude**. O que a política nova compra é que a
+lacuna fique visível e localizada, em vez de bloquear o lote inteiro ou —
+pior — desaparecer em silêncio, que era o defeito original.
+
+**A válvula opt-in foi removida junto.** `--permitir-contas-meta-indisponiveis`
+existia para autorizar, execução a execução, exatamente o desvio que agora é a
+política normal. Mantê-la seria conservar uma chave que não tranca nada. O
+canal genérico `Plataforma.extrair(**opcoes)` permanece, porque sua garantia é
+outra e continua valendo: opção dirigida à plataforma errada levanta
+`TypeError` em vez de ser ignorada em silêncio. A DAG não precisa de flag
+nenhuma — a degradação controlada é o comportamento padrão.
+
+O registro honesto é que a arquitetura mudou por medição, não por conveniência:
+a regra antiga não estava errada quando foi escrita, ficou errada quando a
+Silver passou a proteger o histórico por conta própria. A evidência que
+autorizou a mudança é um run de produção, não um argumento.
+
+### 5.15 Dado sintético de teste que envelhece para dentro do dado real
 
 🔍 Achado pequeno, mas ilustrativo — e reincidente.
 
