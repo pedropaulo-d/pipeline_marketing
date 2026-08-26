@@ -28,6 +28,35 @@ GOLDEN = json.loads(vp.GOLDEN_PATH.read_text(encoding="utf-8"))["agregados"]
 
 CHAVE_META = ("Meta Ads", "2026-08-16")
 
+# Chaves que precisam NAO existir no golden: os testes as inserem para simular
+# um dia novo. Datas distantes de proposito — uma data plausivel vira chave
+# real assim que o recorte avanca, e o teste passa a inserir DUPLICATA em vez
+# de novidade. Quando isso acontece, `_indexar` recusa a colecao, a comparacao
+# cai para posicional e o bloco some de `keyed`: o sintoma e um `KeyError`
+# distante da causa. Ja aconteceu duas vezes neste arquivo.
+CHAVE_NOVA_META = ("Meta Ads", "2099-12-31")
+CHAVE_NOVA_MEIO = ("Meta Ads", "2098-06-15")
+
+
+def _conferir_chaves_sinteticas() -> None:
+    """Falha na importacao se uma chave sintetica ja existir no golden.
+
+    Raises:
+        AssertionError: Se o golden tiver passado a conter a data sintetica.
+    """
+    presentes = {
+        (linha["plataforma"], linha["data"])
+        for linha in GOLDEN["por_plataforma_dia"]
+    }
+    for chave in (CHAVE_NOVA_META, CHAVE_NOVA_MEIO):
+        assert chave not in presentes, (
+            f"A chave sintetica {chave} passou a existir no golden. "
+            "Escolha outra data distante em vez de ajustar o golden."
+        )
+
+
+_conferir_chaves_sinteticas()
+
 
 def agregados() -> dict:
     """Devolve uma copia independente dos agregados do golden versionado.
@@ -113,14 +142,14 @@ class TestChavesNovasERemovidas(unittest.TestCase):
     def test_chave_nova_aparece_como_novo(self):
         atual = agregados()
         nova = copy.deepcopy(item_por_chave(atual, CHAVE_META))
-        nova["data"] = "2026-08-17"
+        nova["data"] = CHAVE_NOVA_META[1]
         atual["por_plataforma_dia"].append(nova)
 
         divergencias = vp.comparar(agregados(), atual)
         diff = diff_de(divergencias, "por_plataforma_dia")
 
         self.assertTrue(divergencias.houve())
-        self.assertEqual(diff.novas, (("Meta Ads", "2026-08-17"),))
+        self.assertEqual(diff.novas, (CHAVE_NOVA_META,))
         self.assertEqual(diff.removidas, ())
         self.assertEqual(diff.alteradas, ())
         self.assertEqual(diff.identicas, len(GOLDEN["por_plataforma_dia"]))
@@ -130,7 +159,7 @@ class TestChavesNovasERemovidas(unittest.TestCase):
         # falsas nas posicoes seguintes.
         atual = agregados()
         nova = copy.deepcopy(item_por_chave(atual, CHAVE_META))
-        nova["data"] = "2026-08-05"
+        nova["data"] = CHAVE_NOVA_MEIO[1]
         atual["por_plataforma_dia"].insert(1, nova)
 
         diff = diff_de(vp.comparar(agregados(), atual), "por_plataforma_dia")
@@ -155,7 +184,7 @@ class TestChavesNovasERemovidas(unittest.TestCase):
     def test_novo_removido_e_alterado_ao_mesmo_tempo(self):
         atual = agregados()
         nova = copy.deepcopy(item_por_chave(atual, CHAVE_META))
-        nova["data"] = "2026-08-17"
+        nova["data"] = CHAVE_NOVA_META[1]
         atual["por_plataforma_dia"].append(nova)
         atual["por_plataforma_dia"] = [
             linha for linha in atual["por_plataforma_dia"]
@@ -165,7 +194,7 @@ class TestChavesNovasERemovidas(unittest.TestCase):
 
         diff = diff_de(vp.comparar(agregados(), atual), "por_plataforma_dia")
 
-        self.assertEqual(diff.novas, (("Meta Ads", "2026-08-17"),))
+        self.assertEqual(diff.novas, (CHAVE_NOVA_META,))
         self.assertEqual(diff.removidas, (("Google Ads", "2026-08-01"),))
         self.assertEqual(len(diff.alteradas), 1)
         self.assertEqual(diff.alteradas[0].chave, ("Meta Ads", "2026-08-15"))
@@ -356,7 +385,7 @@ class TestRelatorio(unittest.TestCase):
         """
         atual = agregados()
         nova = copy.deepcopy(item_por_chave(atual, CHAVE_META))
-        nova["data"] = "2026-08-17"
+        nova["data"] = CHAVE_NOVA_META[1]
         atual["por_plataforma_dia"].append(nova)
         item_por_chave(atual, CHAVE_META)["spend"] = "9999.000000"
         atual["totais_fato"]["linhas"] = 4163
@@ -368,7 +397,7 @@ class TestRelatorio(unittest.TestCase):
         self.assertIn("PARIDADE DIVERGENTE", texto)
         self.assertIn("por_plataforma_dia (chave: plataforma | data)", texto)
         self.assertIn("NOVO:", texto)
-        self.assertIn("+ Meta Ads | 2026-08-17", texto)
+        self.assertIn(f"+ {' | '.join(CHAVE_NOVA_META)}", texto)
         self.assertIn("ALTERADO:", texto)
         self.assertIn("~ Meta Ads | 2026-08-16", texto)
         self.assertIn("spend:", texto)
@@ -387,7 +416,7 @@ class TestRelatorio(unittest.TestCase):
         atual = agregados()
         item_por_chave(atual, CHAVE_META)["spend"] = "9999.000000"
         nova = copy.deepcopy(item_por_chave(atual, CHAVE_META))
-        nova["data"] = "2026-08-17"
+        nova["data"] = CHAVE_NOVA_META[1]
         atual["por_plataforma_dia"].append(nova)
 
         primeiro = vp.formatar(vp.comparar(esperado, atual))

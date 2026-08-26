@@ -1002,6 +1002,28 @@ ciclo próprio de reextração, auditoria e recongelamento. Correção e valida�
 de um snapshot não devem competir pelo mesmo ciclo — foi justamente essa
 disciplina que permitiu decompor os deltas do incidente do Meta até o centavo.
 
+### 5.14 Dado sintético de teste que envelhece para dentro do dado real
+
+🔍 Achado pequeno, mas ilustrativo — e reincidente.
+
+O teste do verificador de paridade simula "um dia novo apareceu" inserindo uma
+data sintética na estrutura comparada. A data escolhida era plausível
+(`2026-08-05`). Quando o recorte experimental avançou, essa data passou a
+existir de verdade no golden: a inserção deixou de criar chave nova e passou a
+criar **duplicata**. O indexador recusou a coleção, a comparação caiu para o
+modo posicional e o bloco sumiu do resultado indexado — o sintoma final foi um
+`KeyError` a três camadas de distância da causa.
+
+O que isso mostra: **fixture não é só entrada, é premissa**. "Esta data não
+existe no conjunto real" era uma premissa silenciosa, e premissa silenciosa
+envelhece sem avisar. O mesmo arquivo já havia caído nessa armadilha uma vez.
+
+A correção não foi ajustar o golden para acomodar o teste — isso seria adaptar
+o dado ao teste, exatamente o que a rede de segurança existe para impedir. A
+data passou a ser distante do domínio real e a premissa virou asserção
+executável: o módulo falha na importação, com mensagem explícita, se qualquer
+chave sintética passar a existir no golden.
+
 
 ## 6. Validação e evidências
 
