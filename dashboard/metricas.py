@@ -86,10 +86,20 @@ CATALOGO: dict[str, Metrica] = {
         ajuda="Quantidade de vezes em que os anúncios foram exibidos.",
     ),
     "link_clicks": Metrica(
-        "link_clicks", "Cliques no link", INTEIRO,
+        "link_clicks", "Cliques", INTEIRO,
+        # Segue consolidavel de proposito: CTR e CPC dependem dela e valem
+        # como aproximacao no recorte misto. A ressalva abaixo e o que impede
+        # ler o total como se fosse uma definicao unica, e os cartoes de
+        # entrega mostram Meta e Google separados justamente por isso.
+        observacao=(
+            "Definição diferente por plataforma: cliques no link no Meta "
+            "(`inline_link_clicks`); todos os cliques no Google "
+            "(`metrics.clicks`). Não somar entre plataformas."
+        ),
         ajuda=(
-            "Quantidade de cliques contabilizados na métrica consolidada de "
-            "cliques do pipeline."
+            "Quantidade de cliques reportada pela plataforma. O rótulo "
+            "genérico é proposital: o recorte exato aparece nos cartões por "
+            "plataforma."
         ),
     ),
     "conversions": Metrica(
@@ -122,6 +132,10 @@ CATALOGO: dict[str, Metrica] = {
             "completo ou interação no Google; a partir de 3s no Meta. Não "
             "somar entre plataformas."
         ),
+        ajuda=(
+            "Quantidade de visualizações de vídeo contabilizadas pela "
+            "plataforma, cada uma pelo seu próprio critério de duração."
+        ),
     ),
     "reach": Metrica(
         "reach", "Alcance", INTEIRO,
@@ -132,12 +146,33 @@ CATALOGO: dict[str, Metrica] = {
             "Não disponibilizado pela GAQL neste grão. Além disso conta "
             "pessoas únicas: a soma de dias não é o alcance único do período."
         ),
+        ajuda=(
+            "Quantidade de pessoas únicas alcançadas pelos anúncios, "
+            "reportada pelo Meta Ads."
+        ),
     ),
     "profile_views": Metrica(
         "profile_views", "Visitas ao perfil", INTEIRO,
         plataformas_sem_suporte=frozenset({"Google Ads"}),
         comparavel_entre_plataformas=False,
         observacao="Não disponibilizado pela GAQL neste grão.",
+        ajuda=(
+            "Visitas ao perfil do Instagram originadas dos anúncios, "
+            "reportadas pelo Meta Ads."
+        ),
+    ),
+    "purchase_value": Metrica(
+        "purchase_value", "Valor de compras", MOEDA,
+        plataformas_sem_suporte=frozenset({"Google Ads"}),
+        comparavel_entre_plataformas=False,
+        observacao=(
+            "Não disponibilizado pela GAQL neste grão. Não é o equivalente "
+            "Meta de Valor de conversão: um mede compra, o outro mede todas "
+            "as conversion actions da conta."
+        ),
+        ajuda=(
+            "Valor monetário das compras atribuídas pelo Meta Ads."
+        ),
     ),
     "purchases": Metrica(
         "purchases", "Compras", INTEIRO,
@@ -238,6 +273,241 @@ DERIVADAS: dict[str, Derivada] = {
 }
 
 
+# ── Indicadores por plataforma ───────────────────────────────
+# Meta e Google nao medem a mesma coisa sob o mesmo nome. `conversions` do
+# Meta conta LEAD; `conversions` do Google agrega todas as conversion actions
+# da conta. `purchase_value` so existe no Meta; `conversion_value` util so
+# existe no Google. Somar os dois lados sob um rotulo generico produz um
+# numero que nao responde pergunta nenhuma.
+#
+# Por isso os indicadores abaixo carregam a plataforma no nome e sao
+# calculados a partir das SOMAS do recorte — nunca de media de indicador por
+# anuncio, campanha ou plataforma, que e a forma classica de um ROAS mentir.
+
+META: str = "Meta Ads"
+GOOGLE: str = "Google Ads"
+
+
+@dataclass(frozen=True)
+class Painel:
+    """Indicador do painel de resultado/valor, com plataforma explicita.
+
+    Attributes:
+        chave: Identificador interno.
+        rotulo: Nome exibido no cartao quando o recorte tem mais de uma
+            plataforma e o sufixo e necessario para desambiguar.
+        formato: Formato de exibicao.
+        ajuda: Definicao e formula, exibidas na ajuda contextual.
+        rotulo_curto: Nome exibido quando a plataforma ja esta isolada pelo
+            filtro. Vazio significa usar `rotulo` sempre. Existe porque
+            "CTR — Meta" num painel que so tem Meta e ruido: o sufixo informa
+            no recorte misto e atrapalha no exclusivo.
+    """
+
+    chave: str
+    rotulo: str
+    formato: str
+    ajuda: str
+    rotulo_curto: str = ""
+
+
+PAINEL: dict[str, Painel] = {
+    "investimento_total": Painel(
+        "investimento_total", "Investimento total", MOEDA,
+        "Soma do investimento de todas as origens do recorte.",
+    ),
+    "investimento_meta": Painel(
+        "investimento_meta", "Investimento", MOEDA,
+        "Investimento no Meta Ads no período selecionado.",
+    ),
+    "investimento_google": Painel(
+        "investimento_google", "Investimento", MOEDA,
+        "Investimento no Google Ads no período selecionado.",
+    ),
+    "leads_meta": Painel(
+        "leads_meta", "Leads — Meta", INTEIRO,
+        "Quantidade de leads atribuídos pelo Meta Ads.",
+        rotulo_curto="Leads",
+    ),
+    "cpl_meta": Painel(
+        "cpl_meta", "CPL — Meta", MOEDA,
+        "Custo médio por lead: investimento Meta dividido pelos leads "
+        "atribuídos.",
+        rotulo_curto="CPL",
+    ),
+    "conversoes_google": Painel(
+        "conversoes_google", "Conversões — Google", DECIMAL,
+        "Conversões reportadas pelo Google Ads. Fracionária por modelagem "
+        "de atribuição; o valor não é arredondado.",
+        rotulo_curto="Conversões",
+    ),
+    "cpa_google": Painel(
+        "cpa_google", "CPA — Google", MOEDA,
+        "Custo por aquisição: investimento Google dividido pelas conversões "
+        "reportadas.",
+        rotulo_curto="CPA",
+    ),
+    "compras_meta": Painel(
+        "compras_meta", "Compras — Meta", INTEIRO,
+        "Quantidade de compras atribuídas pelo Meta Ads.",
+        rotulo_curto="Compras",
+    ),
+    "valor_compras_meta": Painel(
+        "valor_compras_meta", "Valor de compras — Meta", MOEDA,
+        "Valor monetário das compras atribuídas pelo Meta Ads.",
+        rotulo_curto="Valor de compras",
+    ),
+    "valor_conversoes_google": Painel(
+        "valor_conversoes_google", "Valor de conversões — Google", MOEDA,
+        "Valor monetário atribuído às conversões pelo Google Ads. Agrega "
+        "todas as conversion actions da conta, não apenas compras.",
+        rotulo_curto="Valor de conversões",
+    ),
+    "valor_atribuido_total": Painel(
+        "valor_atribuido_total", "Valor atribuído total", MOEDA,
+        "Soma do valor de compras atribuído pelo Meta Ads e do valor de "
+        "conversões reportado pelo Google Ads. As plataformas possuem "
+        "definições próprias de conversão e atribuição.",
+    ),
+    "roas_meta": Painel(
+        "roas_meta", "ROAS Meta", MULTIPLICADOR,
+        "Valor de compras Meta dividido pelo investimento Meta.",
+        rotulo_curto="ROAS",
+    ),
+    "roas_google": Painel(
+        "roas_google", "ROAS Google", MULTIPLICADOR,
+        "Valor de conversões Google dividido pelo investimento Google.",
+        rotulo_curto="ROAS",
+    ),
+    "roas_total": Painel(
+        "roas_total", "ROAS total", MULTIPLICADOR,
+        "Valor atribuído total dividido pelo investimento total. Calculado "
+        "pelas somas do recorte, nunca pela média dos ROAS por plataforma.",
+    ),
+    "ctr_meta": Painel(
+        "ctr_meta", "CTR — Meta", PERCENTUAL,
+        "Cliques no link Meta divididos pelas impressões Meta × 100.",
+        rotulo_curto="CTR",
+    ),
+    "cpc_meta": Painel(
+        "cpc_meta", "CPC — Meta", MOEDA,
+        "Investimento Meta dividido pelos cliques no link Meta.",
+        rotulo_curto="CPC",
+    ),
+    "ctr_google": Painel(
+        "ctr_google", "CTR — Google", PERCENTUAL,
+        "Cliques Google divididos pelas impressões Google × 100. O Google "
+        "conta todos os cliques (`metrics.clicks`), recorte mais largo que o "
+        "do Meta.",
+        rotulo_curto="CTR",
+    ),
+    "cpc_google": Painel(
+        "cpc_google", "CPC — Google", MOEDA,
+        "Investimento Google dividido pelos cliques Google.",
+        rotulo_curto="CPC",
+    ),
+    "cliques_meta": Painel(
+        "cliques_meta", "Cliques no link — Meta", INTEIRO,
+        "Cliques no link contabilizados pelo Meta Ads "
+        "(`inline_link_clicks`).",
+        rotulo_curto="Cliques no link",
+    ),
+    "cliques_google": Painel(
+        "cliques_google", "Cliques — Google", INTEIRO,
+        "Todos os cliques contabilizados pelo Google Ads "
+        "(`metrics.clicks`). Recorte mais largo que o do Meta: as duas "
+        "métricas não são equivalentes e não devem ser somadas.",
+        rotulo_curto="Cliques",
+    ),
+}
+
+
+# Hierarquia dos KPIs: RESULTADO primeiro, VOLUME por ultimo.
+#
+# O layout anterior abria com investimento, impressoes e cliques — volume de
+# entrega ocupando o primeiro viewport. Quem gerencia trafego pergunta antes
+# quanto custou o resultado, nao quantas vezes o anuncio apareceu. E os
+# cartoes genericos `Conversoes` e `Valor de conversao` somavam Meta com
+# Google sob o mesmo rotulo, escondendo que `conversions` do Meta conta LEAD e
+# a do Google agrega todas as conversion actions da conta.
+#
+# Agora cada bloco e montado a partir das plataformas realmente presentes no
+# recorte, e as metricas cuja definicao difere entre plataformas aparecem
+# nomeadas por plataforma. As formulas vivem em `metricas.painel`.
+
+PAINEL_RESULTADOS: dict[str, tuple[str, ...]] = {
+    "meta": ("investimento_meta", "leads_meta", "cpl_meta", "compras_meta"),
+    "google": ("investimento_google", "conversoes_google", "cpa_google"),
+    "ambas": (
+        "investimento_total", "leads_meta", "cpl_meta",
+        "conversoes_google", "cpa_google", "compras_meta",
+    ),
+}
+
+PAINEL_VALOR: dict[str, tuple[str, ...]] = {
+    "meta": ("valor_compras_meta", "roas_meta"),
+    "google": ("valor_conversoes_google", "roas_google"),
+    # Os tres KPIs de valor na primeira linha; os ROAS na segunda, com o total
+    # a frente. Ler valor e retorno na mesma secao evita comparar um ROAS com
+    # o valor de outra plataforma sem perceber.
+    "ambas": (
+        "valor_atribuido_total", "valor_compras_meta",
+        "valor_conversoes_google",
+        "roas_total", "roas_meta", "roas_google",
+    ),
+}
+
+# Entrega mistura metricas do catalogo com indicadores nomeados por
+# plataforma: `link_clicks` tem definicao diferente nas duas origens e por
+# isso nunca aparece somado sob um rotulo unico.
+ENTREGA: dict[str, tuple[str, ...]] = {
+    "meta": (
+        "@impressions", "@reach", "cliques_meta",
+        "@video_views", "@profile_views",
+    ),
+    "google": ("@impressions", "cliques_google", "@video_views"),
+    "ambas": (
+        "@impressions", "cliques_meta", "cliques_google",
+        "@video_views", "@reach", "@profile_views",
+    ),
+}
+
+# Eficiencia: CTR e CPC nunca consolidam, CPM sim.
+#
+# Investimento e impressao tem semantica compativel entre as duas plataformas,
+# entao `spend / impressions * 1000` continua valendo no recorte misto. Ja
+# `link_clicks` nao: somar `inline_link_clicks` do Meta com `metrics.clicks`
+# do Google produziria um CTR e um CPC sem definicao.
+#
+# `#` prefixa indicador do catalogo de derivadas; sem prefixo, vem do painel
+# por plataforma.
+EFICIENCIA: dict[str, tuple[str, ...]] = {
+    "meta": ("ctr_meta", "cpc_meta", "#cpm"),
+    "google": ("ctr_google", "cpc_google", "#cpm"),
+    "ambas": (
+        "ctr_meta", "cpc_meta", "ctr_google", "cpc_google", "#cpm",
+    ),
+}
+
+
+def recorte(plataformas: list[str]) -> str:
+    """Traduz as plataformas presentes na chave de layout.
+
+    Args:
+        plataformas: Plataformas presentes nas linhas filtradas.
+
+    Returns:
+        ``"meta"``, ``"google"`` ou ``"ambas"``.
+    """
+    tem_meta = META in plataformas
+    tem_google = GOOGLE in plataformas
+    if tem_meta and not tem_google:
+        return "meta"
+    if tem_google and not tem_meta:
+        return "google"
+    return "ambas"
+
+
 def suportada(metrica: str, plataforma: str) -> bool:
     """Diz se a plataforma coleta a metrica neste grao.
 
@@ -329,6 +599,140 @@ def calcular_derivada(chave: str, totais: dict):
         totais.get(definicao.denominador),
         definicao.fator,
     )
+
+
+def totais_por_plataforma(linhas: list[dict]) -> dict[str, dict]:
+    """Agrega as metricas separadamente por plataforma.
+
+    Args:
+        linhas: Linhas ja filtradas, no grao de anuncio x dia.
+
+    Returns:
+        Dicionario ``plataforma -> agregado``. Plataforma ausente do recorte
+        simplesmente nao aparece — nao vira zero.
+    """
+    return agregar_por(linhas, lambda linha: linha["plataforma"])
+
+
+def _total(por_plataforma: dict[str, dict], plataforma: str, metrica: str):
+    """Soma de uma metrica numa plataforma, ou ``None`` se ela nao esta no
+    recorte.
+
+    A distincao importa: ausencia da plataforma no filtro nao e desempenho
+    zero, e um indicador calculado sobre ela nao deve ser exibido como 0.
+
+    Args:
+        por_plataforma: Saida de :func:`totais_por_plataforma`.
+        plataforma: Nome da plataforma.
+        metrica: Chave da metrica base.
+
+    Returns:
+        `Decimal` com a soma, ou ``None``.
+    """
+    agregado = por_plataforma.get(plataforma)
+    return None if agregado is None else agregado[metrica]
+
+
+def _soma(*valores):
+    """Soma ignorando ausencias, devolvendo ``None`` se tudo for ausente.
+
+    Args:
+        *valores: Parcelas, cada uma `Decimal` ou ``None``.
+
+    Returns:
+        `Decimal` com a soma das parcelas presentes, ou ``None``.
+    """
+    presentes = [valor for valor in valores if valor is not None]
+    if not presentes:
+        return None
+    return sum(presentes, Decimal(0))
+
+
+def painel(linhas: list[dict]) -> dict:
+    """Calcula todos os indicadores do painel a partir das SOMAS do recorte.
+
+    Ponto unico das formulas de resultado e de valor. Os componentes leem
+    daqui e nao recalculam nada — formula espalhada pela camada de
+    apresentacao e como um numero saiu errado neste projeto antes.
+
+    ROAS e CPL/CPA saem sempre da razao entre somas globais. Media de ROAS por
+    plataforma, campanha ou anuncio daria outro numero, e um numero sem
+    significado: cada parcela teria peso igual independentemente do
+    investimento.
+
+    Args:
+        linhas: Linhas ja filtradas, no grao de anuncio x dia.
+
+    Returns:
+        Dicionario com uma entrada por chave de :data:`PAINEL`. O valor e
+        ``None`` quando o indicador nao e calculavel — plataforma fora do
+        recorte ou denominador invalido.
+    """
+    por_plataforma = totais_por_plataforma(linhas)
+
+    investimento_meta = _total(por_plataforma, META, "spend")
+    investimento_google = _total(por_plataforma, GOOGLE, "spend")
+    cliques_meta = _total(por_plataforma, META, "link_clicks")
+    cliques_google = _total(por_plataforma, GOOGLE, "link_clicks")
+    valor_compras_meta = _total(por_plataforma, META, "purchase_value")
+    valor_conversoes_google = _total(por_plataforma, GOOGLE, "conversion_value")
+
+    investimento_total = _soma(investimento_meta, investimento_google)
+    valor_atribuido_total = _soma(valor_compras_meta, valor_conversoes_google)
+
+    return {
+        "investimento_total": investimento_total,
+        "investimento_meta": investimento_meta,
+        "investimento_google": investimento_google,
+        "leads_meta": _total(por_plataforma, META, "conversions"),
+        "cpl_meta": dividir(
+            investimento_meta, _total(por_plataforma, META, "conversions")
+        ),
+        "conversoes_google": _total(por_plataforma, GOOGLE, "conversions"),
+        "cpa_google": dividir(
+            investimento_google, _total(por_plataforma, GOOGLE, "conversions")
+        ),
+        "compras_meta": _total(por_plataforma, META, "purchases"),
+        "valor_compras_meta": valor_compras_meta,
+        "valor_conversoes_google": valor_conversoes_google,
+        "valor_atribuido_total": valor_atribuido_total,
+        "roas_meta": dividir(valor_compras_meta, investimento_meta),
+        "roas_google": dividir(valor_conversoes_google, investimento_google),
+        "roas_total": dividir(valor_atribuido_total, investimento_total),
+        "cliques_meta": cliques_meta,
+        "cliques_google": cliques_google,
+        # CTR e CPC ficam SEMPRE isolados por plataforma. `link_clicks` guarda
+        # `inline_link_clicks` no Meta e `metrics.clicks` no Google: recortes
+        # diferentes. Um CTR calculado sobre a soma dos dois divide cliques de
+        # duas definicoes por impressoes de duas definicoes e nao responde
+        # pergunta nenhuma.
+        "ctr_meta": dividir(
+            cliques_meta, _total(por_plataforma, META, "impressions"),
+            Decimal(100),
+        ),
+        "cpc_meta": dividir(investimento_meta, cliques_meta),
+        "ctr_google": dividir(
+            cliques_google, _total(por_plataforma, GOOGLE, "impressions"),
+            Decimal(100),
+        ),
+        "cpc_google": dividir(investimento_google, cliques_google),
+    }
+
+
+def formatar_painel(chave: str, valor) -> str:
+    """Formata um indicador do painel conforme o formato declarado.
+
+    Args:
+        chave: Chave em :data:`PAINEL`.
+        valor: Valor calculado, ou ``None``.
+
+    Returns:
+        Texto formatado; o vazio padrao quando o valor e ``None``.
+
+    Raises:
+        KeyError: Se a chave nao existir no painel.
+    """
+    return formatar(valor, PAINEL[chave].formato)
 
 
 def calcular_derivadas(totais: dict) -> dict:

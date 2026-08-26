@@ -25,7 +25,8 @@ Fidelidade ao contrato
 As ausencias reais sao reproduzidas de proposito, porque o dashboard precisa
 demonstrar como lida com elas:
 
-- `reach`, `profile_views` e `purchases` ficam zerados no Google Ads, que nao
+- `reach`, `profile_views`, `purchases` e `purchase_value` ficam zerados no
+  Google Ads, que nao
   os fornece nesse nivel de GAQL;
 - `profile_views` fica zerado tambem no Meta, como no artefato real;
 - `conversion_value` fica zerado no Meta e positivo no Google, reproduzindo o
@@ -83,6 +84,7 @@ COLUNAS: tuple[str, ...] = (
     "anuncio_id", "anuncio_versao",
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
+    "purchase_value",
 )
 
 
@@ -211,6 +213,12 @@ def gerar_linhas() -> list[dict]:
                 # visivel na demonstracao.
                 conversion_value = Decimal("0")
                 purchases = int(conversions * Decimal("0.35"))
+                # O valor monetario do Meta mora em `purchase_value`, nao em
+                # `conversion_value`: sao conceitos distintos, e o segundo e
+                # estruturalmente zero na fonte.
+                purchase_value = Decimal(
+                    str(round(purchases * anuncio["ticket"], 2))
+                )
                 reach = int(impressions * sorteio.uniform(0.55, 0.9))
                 video_views = int(impressions * sorteio.uniform(0.08, 0.45))
             else:
@@ -219,6 +227,9 @@ def gerar_linhas() -> list[dict]:
                     str(round(float(conversions) * anuncio["ticket"], 2))
                 )
                 purchases = 0
+                # Google nao reporta compra neste grao: zero e ausencia de
+                # suporte, e `conversion_value` nao escorrega para ca.
+                purchase_value = Decimal("0")
                 reach = 0
                 video_views = int(impressions * sorteio.uniform(0.0, 0.06))
 
@@ -243,6 +254,7 @@ def gerar_linhas() -> list[dict]:
                 # Zerado nas duas plataformas, como no artefato real.
                 "profile_views": 0,
                 "purchases": purchases,
+                "purchase_value": purchase_value,
             })
 
     linhas.sort(key=lambda l: (
@@ -289,6 +301,7 @@ TIPOS: dict[str, str] = {
     "reach": "integer",
     "profile_views": "integer",
     "purchases": "integer",
+    "purchase_value": "decimal",
 }
 
 AVISO_VIDEO_VIEWS: str = (
@@ -299,7 +312,8 @@ AVISO_VIDEO_VIEWS: str = (
 )
 
 AVISO_METRICAS_AUSENTES: str = (
-    "reach, profile_views e purchases sao zero no Google por ausencia de "
+    "reach, profile_views, purchases e purchase_value sao zero no Google por "
+    "ausencia de "
     "suporte da GAQL neste grao — ausencia de suporte, nao ausencia de dado."
 )
 
@@ -326,7 +340,7 @@ def montar_manifesto(linhas: list[dict], conteudo: str) -> dict:
     """
     datas = sorted(linha["data"] for linha in linhas)
     return {
-        "versao_contrato": 1,
+        "versao_contrato": 2,
         "modo": "demonstracao",
         "natureza": (
             "DADOS SINTETICOS E FICTICIOS. Nao derivam de nome, identificador "

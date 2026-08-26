@@ -74,12 +74,12 @@ DESCRICAO: dict[str, str] = {
 # metricas cujo total consolidado nao teria leitura honesta: `video_views`
 # (definicao diferente por plataforma), `reach` (nao aditiva no tempo) e
 # `profile_views` (sem suporte na GAQL e zerada no artefato).
-KPIS_PRINCIPAIS: tuple[tuple[str, ...], ...] = (
-    ("spend", "impressions", "link_clicks"),
-    ("conversions", "conversion_value", "purchases"),
-)
-
-KPIS_DERIVADOS: tuple[str, ...] = ("ctr", "cpc", "cpm", "cpa", "roas")
+# A composicao dos cartoes por recorte vive em `metricas.py`, junto do
+# catalogo e das formulas: assim ela e testavel sem carregar o Streamlit.
+PAINEL_RESULTADOS = m.PAINEL_RESULTADOS
+PAINEL_VALOR = m.PAINEL_VALOR
+ENTREGA = m.ENTREGA
+EFICIENCIA = m.EFICIENCIA
 
 # Metricas oferecidas na comparacao entre plataformas: somente as que somam
 # com significado entre origens diferentes.
@@ -323,76 +323,219 @@ def tag_cobertura(metrica: str, plataformas: list[str]) -> tuple[str, str]:
     return tag, tooltip
 
 
-def bloco_kpis(atual: list[dict], anterior: list[dict] | None,
-               plataformas: list[str]) -> None:
-    """Desenha os cartoes de KPI principais.
+_recorte = m.recorte
+
+
+def _cartao_metrica(metrica: str, totais: dict, anteriores: dict | None,
+                    plataformas: list[str]) -> dict:
+    """Monta um cartao a partir de uma metrica do catalogo.
 
     Args:
-        atual: Linhas do periodo selecionado.
-        anterior: Linhas do periodo de comparacao, ou ``None`` quando nao ha.
+        metrica: Chave em :data:`metricas.CATALOGO`.
+        totais: Agregado do periodo.
+        anteriores: Agregado do periodo de comparacao, ou ``None``.
         plataformas: Plataformas presentes no recorte.
+
+    Returns:
+        Dicionario no formato que :func:`componentes.linha_kpis` espera.
     """
-    totais = m.agregar(atual)
-    totais_anteriores = m.agregar(anterior) if anterior else None
+    definicao = m.CATALOGO[metrica]
+    base = anteriores[metrica] if anteriores else None
+    variacao = m.variacao(totais[metrica], base)
+    tag, cobertura = tag_cobertura(metrica, plataformas)
+    # A definicao da metrica vem primeiro; a ressalva de cobertura (ou a
+    # observacao do catalogo) fecha o texto. As duas convivem: saber o que o
+    # numero conta nao dispensa saber de onde ele nao vem.
+    partes = (definicao.ajuda, cobertura or definicao.observacao)
+    return {
+        "rotulo": definicao.rotulo,
+        "valor": m.formatar_metrica(metrica, totais[metrica]),
+        "delta": (
+            m.formatar_variacao(variacao) if variacao is not None else None
+        ),
+        "tag": tag,
+        "tooltip": " ".join(parte for parte in partes if parte),
+    }
 
+
+def _cartao_painel(chave: str, valores: dict, anteriores: dict | None,
+                   isolado: bool = False) -> dict:
+    """Monta um cartao a partir de um indicador do painel por plataforma.
+
+    Args:
+        chave: Chave em :data:`metricas.PAINEL`.
+        valores: Saida de :func:`metricas.painel` para o periodo.
+        anteriores: Mesma estrutura para o periodo de comparacao, ou ``None``.
+        isolado: ``True`` quando o filtro ja deixou uma unica plataforma. Nesse
+            caso vale o rotulo curto, quando houver: o sufixo de plataforma
+            informa no recorte misto e vira ruido no exclusivo.
+
+    Returns:
+        Dicionario no formato que :func:`componentes.linha_kpis` espera.
+    """
+    definicao = m.PAINEL[chave]
+    base = anteriores.get(chave) if anteriores else None
+    variacao = m.variacao(valores[chave], base)
+    return {
+        "rotulo": (
+            definicao.rotulo_curto
+            if isolado and definicao.rotulo_curto
+            else definicao.rotulo
+        ),
+        "valor": m.formatar_painel(chave, valores[chave]),
+        "delta": (
+            m.formatar_variacao(variacao) if variacao is not None else None
+        ),
+        "tag": "",
+        "tooltip": definicao.ajuda,
+    }
+
+
+def _cartoes(chaves: tuple[str, ...], totais: dict, totais_anteriores: dict | None,
+             valores: dict, valores_anteriores: dict | None,
+             plataformas: list[str]) -> list[dict]:
+    """Monta uma lista mista de cartoes.
+
+    Uma chave prefixada por ``@`` vem do catalogo de metricas, uma prefixada
+    por ``#`` vem do catalogo de derivadas, e as demais vem do painel por
+    plataforma. Os prefixos evitam listas paralelas para descrever uma unica
+    linha de cartoes.
+
+    Args:
+        chaves: Chaves na ordem de exibicao.
+        totais: Agregado do periodo.
+        totais_anteriores: Agregado de comparacao, ou ``None``.
+        valores: Saida de :func:`metricas.painel`.
+        valores_anteriores: Painel do periodo de comparacao, ou ``None``.
+        plataformas: Plataformas presentes no recorte.
+
+    Returns:
+        Lista de cartoes prontos para :func:`componentes.linha_kpis`.
+    """
+    isolado = m.recorte(plataformas) != "ambas"
     cartoes = []
-    for grupo in KPIS_PRINCIPAIS:
-        for metrica in grupo:
-            base = totais_anteriores[metrica] if totais_anteriores else None
-            variacao = m.variacao(totais[metrica], base)
-            tag, cobertura = tag_cobertura(metrica, plataformas)
-            definicao = m.CATALOGO[metrica]
-            # A definicao da metrica vem primeiro; a ressalva de cobertura (ou
-            # a observacao do catalogo) fecha o texto. As duas convivem: saber
-            # o que o numero conta nao dispensa saber de onde ele nao vem.
-            partes = (definicao.ajuda, cobertura or definicao.observacao)
-            cartoes.append({
-                "rotulo": definicao.rotulo,
-                "valor": m.formatar_metrica(metrica, totais[metrica]),
-                "delta": (
-                    m.formatar_variacao(variacao)
-                    if variacao is not None else None
-                ),
-                "tag": tag,
-                "tooltip": " ".join(parte for parte in partes if parte),
-            })
-    ui.linha_kpis(cartoes, chave="grade_kpis")
+    for chave in chaves:
+        if chave.startswith("@"):
+            cartoes.append(
+                _cartao_metrica(chave[1:], totais, totais_anteriores, plataformas)
+            )
+        elif chave.startswith("#"):
+            cartoes.append(
+                _cartao_derivada(chave[1:], totais, totais_anteriores)
+            )
+        else:
+            cartoes.append(
+                _cartao_painel(chave, valores, valores_anteriores, isolado)
+            )
+    return cartoes
 
 
-def bloco_eficiencia(atual: list[dict],
-                     anterior: list[dict] | None) -> None:
-    """Desenha os cartoes de indicadores derivados.
+def bloco_resultados(atual: list[dict], anterior: list[dict] | None,
+                     plataformas: list[str]) -> None:
+    """Desenha os KPIs de resultado, nomeados por plataforma.
 
     Args:
         atual: Linhas do periodo selecionado.
         anterior: Linhas do periodo de comparacao, ou ``None``.
+        plataformas: Plataformas presentes no recorte.
+    """
+    valores = m.painel(atual)
+    valores_anteriores = m.painel(anterior) if anterior else None
+    cartoes = _cartoes(
+        PAINEL_RESULTADOS[_recorte(plataformas)],
+        m.agregar(atual), None, valores, valores_anteriores, plataformas,
+    )
+    ui.linha_kpis(cartoes, chave="grade_resultados")
+
+
+def bloco_valor(atual: list[dict], anterior: list[dict] | None,
+                plataformas: list[str]) -> None:
+    """Desenha os KPIs de valor atribuido e retorno.
+
+    Args:
+        atual: Linhas do periodo selecionado.
+        anterior: Linhas do periodo de comparacao, ou ``None``.
+        plataformas: Plataformas presentes no recorte.
+    """
+    valores = m.painel(atual)
+    valores_anteriores = m.painel(anterior) if anterior else None
+    cartoes = _cartoes(
+        PAINEL_VALOR[_recorte(plataformas)],
+        m.agregar(atual), None, valores, valores_anteriores, plataformas,
+    )
+    ui.linha_kpis(cartoes, chave="grade_valor")
+
+
+def bloco_entrega(atual: list[dict], anterior: list[dict] | None,
+                  plataformas: list[str]) -> None:
+    """Desenha os KPIs de entrega — volume, nao resultado.
+
+    Args:
+        atual: Linhas do periodo selecionado.
+        anterior: Linhas do periodo de comparacao, ou ``None``.
+        plataformas: Plataformas presentes no recorte.
     """
     totais = m.agregar(atual)
-    derivadas = m.calcular_derivadas(totais)
-    derivadas_anteriores = (
-        m.calcular_derivadas(m.agregar(anterior)) if anterior else {}
+    totais_anteriores = m.agregar(anterior) if anterior else None
+    valores = m.painel(atual)
+    valores_anteriores = m.painel(anterior) if anterior else None
+    cartoes = _cartoes(
+        ENTREGA[_recorte(plataformas)],
+        totais, totais_anteriores, valores, valores_anteriores, plataformas,
     )
+    ui.linha_kpis(cartoes, chave="grade_entrega")
 
-    cartoes = []
-    for chave in KPIS_DERIVADOS:
-        definicao = m.DERIVADAS[chave]
-        variacao = m.variacao(
-            derivadas[chave], derivadas_anteriores.get(chave)
-        )
-        cartoes.append({
-            "rotulo": definicao.rotulo,
-            "valor": m.formatar_derivada(chave, derivadas[chave]),
-            "delta": (
-                m.formatar_variacao(variacao) if variacao is not None else None
-            ),
-            # A definicao e a formula ficam na ajuda contextual: dentro do
-            # cartao elas roubavam o peso visual do numero e desalinhavam a
-            # linha.
-            "tooltip": (
-                definicao.ajuda
-                or f"{definicao.rotulo} = {definicao.descricao}"
-            ),
-        })
+
+def _cartao_derivada(chave: str, totais: dict,
+                     anteriores: dict | None) -> dict:
+    """Monta um cartao a partir de um indicador derivado consolidavel.
+
+    Args:
+        chave: Chave em :data:`metricas.DERIVADAS`.
+        totais: Agregado do periodo.
+        anteriores: Agregado do periodo de comparacao, ou ``None``.
+
+    Returns:
+        Dicionario no formato que :func:`componentes.linha_kpis` espera.
+    """
+    definicao = m.DERIVADAS[chave]
+    valor = m.calcular_derivada(chave, totais)
+    base = m.calcular_derivada(chave, anteriores) if anteriores else None
+    variacao = m.variacao(valor, base)
+    return {
+        "rotulo": definicao.rotulo,
+        "valor": m.formatar_derivada(chave, valor),
+        "delta": (
+            m.formatar_variacao(variacao) if variacao is not None else None
+        ),
+        "tag": "",
+        # A definicao e a formula ficam na ajuda contextual: dentro do cartao
+        # elas roubavam o peso visual do numero e desalinhavam a linha.
+        "tooltip": (
+            definicao.ajuda or f"{definicao.rotulo} = {definicao.descricao}"
+        ),
+    }
+
+
+def bloco_eficiencia(atual: list[dict], anterior: list[dict] | None,
+                     plataformas: list[str]) -> None:
+    """Desenha os indicadores de eficiencia do recorte.
+
+    CTR e CPC saem sempre isolados por plataforma; so o CPM consolida.
+
+    Args:
+        atual: Linhas do periodo selecionado.
+        anterior: Linhas do periodo de comparacao, ou ``None``.
+        plataformas: Plataformas presentes no recorte.
+    """
+    totais = m.agregar(atual)
+    totais_anteriores = m.agregar(anterior) if anterior else None
+    valores = m.painel(atual)
+    valores_anteriores = m.painel(anterior) if anterior else None
+    cartoes = _cartoes(
+        EFICIENCIA[m.recorte(plataformas)],
+        totais, totais_anteriores, valores, valores_anteriores, plataformas,
+    )
     ui.linha_kpis(cartoes, compacto=True, chave="grade_eficiencia")
 
 
@@ -533,15 +676,26 @@ def pagina_visao_geral(dataset, selecao: filtros.Selecao,
         dataset.linhas, selecao, inicio_anterior, fim_anterior
     )
 
-    ui.secao(
-        "Indicadores do período",
+    comparacao = (
         f"vs. {formatar_periodo(inicio_anterior, fim_anterior)}"
-        if anteriores else "Sem base de comparação no período anterior.",
+        if anteriores else "Sem base de comparação no período anterior."
     )
-    bloco_kpis(linhas, anteriores or None, plataformas)
+
+    ui.secao("Resultados", comparacao)
+    bloco_resultados(linhas, anteriores or None, plataformas)
+
+    ui.secao(
+        "Valor e retorno",
+        "Meta e Google atribuem valor por definições próprias; os totais "
+        "somam origens, não conceitos equivalentes.",
+    )
+    bloco_valor(linhas, anteriores or None, plataformas)
 
     ui.secao("Eficiência", "Indicadores derivados do período selecionado.")
-    bloco_eficiencia(linhas, anteriores or None)
+    bloco_eficiencia(linhas, anteriores or None, plataformas)
+
+    ui.secao("Entrega", "Volume de veiculação no período selecionado.")
+    bloco_entrega(linhas, anteriores or None, plataformas)
 
     ui.secao("Evolução diária", "")
     with st.container(border=True, key="cartao_evolucao"):

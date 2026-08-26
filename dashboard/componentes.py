@@ -522,8 +522,12 @@ ESTILO: str = """
     @media (max-width: 1099px) {
         .block-container { padding-inline: 20px; }
         .pg-titulo { font-size: 1.62rem; }
-        .st-key-grade_kpis [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
-        .st-key-grade_kpis [data-testid="stColumn"] {
+        .st-key-grade_resultados [data-testid="stHorizontalBlock"],
+        .st-key-grade_valor [data-testid="stHorizontalBlock"],
+        .st-key-grade_entrega [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        .st-key-grade_resultados [data-testid="stColumn"],
+        .st-key-grade_valor [data-testid="stColumn"],
+        .st-key-grade_entrega [data-testid="stColumn"] {
             min-width: calc(50% - 6px) !important;
             flex: 1 1 calc(50% - 6px) !important;
         }
@@ -557,7 +561,9 @@ ESTILO: str = """
         .detalhe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 520px) {
-        .st-key-grade_kpis [data-testid="stColumn"],
+        .st-key-grade_resultados [data-testid="stColumn"],
+        .st-key-grade_valor [data-testid="stColumn"],
+        .st-key-grade_entrega [data-testid="stColumn"],
         .st-key-grade_eficiencia [data-testid="stColumn"] {
             min-width: 100% !important;
             flex-basis: 100% !important;
@@ -654,7 +660,7 @@ def cartao_kpi(rotulo: str, valor: str, delta: str | None = None,
 
 
 def linha_kpis(cartoes: list[dict], compacto: bool = False,
-               chave: str = "grade_kpis") -> None:
+               chave: str = "grade_resultados") -> None:
     """Desenha KPIs em 3 colunas ou a grade compacta de eficiencia."""
     if not cartoes:
         return

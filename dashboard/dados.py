@@ -75,6 +75,7 @@ NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
 METRICAS: tuple[str, ...] = (
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
+    "purchase_value",
 )
 
 # Contrato da superficie de exposicao, declarado aqui de proposito. Se o
@@ -101,6 +102,7 @@ COLUNAS_OBRIGATORIAS: tuple[str, ...] = (
     "reach",
     "profile_views",
     "purchases",
+    "purchase_value",
 )
 
 SUFIXOS_PROIBIDOS: tuple[str, ...] = ("_nk", "_sk", "_external_id", "_nome")

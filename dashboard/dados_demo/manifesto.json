@@ -1,12 +1,12 @@
 {
-  "versao_contrato": 1,
+  "versao_contrato": 2,
   "modo": "demonstracao",
   "natureza": "DADOS SINTETICOS E FICTICIOS. Nao derivam de nome, identificador ou metrica de cliente real, e nao usam a chave de pseudonimizacao da fronteira de exposicao.",
-  "gerado_em": "2026-08-25T13:01:25+00:00",
+  "gerado_em": "2026-08-26T14:59:12+00:00",
   "gerador": "dashboard/gerar_dados_demo.py",
   "semente": 20260825,
   "artefato": "metricas.csv",
-  "sha256": "7855a8077b2c2ccb39fa31b2eb15d9ce697a788be5f73ad01d7c2f2844917397",
+  "sha256": "6b881693db44e7e3fb8b8944391443713645698c78c8234d3093b10085466a89",
   "linhas": 1023,
   "data_min": "2026-06-01",
   "data_max": "2026-06-28",
@@ -30,7 +30,8 @@
     "video_views",
     "reach",
     "profile_views",
-    "purchases"
+    "purchases",
+    "purchase_value"
   ],
   "tipos": {
     "data": "date (YYYY-MM-DD)",
@@ -51,7 +52,8 @@
     "video_views": "integer",
     "reach": "integer",
     "profile_views": "integer",
-    "purchases": "integer"
+    "purchases": "integer",
+    "purchase_value": "decimal"
   },
   "cardinalidades": {
     "conta": 6,
@@ -63,7 +65,7 @@
   "origem": "dashboard/gerar_dados_demo.py (gerador sintetico)",
   "avisos": {
     "video_views": "video_views tem definicao diferente em cada plataforma: TrueView de 30s, video completo ou interacao no Google; a partir de 3s no Meta. A metrica e valida dentro de cada plataforma e o total cross-platform NAO tem interpretacao analitica comum — nao somar entre plataformas.",
-    "metricas_ausentes_no_google": "reach, profile_views e purchases sao zero no Google por ausencia de suporte da GAQL neste grao — ausencia de suporte, nao ausencia de dado."
+    "metricas_ausentes_no_google": "reach, profile_views, purchases e purchase_value sao zero no Google por ausencia de suporte da GAQL neste grao — ausencia de suporte, nao ausencia de dado."
   },
   "uso": "Demonstracao do dashboard sem dado de cliente. Nao representa desempenho real de nenhuma conta."
 }

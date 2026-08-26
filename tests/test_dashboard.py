@@ -73,6 +73,7 @@ def linha_csv(
     reach: str = "0",
     profile_views: str = "0",
     purchases: str = "0",
+    purchase_value: str = "0.00",
     versoes: tuple[int, int, int, int] = (1, 1, 1, 1),
 ) -> list[str]:
     """Monta uma linha do CSV de exposicao.
@@ -86,13 +87,14 @@ def linha_csv(
         anuncio: Identificador do anuncio.
         spend: Investimento.
         impressions: Impressoes.
-        link_clicks: Cliques no link.
+        link_clicks: Cliques.
         conversions: Conversoes.
         conversion_value: Valor de conversao.
         video_views: Visualizacoes de video.
         reach: Alcance.
         profile_views: Visitas ao perfil.
         purchases: Compras.
+        purchase_value: Valor monetario das compras (so Meta).
         versoes: Versoes SCD2 de conta, campanha, adset e anuncio.
 
     Returns:
@@ -105,7 +107,7 @@ def linha_csv(
         adset, str(versoes[2]),
         anuncio, str(versoes[3]),
         spend, impressions, link_clicks, conversions, conversion_value,
-        video_views, reach, profile_views, purchases,
+        video_views, reach, profile_views, purchases, purchase_value,
     ]
 
 
@@ -1077,12 +1079,13 @@ class TestFormatacaoDeMultiplicador(unittest.TestCase):
 class TestAjudaContextual(unittest.TestCase):
     """Toda metrica exibida em cartao tem definicao para a ajuda."""
 
-    # As seis metricas dos cartoes principais de `app.KPIS_PRINCIPAIS`,
-    # repetidas aqui porque importar `dashboard.app` executaria a aplicacao
-    # inteira: o modulo chama `main()` no fim do arquivo.
-    METRICAS_EM_CARTAO = (
-        "spend", "impressions", "link_clicks",
-        "conversions", "conversion_value", "purchases",
+    # Metricas do catalogo que ainda viram cartao — hoje so as de ENTREGA,
+    # porque resultado e valor passaram a sair do painel por plataforma.
+    METRICAS_EM_CARTAO = tuple(
+        chave[1:]
+        for grupo in m.ENTREGA.values()
+        for chave in grupo
+        if chave.startswith("@")
     )
 
     def test_metricas_dos_cartoes_tem_ajuda(self):
@@ -1109,15 +1112,340 @@ class TestAjudaContextual(unittest.TestCase):
         self.assertIn("2,00x", m.DERIVADAS["roas"].ajuda)
 
 
+def linhas_painel() -> list[dict]:
+    """Recorte minimo com as duas plataformas, em valores redondos.
+
+    Meta: R$ 100, 10 leads, 2 compras, R$ 40 de valor de compra e nenhum
+    valor de conversao — que e o que a fonte realmente reporta.
+    Google: R$ 200, 5 conversoes, R$ 300 de valor de conversao, sem compra.
+    """
+    return carregar([
+        linha_csv("2026-08-01", "Meta Ads", spend="100.00",
+                  impressions="1000", link_clicks="50",
+                  conversions="10", conversion_value="0.00",
+                  video_views="0", reach="0", profile_views="0",
+                  purchases="2", purchase_value="40.00"),
+        linha_csv("2026-08-01", "Google Ads", spend="200.00",
+                  impressions="2000", link_clicks="80",
+                  conversions="5", conversion_value="300.00",
+                  video_views="0", reach="0", profile_views="0",
+                  purchases="0", purchase_value="0.00",
+                  conta=CONTA_A, campanha=CAMPANHA_A1, adset=ADSET_A1,
+                  anuncio="Anuncio-BBBB0001"),
+    ]).linhas
+
+
+class TestPainelMeta(unittest.TestCase):
+    """`conversions` do Meta conta LEAD; o KPI e CPL, nao CPA."""
+
+    def setUp(self):
+        self.painel = m.painel(
+            [l for l in linhas_painel() if l["plataforma"] == m.META]
+        )
+
+    def test_leads_usa_conversions_do_meta(self):
+        self.assertEqual(self.painel["leads_meta"], Decimal(10))
+
+    def test_cpl_e_investimento_meta_por_lead(self):
+        self.assertEqual(self.painel["cpl_meta"], Decimal(10))
+        # Sufixo no recorte misto, rotulo curto quando so o Meta esta em tela.
+        self.assertEqual(m.PAINEL["cpl_meta"].rotulo, "CPL — Meta")
+        self.assertEqual(m.PAINEL["cpl_meta"].rotulo_curto, "CPL")
+
+    def test_compras_usa_purchases_do_meta(self):
+        self.assertEqual(self.painel["compras_meta"], Decimal(2))
+
+    def test_valor_de_compras_usa_purchase_value(self):
+        self.assertEqual(self.painel["valor_compras_meta"], Decimal(40))
+
+    def test_roas_meta_usa_purchase_value_sobre_investimento(self):
+        # 40 / 100. Se usasse `conversion_value`, que e zero na fonte, o ROAS
+        # do Meta seria eternamente 0,00x — o defeito que originou a correcao.
+        self.assertEqual(self.painel["roas_meta"], Decimal("0.4"))
+
+    def test_google_ausente_do_recorte_nao_vira_zero(self):
+        self.assertIsNone(self.painel["conversoes_google"])
+        self.assertIsNone(self.painel["valor_conversoes_google"])
+        self.assertIsNone(self.painel["roas_google"])
+
+
+class TestPainelGoogle(unittest.TestCase):
+    """No Google o KPI e CPA, e o valor vem de `conversion_value`."""
+
+    def setUp(self):
+        self.painel = m.painel(
+            [l for l in linhas_painel() if l["plataforma"] == m.GOOGLE]
+        )
+
+    def test_conversoes_usa_conversions_do_google(self):
+        self.assertEqual(self.painel["conversoes_google"], Decimal(5))
+
+    def test_cpa_e_investimento_google_por_conversao(self):
+        self.assertEqual(self.painel["cpa_google"], Decimal(40))
+        self.assertEqual(m.PAINEL["cpa_google"].rotulo, "CPA — Google")
+        self.assertEqual(m.PAINEL["cpa_google"].rotulo_curto, "CPA")
+
+    def test_valor_de_conversoes_usa_conversion_value(self):
+        self.assertEqual(self.painel["valor_conversoes_google"], Decimal(300))
+
+    def test_roas_google_usa_conversion_value(self):
+        self.assertEqual(self.painel["roas_google"], Decimal("1.5"))
+
+    def test_google_nao_inventa_compra(self):
+        self.assertEqual(self.painel["compras_meta"], None)
+        self.assertFalse(m.suportada("purchases", m.GOOGLE))
+        self.assertFalse(m.suportada("purchase_value", m.GOOGLE))
+
+
+class TestPainelConsolidado(unittest.TestCase):
+    """Meta e Google convivem sem virar um numero unico sem significado."""
+
+    def setUp(self):
+        self.painel = m.painel(linhas_painel())
+
+    def test_leads_meta_e_conversoes_google_nao_sao_somados(self):
+        self.assertEqual(self.painel["leads_meta"], Decimal(10))
+        self.assertEqual(self.painel["conversoes_google"], Decimal(5))
+        # Nenhuma chave do painel carrega a soma 15.
+        self.assertNotIn(Decimal(15), self.painel.values())
+
+    def test_valor_meta_e_google_ficam_separados(self):
+        self.assertEqual(self.painel["valor_compras_meta"], Decimal(40))
+        self.assertEqual(self.painel["valor_conversoes_google"], Decimal(300))
+
+    def test_valor_atribuido_total_soma_meta_e_google(self):
+        self.assertEqual(self.painel["valor_atribuido_total"], Decimal(340))
+
+    def test_roas_total_sai_das_somas_globais(self):
+        # 340 / 300.
+        self.assertEqual(
+            self.painel["roas_total"], Decimal(340) / Decimal(300)
+        )
+
+    def test_roas_total_nao_e_media_dos_roas_por_plataforma(self):
+        media = (self.painel["roas_meta"] + self.painel["roas_google"]) / 2
+        self.assertNotEqual(self.painel["roas_total"], media)
+        # A media daria 0,95x contra 1,13x reais: a plataforma com mais
+        # investimento tem de pesar mais.
+        self.assertEqual(media, Decimal("0.95"))
+
+    def test_cliques_meta_e_google_tem_rotulos_distintos(self):
+        self.assertEqual(self.painel["cliques_meta"], Decimal(50))
+        self.assertEqual(self.painel["cliques_google"], Decimal(80))
+        self.assertNotEqual(
+            m.PAINEL["cliques_meta"].rotulo, m.PAINEL["cliques_google"].rotulo
+        )
+        self.assertIn("no link", m.PAINEL["cliques_meta"].rotulo)
+        self.assertNotIn("no link", m.PAINEL["cliques_google"].rotulo)
+
+    def test_valor_atribuido_nao_e_chamado_de_receita(self):
+        definicao = m.PAINEL["valor_atribuido_total"]
+        texto = (definicao.rotulo + " " + definicao.ajuda).lower()
+        for proibido in ("receita", "faturamento", "vendas totais"):
+            with self.subTest(termo=proibido):
+                self.assertNotIn(proibido, texto)
+
+
+class TestPainelZeroENulo(unittest.TestCase):
+    """Denominador invalido continua vazio; zero medido continua zero."""
+
+    def test_denominador_zero_mantem_indisponibilidade(self):
+        painel = m.painel(carregar([
+            linha_csv("2026-08-01", "Meta Ads", spend="0.00",
+                      conversions="0", conversion_value="0.00",
+                      purchases="0", purchase_value="0.00"),
+        ]).linhas)
+
+        self.assertIsNone(painel["cpl_meta"])
+        self.assertIsNone(painel["roas_meta"])
+
+    def test_valor_zero_com_investimento_positivo_da_roas_zero(self):
+        """Zero medido nao e indisponibilidade: o cartao mostra 0,00x."""
+        painel = m.painel(carregar([
+            linha_csv("2026-08-01", "Meta Ads", spend="100.00",
+                      conversions="4", conversion_value="0.00",
+                      purchases="0", purchase_value="0.00"),
+        ]).linhas)
+
+        self.assertEqual(painel["roas_meta"], Decimal(0))
+        self.assertEqual(m.formatar_painel("roas_meta", painel["roas_meta"]),
+                         "0,00x")
+        self.assertEqual(painel["cpl_meta"], Decimal(25))
+
+    def test_google_sem_purchase_value_nao_cria_compra(self):
+        painel = m.painel(carregar([
+            linha_csv("2026-08-01", "Google Ads", spend="100.00",
+                      conversions="4", conversion_value="80.00",
+                      purchases="0", purchase_value="0.00"),
+        ]).linhas)
+
+        self.assertIsNone(painel["compras_meta"])
+        self.assertIsNone(painel["valor_compras_meta"])
+        self.assertEqual(painel["valor_atribuido_total"], Decimal(80))
+
+
+class TestLayoutPorRecorte(unittest.TestCase):
+    """A hierarquia dos cartoes acompanha a selecao de plataforma."""
+
+    def test_recorte_reconhece_a_selecao(self):
+        self.assertEqual(m.recorte([m.META]), "meta")
+        self.assertEqual(m.recorte([m.GOOGLE]), "google")
+        self.assertEqual(m.recorte([m.META, m.GOOGLE]), "ambas")
+
+    def test_resultado_vem_antes_de_entrega(self):
+        """O primeiro cartao do primeiro bloco e investimento, nao volume."""
+        for recorte in ("meta", "google", "ambas"):
+            with self.subTest(recorte=recorte):
+                primeiro = m.PAINEL_RESULTADOS[recorte][0]
+                self.assertTrue(primeiro.startswith("investimento"))
+
+    def test_cliques_nunca_aparece_somado_sob_rotulo_unico(self):
+        """No recorte misto os dois cliques entram separados, e a metrica
+        generica do catalogo nao vira cartao de entrega."""
+        entrega = m.ENTREGA["ambas"]
+        self.assertIn("cliques_meta", entrega)
+        self.assertIn("cliques_google", entrega)
+        self.assertNotIn("@link_clicks", entrega)
+
+    def test_cpl_e_cpa_nunca_convivem_no_mesmo_recorte_exclusivo(self):
+        self.assertIn("cpl_meta", m.PAINEL_RESULTADOS["meta"])
+        self.assertNotIn("cpa_google", m.PAINEL_RESULTADOS["meta"])
+        self.assertIn("cpa_google", m.PAINEL_RESULTADOS["google"])
+        self.assertNotIn("cpl_meta", m.PAINEL_RESULTADOS["google"])
+
+    def test_consolidado_traz_os_tres_kpis_de_valor(self):
+        valor = m.PAINEL_VALOR["ambas"]
+        for chave in ("valor_atribuido_total", "valor_compras_meta",
+                      "valor_conversoes_google"):
+            with self.subTest(chave=chave):
+                self.assertIn(chave, valor)
+        # ROAS total abre a linha dos ROAS.
+        self.assertEqual(valor[3], "roas_total")
+
+    def test_eficiencia_perdeu_cpa_e_roas_genericos(self):
+        """CPA e ROAS agora sao por plataforma; os genericos somariam
+        definicoes diferentes sob um rotulo unico."""
+        for grupo in m.EFICIENCIA.values():
+            with self.subTest(grupo=grupo):
+                self.assertNotIn("#cpa", grupo)
+                self.assertNotIn("#roas", grupo)
+
+    def test_toda_chave_de_layout_existe_no_catalogo(self):
+        grupos = (
+            list(m.PAINEL_RESULTADOS.values())
+            + list(m.PAINEL_VALOR.values())
+            + list(m.ENTREGA.values())
+            + list(m.EFICIENCIA.values())
+        )
+        for grupo in grupos:
+            for chave in grupo:
+                with self.subTest(chave=chave):
+                    if chave.startswith("@"):
+                        self.assertIn(chave[1:], m.CATALOGO)
+                    elif chave.startswith("#"):
+                        self.assertIn(chave[1:], m.DERIVADAS)
+                    else:
+                        self.assertIn(chave, m.PAINEL)
+
+
+class TestEficienciaPorPlataforma(unittest.TestCase):
+    """CTR e CPC nunca consolidam; CPM continua consolidando.
+
+    `link_clicks` guarda `inline_link_clicks` no Meta e `metrics.clicks` no
+    Google. Somar as duas e dividir por impressoes produziria um CTR sem
+    definicao — e o mesmo vale para o CPC. Investimento e impressao, ao
+    contrario, tem semantica compativel entre as plataformas.
+    """
+
+    def setUp(self):
+        self.painel = m.painel(linhas_painel())
+
+    def test_ctr_meta_usa_somente_numeros_do_meta(self):
+        # 50 cliques / 1000 impressoes x 100.
+        self.assertEqual(self.painel["ctr_meta"], Decimal(5))
+
+    def test_cpc_meta_usa_somente_numeros_do_meta(self):
+        # R$ 100 / 50 cliques.
+        self.assertEqual(self.painel["cpc_meta"], Decimal(2))
+
+    def test_ctr_google_usa_somente_numeros_do_google(self):
+        # 80 cliques / 2000 impressoes x 100.
+        self.assertEqual(self.painel["ctr_google"], Decimal(4))
+
+    def test_cpc_google_usa_somente_numeros_do_google(self):
+        # R$ 200 / 80 cliques.
+        self.assertEqual(self.painel["cpc_google"], Decimal("2.5"))
+
+    def test_consolidado_nao_tem_ctr_generico(self):
+        self.assertNotIn("#ctr", m.EFICIENCIA["ambas"])
+        self.assertIn("ctr_meta", m.EFICIENCIA["ambas"])
+        self.assertIn("ctr_google", m.EFICIENCIA["ambas"])
+
+    def test_consolidado_nao_tem_cpc_generico(self):
+        self.assertNotIn("#cpc", m.EFICIENCIA["ambas"])
+        self.assertIn("cpc_meta", m.EFICIENCIA["ambas"])
+        self.assertIn("cpc_google", m.EFICIENCIA["ambas"])
+
+    def test_recorte_exclusivo_tambem_isola_a_plataforma(self):
+        """Mesmo com uma plataforma so, a formula continua vindo do painel
+        isolado — nao da soma do recorte."""
+        self.assertEqual(m.EFICIENCIA["meta"], ("ctr_meta", "cpc_meta", "#cpm"))
+        self.assertEqual(
+            m.EFICIENCIA["google"], ("ctr_google", "cpc_google", "#cpm")
+        )
+
+    def test_rotulo_perde_o_sufixo_quando_a_plataforma_esta_isolada(self):
+        for chave in ("ctr_meta", "cpc_meta", "ctr_google", "cpc_google"):
+            with self.subTest(chave=chave):
+                definicao = m.PAINEL[chave]
+                self.assertIn("—", definicao.rotulo)
+                self.assertIn(definicao.rotulo_curto, ("CTR", "CPC"))
+
+    def test_mexer_no_google_nao_altera_ctr_e_cpc_do_meta(self):
+        alteradas = [
+            dict(linha, link_clicks=linha["link_clicks"] * 10)
+            if linha["plataforma"] == m.GOOGLE else linha
+            for linha in linhas_painel()
+        ]
+        depois = m.painel(alteradas)
+
+        self.assertEqual(depois["ctr_meta"], self.painel["ctr_meta"])
+        self.assertEqual(depois["cpc_meta"], self.painel["cpc_meta"])
+        self.assertNotEqual(depois["ctr_google"], self.painel["ctr_google"])
+
+    def test_mexer_no_meta_nao_altera_ctr_e_cpc_do_google(self):
+        alteradas = [
+            dict(linha, link_clicks=linha["link_clicks"] * 10)
+            if linha["plataforma"] == m.META else linha
+            for linha in linhas_painel()
+        ]
+        depois = m.painel(alteradas)
+
+        self.assertEqual(depois["ctr_google"], self.painel["ctr_google"])
+        self.assertEqual(depois["cpc_google"], self.painel["cpc_google"])
+        self.assertNotEqual(depois["ctr_meta"], self.painel["ctr_meta"])
+
+    def test_cpm_continua_consolidado(self):
+        # (100 + 200) / (1000 + 2000) x 1000 = R$ 100,00.
+        totais = m.agregar(linhas_painel())
+        self.assertEqual(m.calcular_derivada("cpm", totais), Decimal(100))
+        for grupo in m.EFICIENCIA.values():
+            with self.subTest(grupo=grupo):
+                self.assertIn("#cpm", grupo)
+
+
 class TestCatalogoDeMetricas(unittest.TestCase):
     """O catalogo espelha as limitacoes reais das duas APIs."""
 
-    def test_cobre_as_nove_metricas_do_pipeline(self):
+    def test_cobre_as_metricas_do_pipeline(self):
+        """Dez desde 26/08/2026: `purchase_value` entrou para carregar o valor
+        monetario das compras do Meta, que `conversion_value` nunca carregou."""
         self.assertEqual(set(m.METRICAS), set(dados.METRICAS))
-        self.assertEqual(len(m.METRICAS), 9)
+        self.assertEqual(len(m.METRICAS), 10)
 
     def test_metricas_sem_suporte_no_google(self):
-        for metrica in ("reach", "profile_views", "purchases"):
+        for metrica in ("reach", "profile_views", "purchases",
+                        "purchase_value"):
             with self.subTest(metrica=metrica):
                 self.assertFalse(m.suportada(metrica, "Google Ads"))
                 self.assertTrue(m.suportada(metrica, "Meta Ads"))
@@ -1204,7 +1532,8 @@ class TestDatasetDeDemonstracao(unittest.TestCase):
         for linha in self.dataset.linhas:
             if linha["plataforma"] != "Google Ads":
                 continue
-            for metrica in ("reach", "profile_views", "purchases"):
+            for metrica in ("reach", "profile_views", "purchases",
+                        "purchase_value"):
                 self.assertEqual(linha[metrica], Decimal(0))
 
     def test_manifesto_declara_natureza_ficticia(self):
