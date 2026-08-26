@@ -90,7 +90,61 @@ retroativa fica **registrada e mensuravel** na bronze.
 
 O calculo vive em `janela.py` — fora da DAG, com teste proprio
 (`tests/test_janela.py`) — e chega as tasks como macro
-(`{{ janela_inicio(dag_run) }}`). Ajustavel em `DIAS_DE_JANELA`.
+(`{{ janela_inicio(dag_run, params) }}`). Ajustavel em `DIAS_DE_JANELA`.
+
+### Informar o periodo a mao no disparo manual
+
+A tela **Trigger DAG** expoe dois campos opcionais:
+
+| Campo | Formato | Vazio significa |
+|---|---|---|
+| `data_inicial` | `YYYY-MM-DD` | usar a janela automatica de 7 dias |
+| `data_final` | `YYYY-MM-DD` | usar a janela automatica de 7 dias |
+
+Preenchidos os **dois**, a execucao extrai exatamente esse intervalo, nas duas
+plataformas e na carga. Exemplo:
+
+```
+data_inicial = 2026-08-12
+data_final   = 2026-08-18
+```
+
+resulta em `--start-date 2026-08-12 --end-date 2026-08-18` em `extrai_meta`,
+`extrai_google` e `carrega_bronze`.
+
+O equivalente pela linha de comando — lembrando que **disparar com a DAG
+pausada deixa o run preso em `queued`** (ver "O que NAO usar nesta operacao"):
+
+```bash
+docker exec tcc_airflow_scheduler airflow dags trigger \
+  pipeline_marketing_diario \
+  --conf '{"data_inicial": "2026-08-12", "data_final": "2026-08-18"}'
+```
+
+O agendamento **nao muda**: sem os dois campos preenchidos, run agendado e run
+manual usam a janela automatica de sempre.
+
+A janela escolhida e anunciada no inicio do log de cada task do contrato:
+
+```
+Janela de extração automática: 2026-08-18 a 2026-08-24
+Janela de extração manual: 2026-08-12 a 2026-08-18
+```
+
+**A validacao falha, nao corrige.** Preencher so um dos campos, uma data fora
+do calendario, uma grafia diferente de `YYYY-MM-DD` ou um fim anterior ao
+inicio falham a task no render, com a mensagem dizendo qual campo e por que —
+antes de qualquer chamada de API. Inicio igual ao fim e valido: um unico dia.
+
+A decisao entre os dois modos e uma funcao so, `janela.resolver_janela`, que as
+tres tasks do contrato consultam. Meta, Google e manifesto recebem o mesmo
+intervalo por construcao, e nao por coincidencia de template.
+
+O schema dos params e `type: ["string", "null"]`, deliberadamente **sem**
+`format: "date"`: a validacao de schema do Airflow recusa string vazia quando o
+formato e declarado, e isso quebraria justamente o caso "deixe vazio". A
+conferencia de formato acontece em `janela.py`, onde a mensagem de erro e
+nossa.
 
 ### Por que nao usa `ds`
 

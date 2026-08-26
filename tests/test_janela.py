@@ -15,12 +15,17 @@ from zoneinfo import ZoneInfo
 
 from janela import (
     DIAS_DE_JANELA,
+    PARAM_FIM,
+    PARAM_INICIO,
     TIMEZONE,
     datas_da_janela,
     dia_de_referencia,
+    janela_descricao,
     janela_extracao,
     janela_fim,
     janela_inicio,
+    janela_informada,
+    resolver_janela,
 )
 
 SAO_PAULO = ZoneInfo(TIMEZONE)
@@ -206,6 +211,165 @@ class TestProtecoes(unittest.TestCase):
 
         self.assertEqual(fim_hoje, "2026-08-16")
         self.assertEqual(fim_amanha, "2026-08-17")
+
+
+class TestJanelaInformada(unittest.TestCase):
+    """As sete regras do par `data_inicial` / `data_final`.
+
+    Entrada invalida FALHA. Nao existe caminho em que uma data malformada, um
+    intervalo invertido ou metade do par sejam corrigidos em silencio: um
+    disparo manual so extrai o que foi digitado, ou nao extrai.
+    """
+
+    def test_par_vazio_significa_janela_automatica(self):
+        self.assertIsNone(janela_informada(None, None))
+
+    def test_campo_em_branco_conta_como_vazio(self):
+        # A tela de disparo do Airflow envia string vazia quando o campo nao
+        # foi preenchido. Isso e ausencia, nao entrada invalida.
+        self.assertIsNone(janela_informada("", ""))
+        self.assertIsNone(janela_informada("   ", None))
+
+    def test_par_valido_e_devolvido_como_esta(self):
+        self.assertEqual(
+            janela_informada("2026-08-12", "2026-08-18"),
+            ("2026-08-12", "2026-08-18"),
+        )
+
+    def test_inicio_igual_ao_fim_extrai_um_unico_dia(self):
+        self.assertEqual(
+            janela_informada("2026-08-14", "2026-08-14"),
+            ("2026-08-14", "2026-08-14"),
+        )
+
+    def test_somente_inicio_falha_citando_o_campo_ausente(self):
+        with self.assertRaises(ValueError) as erro:
+            janela_informada("2026-08-12", None)
+
+        self.assertIn(PARAM_FIM, str(erro.exception))
+
+    def test_somente_fim_falha_citando_o_campo_ausente(self):
+        with self.assertRaises(ValueError) as erro:
+            janela_informada(None, "2026-08-18")
+
+        self.assertIn(PARAM_INICIO, str(erro.exception))
+
+    def test_fim_anterior_ao_inicio_falha(self):
+        with self.assertRaises(ValueError) as erro:
+            janela_informada("2026-08-19", "2026-08-18")
+
+        self.assertIn(PARAM_FIM, str(erro.exception))
+
+    def test_data_fora_do_calendario_falha(self):
+        for inicio, fim in (
+            ("2026-13-45", "2026-08-18"),
+            ("2026-08-12", "2026-02-30"),
+        ):
+            with self.subTest(inicio=inicio, fim=fim):
+                with self.assertRaises(ValueError):
+                    janela_informada(inicio, fim)
+
+    def test_grafia_diferente_de_ano_mes_dia_falha(self):
+        # `date.fromisoformat` aceitaria as tres no Python 3.11. O contrato
+        # publicado na interface e YYYY-MM-DD, e so ele vale.
+        for texto in ("20260812", "2026-W33-3", "12/08/2026"):
+            with self.subTest(texto=texto):
+                with self.assertRaises(ValueError):
+                    janela_informada(texto, "2026-08-18")
+
+    def test_intervalo_maior_que_a_janela_padrao_e_aceito(self):
+        # Quem digitou a data respondeu pela escolha: a janela manual e
+        # substituicao, nao ajuste da automatica.
+        self.assertEqual(
+            janela_informada("2026-08-01", "2026-08-31"),
+            ("2026-08-01", "2026-08-31"),
+        )
+
+
+class TestResolucaoDaJanela(unittest.TestCase):
+    """A decisao entre janela automatica e informada, num ponto so."""
+
+    def setUp(self):
+        self.run = DagRunFalso(
+            run_after=datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
+        )
+
+    def test_sem_params_usa_a_janela_automatica(self):
+        self.assertEqual(
+            resolver_janela(self.run, None),
+            ("2026-08-18", "2026-08-24", False),
+        )
+
+    def test_params_vazios_usam_a_janela_automatica(self):
+        for params in ({}, {PARAM_INICIO: None, PARAM_FIM: None},
+                       {PARAM_INICIO: "", PARAM_FIM: ""}):
+            with self.subTest(params=params):
+                self.assertEqual(
+                    resolver_janela(self.run, params),
+                    ("2026-08-18", "2026-08-24", False),
+                )
+
+    def test_params_preenchidos_substituem_a_janela(self):
+        self.assertEqual(
+            resolver_janela(
+                self.run,
+                {PARAM_INICIO: "2026-08-12", PARAM_FIM: "2026-08-18"},
+            ),
+            ("2026-08-12", "2026-08-18", True),
+        )
+
+    def test_janela_manual_ignora_o_instante_do_disparo(self):
+        # Mesmo par de datas, dois instantes de disparo distintos: a janela
+        # manual nao depende de quando a DAG foi acionada.
+        outro = DagRunFalso(
+            run_after=datetime(2027, 3, 4, 21, 0, tzinfo=timezone.utc)
+        )
+        params = {PARAM_INICIO: "2026-08-12", PARAM_FIM: "2026-08-18"}
+
+        self.assertEqual(
+            resolver_janela(self.run, params), resolver_janela(outro, params)
+        )
+
+    def test_params_invalidos_falham_na_resolucao(self):
+        with self.assertRaises(ValueError):
+            resolver_janela(self.run, {PARAM_INICIO: "2026-08-12"})
+
+    def test_macros_seguem_a_resolucao(self):
+        params = {PARAM_INICIO: "2026-08-12", PARAM_FIM: "2026-08-18"}
+
+        self.assertEqual(janela_inicio(self.run, params), "2026-08-12")
+        self.assertEqual(janela_fim(self.run, params), "2026-08-18")
+
+    def test_macros_sem_params_preservam_a_assinatura_antiga(self):
+        # A chamada de um argumento so continua valendo e continua
+        # significando janela automatica.
+        self.assertEqual(janela_inicio(self.run), "2026-08-18")
+        self.assertEqual(janela_fim(self.run), "2026-08-24")
+
+    def test_descricao_declara_a_origem_da_janela(self):
+        self.assertEqual(
+            janela_descricao(self.run, None),
+            "Janela de extração automática: 2026-08-18 a 2026-08-24",
+        )
+        self.assertEqual(
+            janela_descricao(
+                self.run,
+                {PARAM_INICIO: "2026-08-12", PARAM_FIM: "2026-08-18"},
+            ),
+            "Janela de extração manual: 2026-08-12 a 2026-08-18",
+        )
+
+    def test_descricao_nao_vaza_conteudo_alem_das_datas(self):
+        # O log declara a janela, nao os params. Um valor extra no dicionario
+        # (um segredo colado por engano no conf, por exemplo) nao aparece.
+        texto = janela_descricao(
+            self.run,
+            {PARAM_INICIO: "2026-08-12", PARAM_FIM: "2026-08-18",
+             "token": "nao-deve-vazar"},
+        )
+
+        self.assertNotIn("nao-deve-vazar", texto)
+        self.assertNotIn("token", texto)
 
 
 if __name__ == "__main__":

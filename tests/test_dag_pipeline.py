@@ -176,10 +176,38 @@ class TestRenderDosComandos(unittest.TestCase):
         self.dag = carregar_dag()
         self.env = self.dag.get_template_env()
 
-    def render(self, task_id: str, dag_run: DagRunFalso, run_id: str) -> str:
-        """Renderiza o `bash_command` de uma task com um contexto minimo."""
+    def render(
+        self,
+        task_id: str,
+        dag_run: DagRunFalso,
+        run_id: str,
+        params: dict | None = None,
+    ) -> str:
+        """Renderiza o `bash_command` de uma task com um contexto minimo.
+
+        Args:
+            task_id: Task cujo comando sera renderizado.
+            dag_run: DagRun falso do contexto.
+            run_id: Identificador do run.
+            params: Params da execucao. ``None`` reproduz o run agendado, em
+                que os dois campos ficam com o default do `Param`.
+
+        Returns:
+            O comando com os templates ja substituidos.
+        """
         comando = self.dag.get_task(task_id).bash_command
-        return self.env.from_string(comando).render(dag_run=dag_run, run_id=run_id)
+        return self.env.from_string(comando).render(
+            dag_run=dag_run, run_id=run_id, params=params or {}
+        )
+
+    @staticmethod
+    def datas(comando: str) -> tuple[str, str]:
+        """Extrai o par `--start-date` / `--end-date` de um comando."""
+        partes = comando.split()
+        return (
+            partes[partes.index("--start-date") + 1],
+            partes[partes.index("--end-date") + 1],
+        )
 
     def test_run_agendado_pede_os_sete_dias_anteriores(self):
         agendado = DagRunFalso(
@@ -214,14 +242,7 @@ class TestRenderDosComandos(unittest.TestCase):
         meta = self.render("extrai_meta", run, "manual__x")
         google = self.render("extrai_google", run, "manual__x")
 
-        def datas(comando: str) -> tuple[str, str]:
-            partes = comando.split()
-            return (
-                partes[partes.index("--start-date") + 1],
-                partes[partes.index("--end-date") + 1],
-            )
-
-        self.assertEqual(datas(meta), datas(google))
+        self.assertEqual(self.datas(meta), self.datas(google))
 
     def test_carga_recebe_a_mesma_janela_das_extracoes(self):
         run = DagRunFalso(run_after=datetime(2026, 8, 17, 9, 0, tzinfo=timezone.utc))
@@ -256,6 +277,182 @@ class TestRenderDosComandos(unittest.TestCase):
         self.assertIn("run_dbt", comando)
         self.assertNotIn("--start-date", comando)
         self.assertNotIn("extractors", comando)
+
+
+@unittest.skipUnless(TEM_AIRFLOW, "requer Airflow instalado")
+class TestParamsDoDisparoManual(unittest.TestCase):
+    """Os dois campos da tela "Trigger DAG": opcionais e tipados."""
+
+    def setUp(self):
+        self.dag = carregar_dag()
+
+    def test_a_dag_declara_os_dois_params(self):
+        self.assertEqual(
+            sorted(self.dag.params), ["data_final", "data_inicial"]
+        )
+
+    def test_os_params_sao_opcionais(self):
+        # Default nulo e o que faz o run agendado — que nao preenche nada —
+        # continuar caindo na janela automatica.
+        for nome in ("data_inicial", "data_final"):
+            with self.subTest(param=nome):
+                self.assertIsNone(self.dag.params[nome])
+
+    def test_o_schema_aceita_texto_e_vazio(self):
+        # Sem `null` no type, campo em branco seria recusado pela validacao do
+        # proprio Airflow e o caso "deixe vazio" ficaria impossivel.
+        for nome in ("data_inicial", "data_final"):
+            with self.subTest(param=nome):
+                tipo = self.dag.params.get_param(nome).schema["type"]
+                self.assertIn("string", tipo)
+                self.assertIn("null", tipo)
+
+    def test_os_params_tem_descricao_visivel_na_interface(self):
+        for nome in ("data_inicial", "data_final"):
+            with self.subTest(param=nome):
+                descricao = self.dag.params.get_param(nome).description
+                self.assertIn("YYYY-MM-DD", descricao)
+                self.assertIn("Opcional", descricao)
+
+    def test_schema_nao_usa_format_date(self):
+        # `format: "date"` faria a validacao do Airflow recusar string vazia,
+        # que e o que a interface envia num campo em branco. A conferencia de
+        # formato e feita em `janela.py`, com mensagem propria.
+        for nome in ("data_inicial", "data_final"):
+            with self.subTest(param=nome):
+                self.assertNotIn(
+                    "format", self.dag.params.get_param(nome).schema
+                )
+
+
+@unittest.skipUnless(TEM_AIRFLOW, "requer Airflow instalado")
+class TestRenderComJanelaInformada(unittest.TestCase):
+    """Disparo manual parametrizado: o intervalo digitado chega as tasks."""
+
+    TASKS_DO_CONTRATO = ("extrai_meta", "extrai_google", "carrega_bronze")
+
+    def setUp(self):
+        self.dag = carregar_dag()
+        self.env = self.dag.get_template_env()
+        self.run = DagRunFalso(
+            run_after=datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc),
+            logical_date=None,
+        )
+
+    def render(self, task_id: str, params: dict | None = None) -> str:
+        """Renderiza o `bash_command` de uma task com params opcionais."""
+        comando = self.dag.get_task(task_id).bash_command
+        return self.env.from_string(comando).render(
+            dag_run=self.run, run_id="manual__2026-08-25T09:00:00",
+            params=params or {},
+        )
+
+    @staticmethod
+    def datas(comando: str) -> tuple[str, str]:
+        """Extrai o par `--start-date` / `--end-date` de um comando."""
+        partes = comando.split()
+        return (
+            partes[partes.index("--start-date") + 1],
+            partes[partes.index("--end-date") + 1],
+        )
+
+    def test_manual_sem_params_mantem_a_janela_automatica(self):
+        for params in ({}, {"data_inicial": None, "data_final": None},
+                       {"data_inicial": "", "data_final": ""}):
+            with self.subTest(params=params):
+                comando = self.render("extrai_meta", params)
+
+                self.assertEqual(
+                    self.datas(comando), ("2026-08-18", "2026-08-24")
+                )
+
+    def test_manual_com_datas_usa_exatamente_o_intervalo_pedido(self):
+        comando = self.render(
+            "extrai_meta",
+            {"data_inicial": "2026-08-12", "data_final": "2026-08-18"},
+        )
+
+        self.assertEqual(self.datas(comando), ("2026-08-12", "2026-08-18"))
+
+    def test_meta_e_google_recebem_a_mesma_janela_informada(self):
+        params = {"data_inicial": "2026-08-12", "data_final": "2026-08-18"}
+
+        meta = self.datas(self.render("extrai_meta", params))
+        google = self.datas(self.render("extrai_google", params))
+
+        self.assertEqual(meta, google)
+        self.assertEqual(meta, ("2026-08-12", "2026-08-18"))
+
+    def test_a_carga_recebe_a_mesma_janela_informada(self):
+        # A carga confere a janela contra o manifesto gravado pela extracao.
+        # Se ela nao recebesse o mesmo intervalo, o run manual parametrizado
+        # falharia no contrato — e nao ha excecao para run manual.
+        params = {"data_inicial": "2026-08-12", "data_final": "2026-08-18"}
+
+        carga = self.datas(self.render("carrega_bronze", params))
+
+        self.assertEqual(carga, ("2026-08-12", "2026-08-18"))
+        self.assertIn("--run-id", self.render("carrega_bronze", params))
+
+    def test_as_tres_tasks_do_contrato_concordam(self):
+        params = {"data_inicial": "2026-08-12", "data_final": "2026-08-18"}
+
+        janelas = {
+            task: self.datas(self.render(task, params))
+            for task in self.TASKS_DO_CONTRATO
+        }
+
+        self.assertEqual(len(set(janelas.values())), 1)
+
+    def test_um_unico_dia_e_um_intervalo_valido(self):
+        comando = self.render(
+            "extrai_meta",
+            {"data_inicial": "2026-08-14", "data_final": "2026-08-14"},
+        )
+
+        self.assertEqual(self.datas(comando), ("2026-08-14", "2026-08-14"))
+
+    def test_params_incoerentes_falham_no_render(self):
+        # Falhar no render e falhar a task: nenhuma chamada de API acontece
+        # com janela invalida.
+        casos = (
+            {"data_inicial": "2026-08-12"},
+            {"data_final": "2026-08-18"},
+            {"data_inicial": "2026-08-19", "data_final": "2026-08-18"},
+            {"data_inicial": "12/08/2026", "data_final": "2026-08-18"},
+            {"data_inicial": "2026-13-45", "data_final": "2026-08-18"},
+        )
+        for params in casos:
+            for task in self.TASKS_DO_CONTRATO:
+                with self.subTest(params=params, task=task):
+                    with self.assertRaises(Exception):
+                        self.render(task, params)
+
+    def test_o_comando_anuncia_a_janela_no_inicio(self):
+        automatico = self.render("extrai_meta")
+        manual = self.render(
+            "extrai_meta",
+            {"data_inicial": "2026-08-12", "data_final": "2026-08-18"},
+        )
+
+        self.assertIn(
+            "Janela de extração automática: 2026-08-18 a 2026-08-24",
+            automatico,
+        )
+        self.assertIn(
+            "Janela de extração manual: 2026-08-12 a 2026-08-18", manual
+        )
+        # O anuncio vem antes de qualquer coisa que chame API.
+        self.assertLess(manual.index("echo"), manual.index("python -m"))
+
+    def test_dbt_continua_sem_datas_mesmo_com_params(self):
+        comando = self.render(
+            "transforma_dbt",
+            {"data_inicial": "2026-08-12", "data_final": "2026-08-18"},
+        )
+
+        self.assertNotIn("--start-date", comando)
+        self.assertNotIn("2026-08-12", comando)
 
 
 if __name__ == "__main__":
