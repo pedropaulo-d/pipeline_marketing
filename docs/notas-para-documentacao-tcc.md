@@ -1126,6 +1126,43 @@ a regra antiga não estava errada quando foi escrita, ficou errada quando a
 Silver passou a proteger o histórico por conta própria. A evidência que
 autorizou a mudança é um run de produção, não um argumento.
 
+**Fechamento do gate operacional (26/08/2026).** O mesmo DagRun
+`scheduled__2026-08-26T09:00:00+00:00` foi retomado por *clear* das três tasks
+pendentes — `extrai_meta`, `carrega_bronze` e `transforma_dbt`. `extrai_google`
+permaneceu `success` e **não foi reexecutada**: o artefato bruto que ela havia
+produzido carrega o `run_id` e a janela desse run, e o manifesto valida por
+versão, fonte, `run_id`, janela e `sha256` — nunca por ordem ou horário de
+produção. `carrega_bronze` aceitou os dois artefatos, um extraído antes da
+falha e outro depois da correção, como pertencentes à mesma execução.
+
+Na retomada, a descoberta Meta encontrou 95 contas, registrou **2
+temporariamente indisponíveis como lacuna conhecida** e consultou as 93
+restantes, produzindo 764 registros na janela `2026-08-19..2026-08-25`. O
+DagRun terminou `success` com as quatro tasks verdes. Nenhum segundo DagRun foi
+criado.
+
+Efeito no armazém, decomposto até o centavo: a Bronze foi de 50.447 para
+**52.651** linhas e de 65 para **67** lotes — exatamente dois lotes novos, um
+por fonte, ambos do mesmo `run_id`, sem nenhuma data fora da janela e sem tocar
+nas 50.447 linhas anteriores. O fato foi de 10.963 para **11.326** linhas, e o
+acréscimo de 363 é integralmente o dia 2026-08-25: as linhas das datas
+anteriores continuam somando exatamente 10.963. As dimensões ganharam 1 data, 2
+adsets e 5 anúncios, todos de primeira aparição nesse dia. O investimento subiu
+R$ 5.425,935789, dos quais **R$ 5.425,516994 são o dia novo** e **R$ 0,418795 é
+deriva retroativa** legítima nos dias já conhecidos. As conversões subiram 273 —
+297 do dia novo menos 24 de deriva, e esses −24 batem exatamente com a soma dos
+deltas diários do Google (−27, +2, +1). Nenhuma chave desapareceu: o
+comparador reportou zero removidas em todas as coleções.
+
+Com todo delta explicado, o golden foi recongelado deliberadamente
+(`ca71374a…` → `78ed439a…`) e a paridade voltou a sair 0. A superfície de
+exposição foi regenerada (`6b24bd25…`) e aprovada pelo auditor com 11.326
+linhas e 19 colunas; o `fingerprint_chave` seguiu `4EFD314550FC2D48`,
+confirmando que a chave HMAC do ciclo não mudou e que screenshots anteriores
+continuam alinhados. A DAG foi **pausada de novo, deliberadamente**: a operação
+real está comprovada e a base fica congelada durante a escrita da monografia —
+não é falha operacional, é congelamento intencional.
+
 ### 5.15 Dado sintético de teste que envelhece para dentro do dado real
 
 🔍 Achado pequeno, mas ilustrativo — e reincidente.
