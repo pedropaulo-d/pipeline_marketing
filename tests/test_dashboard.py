@@ -1895,7 +1895,7 @@ class TestSmokeStreamlitEPlotly(unittest.TestCase):
             componentes = importlib.import_module("dashboard.componentes")
         except ImportError:
             self.skipTest("streamlit nao instalado neste ambiente")
-        self.assertIn("kpi", componentes.ESTILO)
+        self.assertIn("kpi", componentes.ESTILO.lower())
         self.assertEqual(componentes.rotulo_metrica("spend"), "Investimento")
 
 
