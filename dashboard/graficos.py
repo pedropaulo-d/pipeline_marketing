@@ -137,7 +137,13 @@ def serie_temporal(series: dict, metrica: str, altura: int = 350) -> go.Figure:
     for nome, pontos in series.items():
         figura.add_trace(go.Scatter(
             x=[_data_pt(ponto[0]) for ponto in pontos],
-            y=[_float(ponto[1]) for ponto in pontos],
+            # `None` representa indisponibilidade semantica, nao desempenho
+            # zero. O Plotly recebe a ausencia e desenha uma lacuna; zeros
+            # reais continuam passando por `_float` normalmente.
+            y=[
+                None if ponto[1] is None else _float(ponto[1])
+                for ponto in pontos
+            ],
             name=nome,
             mode="lines+markers" if len(pontos) <= 15 else "lines",
             line=dict(color=cor(nome), width=2.6, shape="linear"),

@@ -82,6 +82,10 @@ COLUNAS_ESPERADAS: tuple[str, ...] = (
 
 NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
 
+# Metricas conferidas contra o Gold por soma. Para `reach` a soma vale como
+# CHECKSUM de integridade do artefato — detecta linha alterada ou ausente —, e
+# nao como alcance total: pessoas unicas nao somam entre anuncios nem entre
+# dias.
 METRICAS: tuple[str, ...] = (
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",

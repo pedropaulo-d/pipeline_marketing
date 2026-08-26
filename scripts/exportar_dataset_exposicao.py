@@ -107,6 +107,10 @@ CLASSIFICACAO: dict[str, str] = {
     "conversions": USADA,
     "conversion_value": USADA,
     "video_views": USADA,
+    # Somada nos pos-checks apenas como CHECKSUM linha a linha contra o Gold.
+    # Nao e alcance total: pessoas unicas nao somam entre anuncios nem entre
+    # dias. Quem apresenta o numero (o dashboard) trata a metrica como nao
+    # aditiva.
     "reach": USADA,
     "profile_views": USADA,
     "purchases": USADA,

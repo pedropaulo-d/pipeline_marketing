@@ -82,6 +82,14 @@ _CHAVES_NATURAIS: dict[str, tuple[str, ...]] = {
 # As metricas sao somadas com `round(...)::text` porque a comparacao precisa
 # ser exata: converter para float introduziria diferenca de representacao onde
 # nao houve mudanca de dado.
+#
+# ATENCAO ao `reach`. A soma aqui e CHECKSUM DE INTEGRIDADE linha a linha, nao
+# uma afirmacao de alcance total: ela detecta que uma linha do fato mudou de
+# valor ou sumiu. Alcance conta pessoas unicas e NAO e somavel entre anuncios
+# nem entre dias — o dashboard trata a metrica como nao aditiva e devolve
+# indisponivel a partir de duas linhas factuais. As duas coisas convivem sem
+# contradicao porque respondem perguntas diferentes: "o armazem mudou?" e
+# "quantas pessoas foram alcancadas?".
 _METRICAS: list[str] = [
     "spend", "impressions", "link_clicks", "conversions",
     "conversion_value", "video_views", "reach", "profile_views", "purchases",

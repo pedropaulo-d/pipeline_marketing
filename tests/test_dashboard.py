@@ -1434,6 +1434,225 @@ class TestEficienciaPorPlataforma(unittest.TestCase):
                 self.assertIn("#cpm", grupo)
 
 
+class TestReachNaoAditivo(unittest.TestCase):
+    """Alcance conta pessoas unicas: nao soma entre linhas factuais.
+
+    A regra nao e "so vale num dia". Dois anuncios no MESMO dia com alcance
+    1.000 e 800 nao dao 1.800 — parte das pessoas viu os dois, e o dataset nao
+    guarda a intersecao. Alcance so e exato na observacao original da API:
+    um anuncio, um dia.
+    """
+
+    def _linhas(self, *linhas):
+        return carregar(list(linhas)).linhas
+
+    def test_uma_linha_meta_preserva_o_alcance(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+        ))
+
+        self.assertEqual(totais["reach"], Decimal(1000))
+
+    def test_mesmo_anuncio_em_dois_dias_fica_indisponivel(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", reach="800"),
+        ))
+
+        self.assertIsNone(totais["reach"])
+
+    def test_dois_anuncios_no_mesmo_dia_ficam_indisponiveis(self):
+        """O caso que a regra antiga deixava passar."""
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", anuncio="Anuncio-AAAA0001",
+                      reach="1000"),
+            linha_csv("2026-08-01", "Meta Ads", anuncio="Anuncio-AAAA0002",
+                      reach="800"),
+        ))
+
+        self.assertIsNone(totais["reach"])
+        self.assertNotEqual(totais["reach"], Decimal(1800))
+
+    def test_duas_campanhas_no_mesmo_dia_ficam_indisponiveis(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", campanha=CAMPANHA_A1,
+                      anuncio="Anuncio-AAAA0001", reach="1000"),
+            linha_csv("2026-08-01", "Meta Ads", campanha=CAMPANHA_A2,
+                      anuncio="Anuncio-AAAA0002", reach="800"),
+        ))
+
+        self.assertIsNone(totais["reach"])
+
+    def test_duas_contas_ficam_indisponiveis(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", conta=CONTA_A,
+                      anuncio="Anuncio-AAAA0001", reach="1000"),
+            linha_csv("2026-08-01", "Meta Ads", conta=CONTA_B,
+                      anuncio="Anuncio-BBBB0001", reach="800"),
+        ))
+
+        self.assertIsNone(totais["reach"])
+
+    def test_google_nao_reporta_alcance(self):
+        """Zero do Google e ausencia de suporte; nem numa linha unica ele vira
+        alcance."""
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Google Ads", reach="0"),
+        )
+        totais = m.agregar(linhas)
+        por_plataforma = m.totais_por_plataforma(linhas)
+
+        self.assertIsNone(totais["reach"])
+        self.assertIsNone(por_plataforma[m.GOOGLE]["reach"])
+        self.assertFalse(m.suportada("reach", m.GOOGLE))
+
+    def test_recorte_meta_e_google_fica_indisponivel(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-01", "Google Ads", conta=CONTA_B,
+                      campanha=CAMPANHA_B1, adset=ADSET_B1,
+                      anuncio="Anuncio-BBBB0001", reach="0"),
+        ))
+
+        self.assertIsNone(totais["reach"])
+
+    def test_indisponivel_nao_vira_zero_na_apresentacao(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", reach="800"),
+        ))
+        texto = m.formatar_metrica("reach", totais["reach"])
+
+        self.assertEqual(texto, m.INDISPONIVEL)
+        self.assertNotIn("0", texto)
+        self.assertNotEqual(texto, "1.800")
+
+    def test_agregar_por_aplica_a_regra_em_cada_grupo(self):
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", conta=CONTA_A,
+                      anuncio="Anuncio-AAAA0001", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", conta=CONTA_A,
+                      anuncio="Anuncio-AAAA0001", reach="900"),
+            linha_csv("2026-08-01", "Meta Ads", conta=CONTA_B,
+                      anuncio="Anuncio-BBBB0001", reach="700"),
+        )
+        por_conta = m.agregar_por(linhas, lambda linha: linha["conta_id"])
+
+        # Conta A tem duas linhas factuais; conta B tem uma.
+        self.assertIsNone(por_conta[CONTA_A]["reach"])
+        self.assertEqual(por_conta[CONTA_B]["reach"], Decimal(700))
+
+    def test_ranking_recusa_ordenar_por_metrica_nao_aditiva(self):
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", reach="800"),
+        )
+
+        with self.assertRaises(ValueError):
+            m.ranking(linhas, "anuncio", "reach")
+
+    def test_ranking_nao_publica_soma_de_alcance(self):
+        """Mesmo ordenando por outra metrica, a coluna de alcance da entidade
+        multi-linha nao pode trazer a soma."""
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", reach="800"),
+        )
+        itens = m.ranking(linhas, "anuncio", "spend")
+
+        self.assertEqual(len(itens), 1)
+        self.assertIsNone(itens[0]["reach"])
+
+    def test_serie_nao_soma_alcance_de_varios_anuncios_no_mesmo_dia(self):
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", anuncio="Anuncio-AAAA0001",
+                      reach="1000"),
+            linha_csv("2026-08-01", "Meta Ads", anuncio="Anuncio-AAAA0002",
+                      reach="800"),
+            linha_csv("2026-08-02", "Meta Ads", anuncio="Anuncio-AAAA0001",
+                      reach="600"),
+        )
+        serie = m.serie_diaria(linhas, "reach")
+        pontos = dict(serie["Meta Ads"])
+
+        # 01/08 reune dois anuncios; 02/08 tem so um.
+        self.assertIsNone(pontos[date(2026, 8, 1)])
+        self.assertEqual(pontos[date(2026, 8, 2)], Decimal(600))
+
+    def test_serie_de_um_unico_anuncio_por_dia_continua_valida(self):
+        """E o grafico do detalhe de anuncio: cada ponto e a observacao
+        original da API."""
+        linhas = self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", reach="800"),
+        )
+        pontos = dict(m.serie_diaria(linhas, "reach")["Meta Ads"])
+
+        self.assertEqual(pontos[date(2026, 8, 1)], Decimal(1000))
+        self.assertEqual(pontos[date(2026, 8, 2)], Decimal(800))
+
+    def test_serie_google_mantem_alcance_indisponivel(self):
+        pontos = dict(m.serie_diaria(self._linhas(
+            linha_csv("2026-08-01", "Google Ads", reach="0"),
+        ), "reach")["Google Ads"])
+
+        self.assertIsNone(pontos[date(2026, 8, 1)])
+
+    def test_zero_real_de_metrica_aditiva_continua_zero_na_serie(self):
+        pontos = dict(m.serie_diaria(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", spend="0"),
+        ), "spend")["Meta Ads"])
+
+        self.assertEqual(pontos[date(2026, 8, 1)], Decimal(0))
+
+    def test_nenhuma_derivada_usa_alcance(self):
+        """Frequencia (impressoes / alcance) nao existe — e nao pode nascer
+        somando alcance."""
+        operandos = set()
+        for definicao in m.DERIVADAS.values():
+            operandos.update({definicao.numerador, definicao.denominador})
+
+        self.assertNotIn("reach", operandos)
+
+    def test_demais_metricas_seguem_somando(self):
+        totais = m.agregar(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", spend="100.00",
+                      impressions="1000", link_clicks="50", conversions="4",
+                      conversion_value="0.00", video_views="7",
+                      reach="1000", purchases="2", purchase_value="10.00"),
+            linha_csv("2026-08-02", "Meta Ads", spend="50.00",
+                      impressions="500", link_clicks="25", conversions="2",
+                      conversion_value="0.00", video_views="3",
+                      reach="800", purchases="1", purchase_value="5.00"),
+        ))
+
+        self.assertEqual(totais["spend"], Decimal("150.00"))
+        self.assertEqual(totais["impressions"], Decimal(1500))
+        self.assertEqual(totais["link_clicks"], Decimal(75))
+        self.assertEqual(totais["conversions"], Decimal(6))
+        self.assertEqual(totais["video_views"], Decimal(10))
+        self.assertEqual(totais["purchases"], Decimal(3))
+        self.assertEqual(totais["purchase_value"], Decimal("15.00"))
+        self.assertIsNone(totais["reach"])
+
+    def test_painel_por_plataforma_nao_quebra_com_alcance_ausente(self):
+        """`painel` nao usa alcance, mas le o mesmo agregado: CPL, ROAS e os
+        valores continuam saindo normalmente."""
+        painel = m.painel(self._linhas(
+            linha_csv("2026-08-01", "Meta Ads", spend="100.00",
+                      conversions="10", purchases="2", purchase_value="40.00",
+                      reach="1000"),
+            linha_csv("2026-08-02", "Meta Ads", spend="100.00",
+                      conversions="10", purchases="2", purchase_value="40.00",
+                      reach="800"),
+        ))
+
+        self.assertEqual(painel["investimento_meta"], Decimal("200.00"))
+        self.assertEqual(painel["cpl_meta"], Decimal(10))
+        self.assertEqual(painel["valor_compras_meta"], Decimal(80))
+        self.assertEqual(painel["roas_meta"], Decimal("0.4"))
+
+
 class TestCatalogoDeMetricas(unittest.TestCase):
     """O catalogo espelha as limitacoes reais das duas APIs."""
 
@@ -1457,8 +1676,16 @@ class TestCatalogoDeMetricas(unittest.TestCase):
         )
         self.assertNotIn("video_views", m.METRICAS_CONSOLIDAVEIS)
 
-    def test_reach_nao_e_aditiva_no_tempo(self):
-        self.assertFalse(m.CATALOGO["reach"].aditiva_no_tempo)
+    def test_reach_e_declarada_nao_aditiva(self):
+        self.assertEqual(m.CATALOGO["reach"].agregacao, m.NAO_ADITIVA)
+
+    def test_reach_e_a_unica_nao_aditiva_hoje(self):
+        nao_aditivas = {
+            chave for chave, definicao in m.CATALOGO.items()
+            if definicao.agregacao == m.NAO_ADITIVA
+        }
+        self.assertEqual(nao_aditivas, {"reach"})
+        self.assertNotIn("reach", m.METRICAS_AGREGAVEIS)
 
     def test_metricas_consolidaveis_sao_as_cinco_comuns(self):
         self.assertEqual(
@@ -1626,6 +1853,21 @@ class TestSmokeStreamlitEPlotly(unittest.TestCase):
             m.serie_diaria(linhas, "spend"), "spend"
         )
         self.assertEqual(len(figura.data), 2)
+
+        figura_indisponivel = graficos.serie_temporal(
+            {"Meta Ads": [(date(2026, 6, 1), None)]}, "reach"
+        )
+        self.assertEqual(list(figura_indisponivel.data[0].y), [None])
+        self.assertNotIn(0, figura_indisponivel.data[0].y)
+        self.assertEqual(
+            list(figura_indisponivel.data[0].customdata), [m.INDISPONIVEL]
+        )
+        self.assertFalse(figura_indisponivel.data[0].connectgaps)
+
+        figura_zero_real = graficos.serie_temporal(
+            {"Meta Ads": [(date(2026, 6, 1), Decimal(0))]}, "spend"
+        )
+        self.assertEqual(list(figura_zero_real.data[0].y), [0.0])
 
         totais = m.agregar_por(linhas, lambda linha: linha["plataforma"])
         figura = graficos.barras_plataforma(

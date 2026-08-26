@@ -48,6 +48,27 @@ MULTIPLICADOR: str = "multiplicador"
 PISO_MULTIPLICADOR: Decimal = Decimal("0.001")
 
 
+# Como uma metrica se comporta quando varias linhas factuais entram no mesmo
+# recorte.
+#
+# `SOMAVEL` e o caso comum: investimento, impressoes, cliques e conversoes sao
+# contagens de eventos, e somar eventos de linhas distintas produz o total
+# certo.
+#
+# `NAO_ADITIVA` e o caso de `reach`: contagem de PESSOAS UNICAS. A mesma pessoa
+# alcancada por dois anuncios, ou pelo mesmo anuncio em dois dias, aparece uma
+# vez em cada linha — somar conta essa pessoa duas vezes. E a sobreposicao NAO
+# e derivavel do dado: a API entrega o resultado ja deduplicado do recorte que
+# ela mesma calculou, nunca os identificadores nem as intersecoes.
+#
+# Nao existe estimativa honesta a oferecer no lugar. `SUM(MAX(reach))` por
+# anuncio tambem nao e um limite inferior garantido, porque anuncios distintos
+# tambem se sobrepoem. A unica resposta correta sem informacao de deduplicacao
+# e a ausencia de resposta.
+SOMAVEL: str = "somavel"
+NAO_ADITIVA: str = "nao_aditiva"
+
+
 @dataclass(frozen=True)
 class Metrica:
     """Descreve uma metrica base do pipeline.
@@ -60,7 +81,9 @@ class Metrica:
             neste grao. O zero delas nao representa desempenho.
         comparavel_entre_plataformas: Se somar Meta com Google produz um total
             interpretavel.
-        aditiva_no_tempo: Se somar dias distintos produz um total valido.
+        agregacao: `SOMAVEL` quando somar linhas factuais produz um total
+            valido; `NAO_ADITIVA` quando nao produz. Ver
+            :data:`NAO_ADITIVA` e :func:`agregar`.
         observacao: Ressalva exibida junto do numero, quando houver.
         ajuda: Definicao da metrica, exibida na ajuda contextual do cartao.
             Responde "o que este numero conta", nao a ressalva de cobertura.
@@ -71,7 +94,7 @@ class Metrica:
     formato: str
     plataformas_sem_suporte: frozenset = frozenset()
     comparavel_entre_plataformas: bool = True
-    aditiva_no_tempo: bool = True
+    agregacao: str = SOMAVEL
     observacao: str = ""
     ajuda: str = ""
 
@@ -141,14 +164,16 @@ CATALOGO: dict[str, Metrica] = {
         "reach", "Alcance", INTEIRO,
         plataformas_sem_suporte=frozenset({"Google Ads"}),
         comparavel_entre_plataformas=False,
-        aditiva_no_tempo=False,
+        agregacao=NAO_ADITIVA,
         observacao=(
-            "Não disponibilizado pela GAQL neste grão. Além disso conta "
-            "pessoas únicas: a soma de dias não é o alcance único do período."
+            "Não disponibilizado pela GAQL neste grão. Métrica não aditiva: "
+            "só é exata na observação original (um anúncio em um dia)."
         ),
         ajuda=(
             "Quantidade de pessoas únicas alcançadas pelos anúncios, "
-            "reportada pelo Meta Ads."
+            "reportada pelo Meta Ads. Alcance é uma métrica não aditiva: o "
+            "dataset armazena alcance por anúncio e dia e não contém "
+            "informação para deduplicar pessoas entre anúncios ou períodos."
         ),
     ),
     "profile_views": Metrica(
@@ -193,7 +218,16 @@ METRICAS_CONSOLIDAVEIS: tuple[str, ...] = tuple(
     chave for chave, m in CATALOGO.items() if m.comparavel_entre_plataformas
 )
 
+# Metricas que um componente de agregacao (ranking, serie consolidada) pode
+# oferecer. Metrica nao aditiva fica de fora: ranquear entidades por um valor
+# que so existe na linha factual, ou desenhar uma serie que ficaria vazia em
+# todo ponto com mais de um anuncio, seria oferecer uma pergunta sem resposta.
+METRICAS_AGREGAVEIS: tuple[str, ...] = tuple(
+    chave for chave, m in CATALOGO.items() if m.agregacao == SOMAVEL
+)
+
 AVISO_NAO_DISPONIVEL: str = "não disponibilizado nesta origem"
+
 
 
 @dataclass(frozen=True)
@@ -525,13 +559,28 @@ def suportada(metrica: str, plataforma: str) -> bool:
 
 
 def agregar(linhas: list[dict]) -> dict:
-    """Soma as nove metricas do conjunto informado.
+    """Agrega as metricas do conjunto informado, respeitando a aditividade.
+
+    Metrica `SOMAVEL` e somada. Metrica `NAO_ADITIVA` — hoje so `reach` — so
+    tem valor quando o conjunto e **uma unica linha factual**, que e a
+    observacao original da API: um anuncio, um dia. A partir de duas linhas o
+    valor vira ``None``, porque a sobreposicao de audiencia entre elas nao e
+    derivavel do dado.
+
+    A regra vale para qualquer eixo, nao so o tempo. Dois anuncios no MESMO
+    dia tambem nao somam: alcance 1.000 e 800 nao dao 1.800, e nada no dataset
+    diz quantas pessoas foram alcancadas pelos dois.
+
+    Linha unica de plataforma que nao suporta a metrica tambem devolve
+    ``None``: ali o zero armazenado significa ausencia de suporte, e exibi-lo
+    como alcance seria apresentar indisponibilidade como desempenho.
 
     Args:
         linhas: Linhas ja filtradas, no grao de anuncio x dia.
 
     Returns:
-        Dicionario com `linhas` (contagem) e uma entrada `Decimal` por metrica.
+        Dicionario com `linhas` (contagem) e uma entrada por metrica —
+        `Decimal` quando ha valor, ``None`` quando a agregacao nao e valida.
     """
     total: dict = {"linhas": len(linhas)}
     for metrica in METRICAS:
@@ -539,6 +588,14 @@ def agregar(linhas: list[dict]) -> dict:
     for linha in linhas:
         for metrica in METRICAS:
             total[metrica] += linha[metrica]
+
+    for metrica in METRICAS:
+        if CATALOGO[metrica].agregacao != NAO_ADITIVA:
+            continue
+        if len(linhas) == 1 and suportada(metrica, linhas[0]["plataforma"]):
+            total[metrica] = linhas[0][metrica]
+        else:
+            total[metrica] = None
     return total
 
 
@@ -966,12 +1023,36 @@ def serie_diaria(
         Dicionario ``serie -> [(data, valor)]``, com as datas ordenadas e
         preenchidas apenas onde ha dado.
     """
+    # Um ponto da serie e (serie, dia). Ele pode reunir varios anuncios — e
+    # metrica nao aditiva nao pode ser somada entre eles. Guardamos tambem
+    # quantas linhas factuais formaram cada ponto: com exatamente uma, o valor
+    # armazenado e a propria observacao da API e vale; com mais de uma, o
+    # ponto fica sem valor em vez de virar uma soma sem significado. E o que
+    # permite ao grafico do detalhe de UM anuncio continuar mostrando alcance
+    # por dia, sem abrir a porta para somar anuncios distintos.
+    nao_aditiva = CATALOGO[metrica].agregacao == NAO_ADITIVA
     acumulado: dict = {}
+    contagem: dict = {}
+    suporte: dict = {}
     for linha in linhas:
         serie = linha["plataforma"] if por_plataforma else "Total"
         chave = linha["data"]
         acumulado.setdefault(serie, {})
+        contagem.setdefault(serie, {})
+        suporte.setdefault(serie, {})
         acumulado[serie][chave] = acumulado[serie].get(chave, Decimal(0)) + linha[metrica]
+        contagem[serie][chave] = contagem[serie].get(chave, 0) + 1
+        suporte[serie][chave] = (
+            suporte[serie].get(chave, True)
+            and suportada(metrica, linha["plataforma"])
+        )
+
+    if nao_aditiva:
+        for serie, valores in acumulado.items():
+            for chave in valores:
+                if contagem[serie][chave] != 1 or not suporte[serie][chave]:
+                    valores[chave] = None
+
     return {
         serie: sorted(valores.items()) for serie, valores in sorted(acumulado.items())
     }
@@ -990,8 +1071,21 @@ def ranking(
 
     Returns:
         Lista de dicionarios com o identificador pseudonimizado, a plataforma,
-        os pais na hierarquia, as metricas agregadas e os derivados.
+        os pais na hierarquia, as metricas agregadas e os derivados. Metrica
+        nao aditiva vem como ``None`` quando a entidade reune mais de uma
+        linha factual.
+
+    Raises:
+        ValueError: Se a ordenacao pedir uma metrica nao aditiva. O ranking
+            agrupa varias linhas por entidade, entao esse valor nao existe —
+            ordenar por ele exigiria inventar um numero.
     """
+    if CATALOGO[metrica].agregacao == NAO_ADITIVA:
+        raise ValueError(
+            f"ranking nao pode ordenar por '{metrica}': metrica nao aditiva "
+            "nao tem valor agregado por entidade."
+        )
+
     coluna = f"{nivel}_id"
     grupos: dict = {}
     for linha in linhas:

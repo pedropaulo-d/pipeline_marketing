@@ -343,6 +343,18 @@ def _cartao_metrica(metrica: str, totais: dict, anteriores: dict | None,
     base = anteriores[metrica] if anteriores else None
     variacao = m.variacao(totais[metrica], base)
     tag, cobertura = tag_cobertura(metrica, plataformas)
+
+    # Metrica nao aditiva sem valor: o recorte reune mais de uma linha
+    # factual, e a soma nao seria alcance — seria a mesma pessoa contada
+    # varias vezes. O cartao diz isso em vez de mostrar zero ou um total.
+    if definicao.agregacao == m.NAO_ADITIVA and totais[metrica] is None:
+        tag = tag or "Não aditiva"
+        cobertura = (
+            "Alcance é uma métrica não aditiva. O dataset armazena alcance "
+            "por anúncio e dia e não contém informação para deduplicar "
+            "pessoas entre anúncios ou períodos."
+        )
+
     # A definicao da metrica vem primeiro; a ressalva de cobertura (ou a
     # observacao do catalogo) fecha o texto. As duas convivem: saber o que o
     # numero conta nao dispensa saber de onde ele nao vem.
@@ -621,8 +633,10 @@ def pagina_ranking(linhas: list[dict], nivel: str, titulo: str,
                 [2, 1], vertical_alignment="bottom"
             )
             with coluna_metrica:
+                # Ranking agrega varias linhas por entidade: metrica nao
+                # aditiva nao entra, porque nao ha valor para ordenar.
                 metrica = seletor_metrica(
-                    "Ordenar por", m.METRICAS, f"metrica_{nivel}"
+                    "Ordenar por", m.METRICAS_AGREGAVEIS, f"metrica_{nivel}"
                 )
             with coluna_topo:
                 topo = st.selectbox("Exibir", (10, 15), key=f"topo_{nivel}")
@@ -708,8 +722,10 @@ def pagina_visao_geral(dataset, selecao: filtros.Selecao,
                 [1.35, 1], vertical_alignment="bottom"
             )
             with coluna_metrica:
+                # Cada ponto reune todos os anuncios do dia; metrica nao
+                # aditiva ficaria sem valor em todos eles.
                 metrica = seletor_metrica(
-                    "Métrica", m.METRICAS, "metrica_serie"
+                    "Métrica", m.METRICAS_AGREGAVEIS, "metrica_serie"
                 )
             with coluna_modo:
                 separar = st.toggle(
@@ -848,6 +864,8 @@ def pagina_anuncios(linhas: list[dict]) -> None:
                     "Anúncio", identificadores, key="anuncio_detalhe"
                 )
             with coluna_metrica:
+                # Aqui a serie e de UM anuncio por dia — cada ponto e a
+                # observacao original da API, entao alcance continua valendo.
                 metrica = seletor_metrica(
                     "Métrica", m.METRICAS, "metrica_anuncio_detalhe"
                 )
