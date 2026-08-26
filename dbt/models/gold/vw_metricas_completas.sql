@@ -33,8 +33,10 @@
 
     Ressalvas que acompanham as metricas
     ------------------------------------
-    - `reach`, `profile_views` e `purchases` sao zero no Google: ausencia de
-      suporte da GAQL neste grao, nao ausencia de dado.
+    - `reach`, `profile_views`, `purchases` e `purchase_value` sao zero no
+      Google: ausencia de suporte da GAQL neste grao, nao ausencia de dado.
+      `purchase_value` NAO e o equivalente Meta de `conversion_value`: um mede
+      compra, o outro mede todas as conversion actions da conta.
     - `video_views` tem definicao diferente em cada plataforma (TrueView de
       30s no Google, 3s no Meta). Valido dentro de cada uma, sem significado
       se somado entre elas.
@@ -93,7 +95,8 @@ select
     f.video_views,
     f.reach,
     f.profile_views,
-    f.purchases
+    f.purchases,
+    f.purchase_value
 
 from {{ ref('fato_metricas') }} as f
 

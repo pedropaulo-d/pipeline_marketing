@@ -25,7 +25,8 @@ select
     u.video_views,
     u.reach,
     u.profile_views,
-    u.purchases
+    u.purchases,
+    u.purchase_value
 
 from {{ ref('stg_ads_unified') }} u
 

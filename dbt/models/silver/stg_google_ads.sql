@@ -59,10 +59,16 @@ select
     coalesce((payload->>'conversions_value')::numeric, 0)  as conversion_value,
     coalesce((payload->>'video_trueview_views')::bigint, 0) as video_views,
 
-    -- Nao fornecidas pela GAQL neste nivel
+    -- Nao fornecidas pela GAQL neste nivel. Zero aqui e AUSENCIA DE SUPORTE,
+    -- nao desempenho medido — a convencao nao-nula do contrato unificado e
+    -- mantida, e quem apresenta o numero e responsavel por dizer isso.
+    -- `purchase_value` em especial NAO recebe `conversions_value`: o valor de
+    -- conversao do Google agrega todas as conversion actions da conta, nao so
+    -- compras. Sao conceitos diferentes e nao se substituem.
     0::bigint                                           as reach,
     0::int                                              as profile_views,
     0::int                                              as purchases,
+    0::numeric                                          as purchase_value,
 
     extracted_at
 

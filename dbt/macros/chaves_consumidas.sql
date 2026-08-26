@@ -18,6 +18,8 @@
     - `payload->>'chave'` e `payload->'chave'` — acesso direto.
     - `sum_action_value('payload', 'chave', [...])` — a macro do Meta, que le
       um array do payload (`actions`, `action_values`) em vez de um escalar.
+    - `acao_canonica('payload', 'chave', [...])` — mesma ideia, mas escolhendo
+      UMA representacao por prioridade em vez de somar.
 
     Se um padrao novo de acesso ao payload for introduzido no futuro, ele
     precisa ser acrescentado aqui, senao a chave sera reportada como nao
@@ -50,7 +52,8 @@
 
         {%- set padroes = [
             "payload\\s*->>?\\s*'([a-zA-Z0-9_]+)'",
-            "sum_action_value\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'"
+            "sum_action_value\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'",
+            "acao_canonica\\(\\s*'payload'\\s*,\\s*'([a-zA-Z0-9_]+)'"
         ] -%}
 
         {%- for padrao in padroes -%}

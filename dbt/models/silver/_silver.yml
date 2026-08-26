@@ -144,3 +144,137 @@ unit_tests:
       rows:
         - {data: '2026-08-01', anuncio_external_id: A, spend: 12}
         - {data: '2026-08-01', anuncio_external_id: B, spend: 20}
+
+  - name: meta_lead_alimenta_conversions_e_nunca_valor_de_compra
+    description: >
+      `lead` conta em `conversions` e nao encosta em `purchases` nem em
+      `purchase_value`. Tambem fixa que `conversion_value` do Meta e zero:
+      o Meta nao emite `lead` em `action_values`, entao o contrato antigo
+      permanece estruturalmente zerado — e por isso `purchase_value` existe.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "spend":"10","impressions":"100","inline_link_clicks":"5","reach":"90",
+                   "actions":[{"action_type":"lead","value":"3"},
+                              {"action_type":"video_view","value":"7"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, conversions: 3, conversion_value: 0,
+           purchases: 0, purchase_value: 0,
+           spend: 10, impressions: 100, link_clicks: 5, reach: 90, video_views: 7}
+
+  - name: meta_compra_nao_e_contada_duas_vezes
+    description: >
+      `purchase` e `omni_purchase` descrevem o MESMO evento e coexistem em
+      100% dos payloads reais com valor igual. A regra canonica le uma so:
+      2 compras continuam 2, e R$ 50 continuam R$ 50. Somar as duas
+      representacoes — o contrato anterior — devolveria 4 e R$ 100.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "spend":"10",
+                   "actions":[{"action_type":"purchase","value":"2"},
+                              {"action_type":"omni_purchase","value":"2"}],
+                   "action_values":[{"action_type":"purchase","value":"50"},
+                                    {"action_type":"omni_purchase","value":"50"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, purchases: 2, purchase_value: 50,
+           conversions: 0, conversion_value: 0, spend: 10}
+
+  - name: meta_compra_prioriza_a_representacao_omnichannel
+    description: >
+      Quando as duas representacoes divergem, a escolha e deterministica e nao
+      depende da ordem do array: vence `omni_purchase`, a agregacao
+      omnichannel do Meta. Sem isso a metrica ficaria a merce da ordem em que
+      a API serializa as acoes.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "actions":[{"action_type":"purchase","value":"3"},
+                              {"action_type":"omni_purchase","value":"5"}],
+                   "action_values":[{"action_type":"purchase","value":"30"},
+                                    {"action_type":"omni_purchase","value":"70"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, purchases: 5, purchase_value: 70}
+
+  - name: meta_compra_cai_para_purchase_quando_omni_falta
+    description: >
+      O fallback existe e funciona: sem `omni_purchase` no payload, vale
+      `purchase`. Nao se inventa zero para um evento que a fonte reportou.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "actions":[{"action_type":"purchase","value":"4"}],
+                   "action_values":[{"action_type":"purchase","value":"80"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, purchases: 4, purchase_value: 80}
+
+  - name: meta_compra_sem_valor_configurado_nao_inventa_valor
+    description: >
+      Compra reportada sem entrada em `action_values` vale zero em
+      `purchase_value` e mantem a quantidade. Medido: 132 payloads com compra
+      em `actions` contra 128 em `action_values`.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "actions":[{"action_type":"omni_purchase","value":"6"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, purchases: 6, purchase_value: 0}
+
+  - name: google_mantem_conversion_value_e_nao_alimenta_purchase_value
+    description: >
+      `conversions_value` do Google segue intacto em `conversion_value` e NAO
+      escorrega para `purchase_value`: valor de conversao agrega todas as
+      conversion actions da conta, nao apenas compras. `purchases` e
+      `purchase_value` continuam zero por ausencia de suporte da GAQL.
+    model: stg_google_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'google_ads'::text as source,
+                 date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","ad_group_id":"S1","ad_id":"A",
+                   "cost":"10","impressions":"100","clicks":"5",
+                   "conversions":"2.5","conversions_value":"99",
+                   "video_trueview_views":"7"}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, conversions: 2.5, conversion_value: 99,
+           purchases: 0, purchase_value: 0,
+           spend: 10, impressions: 100, link_clicks: 5, video_views: 7}

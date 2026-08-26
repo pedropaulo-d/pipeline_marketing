@@ -24,7 +24,7 @@
     'anuncio_external_id', 'anuncio_nome',
     'spend', 'impressions', 'link_clicks',
     'conversions', 'conversion_value',
-    'video_views', 'reach', 'profile_views', 'purchases',
+    'video_views', 'reach', 'profile_views', 'purchases', 'purchase_value',
     'extracted_at'
 ] %}
 
@@ -75,6 +75,7 @@ select
     reach,
     profile_views,
     purchases,
+    purchase_value,
 
     extracted_at
 
