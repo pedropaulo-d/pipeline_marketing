@@ -2961,11 +2961,64 @@ class TestFormatacaoDePeriodo(unittest.TestCase):
             "12 ago — 18 ago 2026",
         )
 
+    def test_meses_diferentes_no_mesmo_ano(self):
+        self.assertEqual(
+            self.f.formatar_periodo(date(2099, 1, 31), date(2099, 2, 2)),
+            "31 jan — 02 fev 2099",
+        )
+
     def test_anos_diferentes(self):
         self.assertEqual(
             self.f.formatar_periodo(date(2025, 12, 30), date(2026, 1, 2)),
             "30 dez 2025 — 02 jan 2026",
         )
+
+    def test_contrato_dos_nomes_dos_meses(self):
+        self.assertEqual(
+            self.f.MESES,
+            (
+                "jan", "fev", "mar", "abr", "mai", "jun",
+                "jul", "ago", "set", "out", "nov", "dez",
+            ),
+        )
+
+    def test_graficos_importa_meses_sem_ciclo(self):
+        import ast
+
+        def importados(caminho: Path) -> set[str]:
+            arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+            nomes: set[str] = set()
+            for no in ast.walk(arvore):
+                if isinstance(no, ast.Import):
+                    nomes.update(alias.name for alias in no.names)
+                elif isinstance(no, ast.ImportFrom):
+                    nomes.add(no.module or "")
+                    nomes.update(
+                        f"{no.module}.{alias.name}" for alias in no.names
+                    )
+            return nomes
+
+        importados_graficos = importados(
+            BASE_DIR / "dashboard" / "graficos.py"
+        )
+        importados_formatacao = importados(
+            BASE_DIR / "dashboard" / "formatacao.py"
+        )
+        arvore_graficos = ast.parse(
+            (BASE_DIR / "dashboard" / "graficos.py").read_text(
+                encoding="utf-8"
+            )
+        )
+        nomes_definidos = {
+            no.target.id
+            for no in arvore_graficos.body
+            if isinstance(no, ast.AnnAssign)
+            and isinstance(no.target, ast.Name)
+        }
+
+        self.assertIn("dashboard.formatacao.MESES", importados_graficos)
+        self.assertNotIn("MESES", nomes_definidos)
+        self.assertNotIn("dashboard.graficos", importados_formatacao)
 
     def test_nao_depende_de_locale(self):
         self.assertEqual(self.f._dia_mes(date(2026, 3, 5)), "05 mar")
@@ -3030,6 +3083,31 @@ class TestSmokeStreamlitEPlotly(unittest.TestCase):
             m.ranking(linhas, "campanha", "spend"), "spend"
         )
         self.assertEqual(len(figura.data), 1)
+
+    def test_serie_temporal_preserva_rotulos_mensais(self):
+        try:
+            graficos = importlib.import_module("dashboard.graficos")
+        except ImportError:
+            self.skipTest("plotly nao instalado neste ambiente")
+
+        figura = graficos.serie_temporal(
+            {
+                "Meta Ads": [
+                    (date(2099, 1, 2), Decimal("1")),
+                    (date(2099, 12, 3), Decimal("2")),
+                ],
+            },
+            "spend",
+        )
+
+        self.assertEqual(
+            list(figura.data[0].x),
+            ["02 jan 2099", "03 dez 2099"],
+        )
+        self.assertEqual(
+            list(figura.layout.xaxis.ticktext),
+            ["02 jan", "03 dez"],
+        )
 
     def test_cores_de_plataforma_sao_distintas(self):
         try:

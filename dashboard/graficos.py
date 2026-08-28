@@ -11,6 +11,7 @@ from decimal import Decimal
 import plotly.graph_objects as go
 
 from dashboard import metricas as m
+from dashboard.formatacao import MESES
 
 
 COR_PLATAFORMA: dict[str, str] = {
@@ -27,10 +28,6 @@ COR_HOVER: str = "#161D27"
 TRANSPARENTE: str = "rgba(0,0,0,0)"
 FONTE: str = (
     "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-)
-MESES: tuple[str, ...] = (
-    "jan", "fev", "mar", "abr", "mai", "jun",
-    "jul", "ago", "set", "out", "nov", "dez",
 )
 CONFIG_PLOTLY: dict = {
     "displayModeBar": False,
