@@ -2757,7 +2757,7 @@ class TestFronteiraDaFormatacao(unittest.TestCase):
         importados = re.findall(
             r"^\s*(?:import|from)\s+([\w.]+)", self._fonte(), re.MULTILINE
         )
-        self.assertEqual(importados, ["decimal"])
+        self.assertEqual(sorted(importados), ["datetime", "decimal"])
 
     def test_formatacao_nao_conhece_o_catalogo(self):
         # Inspeciona o CODIGO, nao a prosa: a docstring do modulo cita
@@ -2809,6 +2809,161 @@ class TestFronteiraDaFormatacao(unittest.TestCase):
         from dashboard import formatacao
         self.assertIs(m.formatar, formatacao.formatar)
         self.assertIs(m.formatar_variacao, formatacao.formatar_variacao)
+
+
+class TestPaginaSobreExtraida(unittest.TestCase):
+    """A pagina "Sobre os dados" saiu do orquestrador, sem mudar a tela.
+
+    `app.py` chama `main()` no import e por isso nao pode ser importado num
+    teste — a inspecao dele continua sendo por AST sobre o fonte. `sobre.py`,
+    ao contrario, importa sem efeito colateral, o que e ganho de testabilidade
+    da propria extracao.
+    """
+
+    def _arvore_app(self):
+        import ast
+        return ast.parse(
+            (BASE_DIR / "dashboard" / "app.py").read_text(encoding="utf-8")
+        )
+
+    def _arvore_sobre(self):
+        import ast
+        return ast.parse(
+            (BASE_DIR / "dashboard" / "sobre.py").read_text(encoding="utf-8")
+        )
+
+    def _importados(self, arvore) -> set[str]:
+        import ast
+        nomes = set()
+        for no in ast.walk(arvore):
+            if isinstance(no, ast.Import):
+                nomes.update(a.name for a in no.names)
+            elif isinstance(no, ast.ImportFrom):
+                nomes.add(no.module or "")
+                nomes.update(f"{no.module}.{a.name}" for a in no.names)
+        return nomes
+
+    def test_dependencia_e_de_mao_unica(self):
+        # O orquestrador conhece a pagina; a pagina nao conhece o orquestrador.
+        self.assertIn("dashboard.sobre", self._importados(self._arvore_app()))
+        importados_sobre = self._importados(self._arvore_sobre())
+        for proibido in ("dashboard.app", "app", "dashboard.app.main"):
+            with self.subTest(proibido=proibido):
+                self.assertNotIn(proibido, importados_sobre)
+
+    def test_sobre_nao_importa_a_raiz_do_projeto(self):
+        importados = self._importados(self._arvore_sobre())
+        for proibido in ("config", "plataformas", "janela", "manifesto",
+                         "pseudonimos", "psycopg2", "sqlalchemy"):
+            with self.subTest(proibido=proibido):
+                self.assertNotIn(proibido, importados)
+
+    def test_sobre_importa_sem_efeito_colateral(self):
+        # Diferente de `app.py`, importar a pagina nao desenha nada nem chama
+        # `main()`. Se algum dia passar a chamar, este teste quebra.
+        import ast
+        arvore = self._arvore_sobre()
+        chamadas_topo = [
+            no for no in arvore.body
+            if isinstance(no, ast.Expr) and isinstance(no.value, ast.Call)
+        ]
+        self.assertEqual(chamadas_topo, [])
+
+    def test_a_funcao_saiu_de_app_e_esta_em_sobre(self):
+        fonte_app = (BASE_DIR / "dashboard" / "app.py").read_text(
+            encoding="utf-8"
+        )
+        fonte_sobre = (BASE_DIR / "dashboard" / "sobre.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("def pagina_sobre(", fonte_app)
+        self.assertIn("def pagina_sobre(", fonte_sobre)
+        # O despacho continua acontecendo, agora qualificado.
+        self.assertIn("sobre.pagina_sobre(dataset, linhas)", fonte_app)
+
+    def test_widget_keys_da_pagina_preservadas(self):
+        # Trocar uma `key` reseta o estado do usuario e seria mudanca
+        # funcional disfarcada de refactor.
+        fonte = (BASE_DIR / "dashboard" / "sobre.py").read_text(
+            encoding="utf-8"
+        )
+        for chave in ("grade_resumo", "grade_resumo_entidades"):
+            with self.subTest(chave=chave):
+                self.assertIn(f'chave="{chave}"', fonte)
+
+    def test_pagina_nao_usa_session_state(self):
+        # Inspeciona o CODIGO, nao a prosa: a docstring do modulo cita
+        # `session_state` justamente para dizer que a pagina nao o usa.
+        import ast
+
+        atributos = {
+            no.attr for no in ast.walk(self._arvore_sobre())
+            if isinstance(no, ast.Attribute)
+        }
+        self.assertNotIn("session_state", atributos)
+
+    def _sobre(self):
+        """Importa o modulo, ou pula onde Streamlit nao existe.
+
+        O container do ETL de proposito nao instala as dependencias do painel;
+        e o mesmo motivo do skip em :class:`TestSmokeStreamlitEPlotly`.
+        """
+        try:
+            from dashboard import sobre
+        except ImportError:
+            self.skipTest("streamlit nao instalado neste ambiente")
+        return sobre
+
+    def test_texto_da_fronteira_preservado(self):
+        sobre = self._sobre()
+        self.assertIn("superfície de exposição", sobre.TEXTO_FRONTEIRA)
+        self.assertIn("não são disponibilizados", sobre.TEXTO_FRONTEIRA)
+
+    def test_assinatura_preservada(self):
+        import inspect
+        sobre = self._sobre()
+        self.assertEqual(
+            list(inspect.signature(sobre.pagina_sobre).parameters),
+            ["dataset", "linhas"],
+        )
+
+
+class TestFormatacaoDePeriodo(unittest.TestCase):
+    """A formatacao de data mudou de arquivo, nao de comportamento."""
+
+    def setUp(self):
+        from dashboard import formatacao
+        self.f = formatacao
+
+    def test_dia_unico(self):
+        self.assertEqual(
+            self.f.formatar_periodo(date(2026, 8, 12), date(2026, 8, 12)),
+            "12 ago 2026",
+        )
+
+    def test_mesmo_ano(self):
+        self.assertEqual(
+            self.f.formatar_periodo(date(2026, 8, 12), date(2026, 8, 18)),
+            "12 ago — 18 ago 2026",
+        )
+
+    def test_anos_diferentes(self):
+        self.assertEqual(
+            self.f.formatar_periodo(date(2025, 12, 30), date(2026, 1, 2)),
+            "30 dez 2025 — 02 jan 2026",
+        )
+
+    def test_nao_depende_de_locale(self):
+        self.assertEqual(self.f._dia_mes(date(2026, 3, 5)), "05 mar")
+        self.assertEqual(len(self.f.MESES), 12)
+
+    def test_app_consome_do_modulo_de_formatacao(self):
+        fonte = (BASE_DIR / "dashboard" / "app.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "from dashboard.formatacao import formatar_periodo", fonte
+        )
+        self.assertNotIn("def formatar_periodo(", fonte)
+        self.assertNotIn("def _dia_mes(", fonte)
 
 
 class TestSmokeStreamlitEPlotly(unittest.TestCase):

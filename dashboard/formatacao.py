@@ -31,6 +31,7 @@ Regras que a formatacao preserva
   como `0,000x`, que seria lido como ausencia de retorno.
 """
 
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -174,3 +175,38 @@ def formatar_variacao(valor) -> str:
     valor = Decimal(str(valor))
     seta = "▲" if valor > 0 else ("▼" if valor < 0 else "▬")
     return f"{seta} {_numero(abs(valor), 2)}%"
+
+
+MESES: tuple[str, ...] = (
+    "jan", "fev", "mar", "abr", "mai", "jun",
+    "jul", "ago", "set", "out", "nov", "dez",
+)
+
+
+def _dia_mes(dia: date) -> str:
+    """Formata uma data como ``12 ago``.
+
+    Args:
+        dia: Data a formatar.
+
+    Returns:
+        Dia e mes abreviado, sem depender de locale do sistema.
+    """
+    return f"{dia.day:02d} {MESES[dia.month - 1]}"
+
+
+def formatar_periodo(inicio: date, fim: date) -> str:
+    """Formata um intervalo de datas para o cabecalho.
+
+    Args:
+        inicio: Primeiro dia.
+        fim: Ultimo dia.
+
+    Returns:
+        Texto como ``12 ago — 18 ago 2026``.
+    """
+    if inicio == fim:
+        return f"{_dia_mes(inicio)} {inicio.year}"
+    if inicio.year == fim.year:
+        return f"{_dia_mes(inicio)} — {_dia_mes(fim)} {fim.year}"
+    return f"{_dia_mes(inicio)} {inicio.year} — {_dia_mes(fim)} {fim.year}"
