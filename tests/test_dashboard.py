@@ -2739,6 +2739,78 @@ class TestFronteiraDoContrato(unittest.TestCase):
                 self.assertNotIn(proibido, fonte)
 
 
+class TestFronteiraDaFormatacao(unittest.TestCase):
+    """Formatacao nao pode voltar a conhecer o catalogo de metricas.
+
+    A fronteira e semantica: **escolher** o formato e decisao de metrica;
+    **aplicar** o formato e apresentacao. Se `formatacao` passar a importar o
+    catalogo, a separacao vira apenas dois arquivos em vez de duas
+    responsabilidades.
+    """
+
+    def _fonte(self) -> str:
+        return (BASE_DIR / "dashboard" / "formatacao.py").read_text(
+            encoding="utf-8"
+        )
+
+    def test_formatacao_so_depende_da_biblioteca_padrao(self):
+        importados = re.findall(
+            r"^\s*(?:import|from)\s+([\w.]+)", self._fonte(), re.MULTILINE
+        )
+        self.assertEqual(importados, ["decimal"])
+
+    def test_formatacao_nao_conhece_o_catalogo(self):
+        # Inspeciona o CODIGO, nao a prosa: a docstring do modulo cita
+        # `spend`, `reach` e `plataforma` justamente para dizer que ele nao os
+        # conhece. Um assert por substring reprovaria a propria explicacao.
+        import ast
+
+        arvore = ast.parse(self._fonte())
+        nomes = {
+            no.id for no in ast.walk(arvore) if isinstance(no, ast.Name)
+        } | {
+            no.attr for no in ast.walk(arvore) if isinstance(no, ast.Attribute)
+        }
+        for proibido in ("CATALOGO", "DERIVADAS", "PAINEL", "METRICAS",
+                         "META", "GOOGLE", "suportada", "agregar"):
+            with self.subTest(proibido=proibido):
+                self.assertNotIn(proibido, nomes)
+
+        literais = {
+            no.value for no in ast.walk(arvore)
+            if isinstance(no, ast.Constant) and isinstance(no.value, str)
+        }
+        for chave in ("spend", "reach", "Meta Ads", "Google Ads"):
+            with self.subTest(chave=chave):
+                self.assertNotIn(chave, literais)
+
+    def test_metricas_continua_sendo_a_fachada_do_painel(self):
+        # ~50 chamadas em app.py, graficos.py e nos testes usam `m.<simbolo>`.
+        # A extracao nao pode ter quebrado nenhuma delas.
+        for simbolo in ("formatar", "formatar_variacao", "formatar_metrica",
+                        "formatar_derivada", "formatar_painel",
+                        "formatar_quantidade_resultado", "INDISPONIVEL",
+                        "MOEDA", "INTEIRO", "DECIMAL", "PERCENTUAL",
+                        "MULTIPLICADOR"):
+            with self.subTest(simbolo=simbolo):
+                self.assertTrue(hasattr(m, simbolo))
+
+    def test_adaptadores_do_catalogo_ficaram_em_metricas(self):
+        fonte_metricas = (BASE_DIR / "dashboard" / "metricas.py").read_text(
+            encoding="utf-8"
+        )
+        for adaptador in ("def formatar_metrica(", "def formatar_derivada(",
+                          "def formatar_painel(",
+                          "def formatar_quantidade_resultado("):
+            with self.subTest(adaptador=adaptador):
+                self.assertIn(adaptador, fonte_metricas)
+
+    def test_formatacao_e_metricas_expoem_a_mesma_funcao(self):
+        from dashboard import formatacao
+        self.assertIs(m.formatar, formatacao.formatar)
+        self.assertIs(m.formatar_variacao, formatacao.formatar_variacao)
+
+
 class TestSmokeStreamlitEPlotly(unittest.TestCase):
     """Fumaca: os modulos de apresentacao importam e produzem figura.
 
