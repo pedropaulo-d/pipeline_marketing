@@ -38,7 +38,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest import mock
 
-from dashboard import dados, filtros, gerar_dados_demo
+from dashboard import contratos, dados, filtros, gerar_dados_demo
 from dashboard import metricas as m
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -2633,6 +2633,110 @@ class TestContratoOpcionalDeResultado(unittest.TestCase):
         ], CABECALHO_RESULTADO).linhas[0]
         self.assertEqual(linha["result_count"], Decimal(9))
         self.assertEqual(linha["cost_per_result"], Decimal("15.35555556"))
+
+
+class TestContratoTipadoDaLinha(unittest.TestCase):
+    """`LinhaDataset` descreve o runtime — nao o modifica.
+
+    O `TypedDict` e anotacao: a linha continua sendo um `dict` comum. Estes
+    testes existem para que a anotacao nao possa divergir do que
+    `dados._converter` realmente produz sem alguem perceber.
+    """
+
+    def _linha(self, **kwargs) -> dict:
+        return carregar(
+            [linha_csv_resultado("2026-08-01", "Meta Ads", **kwargs)],
+            CABECALHO_RESULTADO,
+        ).linhas[0]
+
+    def test_linha_continua_sendo_dict(self):
+        linha = self._linha()
+        # TypedDict nao cria classe em runtime; se criasse, mudaria igualdade,
+        # serializacao e indexacao de todo o dashboard.
+        self.assertIs(type(linha), dict)
+
+    def test_contrato_e_fechado(self):
+        self.assertTrue(contratos.LinhaDataset.__total__)
+        self.assertEqual(contratos.LinhaDataset.__optional_keys__, frozenset())
+
+    def test_anotacao_cobre_exatamente_as_chaves_produzidas(self):
+        produzidas = set(self._linha())
+        anotadas = set(contratos.LinhaDataset.__annotations__)
+        self.assertEqual(produzidas, anotadas)
+
+    def test_contrato_cobre_o_cabecalho_v2_e_o_grupo_de_resultado(self):
+        anotadas = set(contratos.LinhaDataset.__annotations__)
+        for coluna in dados.COLUNAS_OBRIGATORIAS:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, anotadas)
+        for coluna in dados.COLUNAS_RESULTADO_OPCIONAIS:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, anotadas)
+
+    def test_chaves_de_resultado_existem_mesmo_na_superficie_v2(self):
+        # Presente-com-None nao e o mesmo que ausente. A v2 nao traz as
+        # colunas, e ainda assim as chaves existem — e por isso o contrato e
+        # total em vez de usar NotRequired.
+        linha = carregar([linha_csv("2026-08-01", "Meta Ads")]).linhas[0]
+        for campo in dados.COLUNAS_RESULTADO_OPCIONAIS:
+            with self.subTest(campo=campo):
+                self.assertIn(campo, linha)
+                self.assertIsNone(linha[campo])
+
+    def test_metricas_nunca_sao_none(self):
+        linha = self._linha()
+        for metrica in dados.METRICAS:
+            with self.subTest(metrica=metrica):
+                self.assertIsNotNone(linha[metrica])
+                self.assertIsInstance(linha[metrica], Decimal)
+
+    def test_result_count_none_nao_virou_zero(self):
+        # A anotacao `Decimal | None` existe justamente para preservar isto.
+        linha = carregar([linha_csv("2026-08-01", "Meta Ads")]).linhas[0]
+        self.assertIsNone(linha["result_count"])
+        self.assertNotEqual(linha["result_count"], Decimal(0))
+
+    def test_versoes_continuam_int_e_metricas_decimal(self):
+        linha = self._linha()
+        for nivel in dados.NIVEIS:
+            with self.subTest(nivel=nivel):
+                self.assertIs(type(linha[f"{nivel}_versao"]), int)
+        self.assertIs(type(linha["spend"]), Decimal)
+        self.assertIs(type(linha["data"]), date)
+
+    def test_reach_nao_ganhou_coercao(self):
+        # Tipar nao pode transformar ausencia em zero nem tornar reach aditivo.
+        linhas = carregar([
+            linha_csv_resultado("2026-08-01", "Meta Ads", reach="100"),
+            linha_csv_resultado("2026-08-02", "Meta Ads", reach="80",
+                                anuncio="Anuncio-AAAA0002"),
+        ], CABECALHO_RESULTADO).linhas
+        self.assertIsNone(m.agregar(linhas)["reach"])
+
+
+class TestFronteiraDoContrato(unittest.TestCase):
+    """O modulo de contrato precisa ficar na camada mais baixa do dashboard."""
+
+    def _fonte(self) -> str:
+        return (BASE_DIR / "dashboard" / "contratos.py").read_text(
+            encoding="utf-8"
+        )
+
+    def test_contrato_so_depende_da_biblioteca_padrao(self):
+        # Se ele importasse `dados` ou `metricas`, criaria ciclo; se importasse
+        # modulo da raiz, quebraria a imagem do painel.
+        importados = re.findall(
+            r"^\s*(?:import|from)\s+([\w.]+)", self._fonte(), re.MULTILINE
+        )
+        self.assertEqual(
+            sorted(importados), ["datetime", "decimal", "typing"]
+        )
+
+    def test_contrato_nao_cria_classe_em_runtime(self):
+        fonte = self._fonte()
+        for proibido in ("@dataclass", "NamedTuple", "BaseModel", "__init__"):
+            with self.subTest(proibido=proibido):
+                self.assertNotIn(proibido, fonte)
 
 
 class TestSmokeStreamlitEPlotly(unittest.TestCase):

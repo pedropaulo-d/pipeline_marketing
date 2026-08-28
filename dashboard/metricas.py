@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
+from dashboard.contratos import LinhaDataset
+
 INDISPONIVEL: str = "--"
 
 MOEDA: str = "moeda"
@@ -597,7 +599,7 @@ def suportada(metrica: str, plataforma: str) -> bool:
     return plataforma not in definicao.plataformas_sem_suporte
 
 
-def agregar(linhas: list[dict]) -> dict:
+def agregar(linhas: list[LinhaDataset]) -> dict:
     """Agrega as metricas do conjunto informado, respeitando a aditividade.
 
     Metrica `SOMAVEL` e somada. Metrica `NAO_ADITIVA` — hoje so `reach` — so
@@ -638,7 +640,7 @@ def agregar(linhas: list[dict]) -> dict:
     return total
 
 
-def agregar_por(linhas: list[dict], chave) -> dict:
+def agregar_por(linhas: list[LinhaDataset], chave) -> dict:
     """Agrupa e soma as metricas por uma chave qualquer.
 
     Args:
@@ -676,7 +678,7 @@ def dividir(numerador, denominador, fator: Decimal = Decimal(1)):
     return numerador / denominador * fator
 
 
-def janela_informativa(linha: dict) -> bool:
+def janela_informativa(linha: LinhaDataset) -> bool:
     """Diz se a linha carrega evidencia factual sobre a janela de atribuicao.
 
     Nem todo `result_attribution_window` NULL significa a mesma coisa, e tratar
@@ -716,7 +718,7 @@ def janela_informativa(linha: dict) -> bool:
     )
 
 
-def resultado_campanha(linhas: list[dict]) -> dict:
+def resultado_campanha(linhas: list[LinhaDataset]) -> dict:
     """Agrega Resultado Meta no grao campanha x periodo filtrado.
 
     O custo factual vindo da API e guardado para auditoria, mas nao participa
@@ -893,7 +895,7 @@ def calcular_derivada(chave: str, totais: dict):
     )
 
 
-def totais_por_plataforma(linhas: list[dict]) -> dict[str, dict]:
+def totais_por_plataforma(linhas: list[LinhaDataset]) -> dict[str, dict]:
     """Agrega as metricas separadamente por plataforma.
 
     Args:
@@ -940,7 +942,7 @@ def _soma(*valores):
     return sum(presentes, Decimal(0))
 
 
-def painel(linhas: list[dict]) -> dict:
+def painel(linhas: list[LinhaDataset]) -> dict:
     """Calcula todos os indicadores do painel a partir das SOMAS do recorte.
 
     Ponto unico das formulas de resultado e de valor. Os componentes leem
@@ -1244,7 +1246,7 @@ def formatar_variacao(valor) -> str:
 
 
 def serie_diaria(
-    linhas: list[dict], metrica: str, por_plataforma: bool = True
+    linhas: list[LinhaDataset], metrica: str, por_plataforma: bool = True
 ) -> dict:
     """Monta a serie temporal de uma metrica.
 
@@ -1294,7 +1296,8 @@ def serie_diaria(
 
 
 def ranking(
-    linhas: list[dict], nivel: str, metrica: str, topo: int | None = None
+    linhas: list[LinhaDataset], nivel: str, metrica: str,
+    topo: int | None = None,
 ) -> list[dict]:
     """Ordena entidades de um nivel por uma metrica.
 

@@ -44,6 +44,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+from dashboard.contratos import LinhaDataset
 from pathlib import Path
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
@@ -183,7 +185,7 @@ class Dataset:
             coluna nova no dashboard sem alguem decidir.
     """
 
-    linhas: list[dict]
+    linhas: list[LinhaDataset]
     fonte: Fonte
     manifesto: dict = field(default_factory=dict)
     colunas_ignoradas: tuple[str, ...] = ()
@@ -327,7 +329,7 @@ def validar_cabecalho(cabecalho: list[str]) -> tuple[str, ...]:
     return tuple(c for c in cabecalho if c not in conhecidas)
 
 
-def _converter(bruto: dict, numero_linha: int) -> dict:
+def _converter(bruto: dict, numero_linha: int) -> LinhaDataset:
     """Tipa uma linha do CSV.
 
     Args:

@@ -20,6 +20,8 @@ esperado de filtro de BI, e evita a tela em branco por engano.
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
+from dashboard.contratos import LinhaDataset
+
 NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset")
 
 # Janela aberta por padrao: os sete ultimos dias de calendario **do dataset**.
@@ -51,7 +53,9 @@ class Selecao:
     adsets: tuple[str, ...] = ()
 
 
-def intervalo_disponivel(linhas: list[dict]) -> tuple[date | None, date | None]:
+def intervalo_disponivel(
+    linhas: list[LinhaDataset],
+) -> tuple[date | None, date | None]:
     """Descobre o intervalo de datas coberto pelo dataset.
 
     Args:
@@ -66,7 +70,9 @@ def intervalo_disponivel(linhas: list[dict]) -> tuple[date | None, date | None]:
     return min(datas), max(datas)
 
 
-def periodo_padrao(linhas: list[dict]) -> tuple[date | None, date | None]:
+def periodo_padrao(
+    linhas: list[LinhaDataset],
+) -> tuple[date | None, date | None]:
     """Calcula o periodo aberto por padrao: os ultimos sete dias do dataset.
 
     A janela e de **calendario**, e nao de dias com dado: vai de
@@ -89,7 +95,7 @@ def periodo_padrao(linhas: list[dict]) -> tuple[date | None, date | None]:
     return max(inicio, candidato), fim
 
 
-def selecao_inicial(linhas: list[dict]) -> Selecao:
+def selecao_inicial(linhas: list[LinhaDataset]) -> Selecao:
     """Monta a selecao padrao: ultimos sete dias, sem recorte de entidade.
 
     Args:
@@ -106,7 +112,9 @@ def selecao_inicial(linhas: list[dict]) -> Selecao:
     return Selecao(inicio, fim)
 
 
-def _no_periodo(linhas: list[dict], selecao: Selecao) -> list[dict]:
+def _no_periodo(
+    linhas: list[LinhaDataset], selecao: Selecao
+) -> list[LinhaDataset]:
     """Recorta as linhas pelo periodo da selecao.
 
     Args:
@@ -123,7 +131,7 @@ def _no_periodo(linhas: list[dict], selecao: Selecao) -> list[dict]:
     ]
 
 
-def opcoes(linhas: list[dict], selecao: Selecao) -> dict:
+def opcoes(linhas: list[LinhaDataset], selecao: Selecao) -> dict:
     """Calcula as opcoes validas de cada filtro, respeitando a hierarquia.
 
     Cada nivel enxerga apenas o que sobrou dos filtros acima dele. E o que faz
@@ -158,7 +166,7 @@ def opcoes(linhas: list[dict], selecao: Selecao) -> dict:
     return resultado
 
 
-def sanear(linhas: list[dict], selecao: Selecao) -> Selecao:
+def sanear(linhas: list[LinhaDataset], selecao: Selecao) -> Selecao:
     """Remove da selecao o que deixou de ser opcao valida.
 
     Args:
@@ -188,7 +196,9 @@ def sanear(linhas: list[dict], selecao: Selecao) -> Selecao:
     return limpa
 
 
-def aplicar(linhas: list[dict], selecao: Selecao) -> list[dict]:
+def aplicar(
+    linhas: list[LinhaDataset], selecao: Selecao
+) -> list[LinhaDataset]:
     """Aplica todos os filtros simultaneamente.
 
     Args:
@@ -216,8 +226,8 @@ def aplicar(linhas: list[dict], selecao: Selecao) -> list[dict]:
 
 
 def aplicar_em_periodo(
-    linhas: list[dict], selecao: Selecao, inicio: date, fim: date
-) -> list[dict]:
+    linhas: list[LinhaDataset], selecao: Selecao, inicio: date, fim: date
+) -> list[LinhaDataset]:
     """Aplica os filtros de entidade em outro periodo.
 
     Serve a comparacao com o periodo anterior: os recortes de plataforma,
