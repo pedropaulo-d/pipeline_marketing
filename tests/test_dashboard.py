@@ -1847,11 +1847,49 @@ class TestDatasetDeDemonstracao(unittest.TestCase):
         )
 
 
-class TestResultadoPorCampanha(unittest.TestCase):
-    """Resultado Meta e agregado somente para um tipo/janela validado."""
+class CSVComResultado:
+    """Atalhos para as suites que leem o cabecalho com os campos de Resultado.
+
+    Os dois metodos existiam copiados em sete classes, com corpo identico —
+    conferido por AST, nao por semelhanca de nome. Sao encaminhamentos de uma
+    linha para `carregar`/`linha_csv_resultado`, que ja sao a fabrica
+    compartilhada do modulo: nao embutem cenario, nao escolhem valor e nao
+    escondem expectativa. Por isso podem ser centralizados sem tornar os
+    testes menos legiveis — o cenario continua escrito no proprio teste.
+
+    E um mixin, e nao funcoes de modulo, para que as 49 chamadas existentes
+    (`self._carregar(...)`, `self._linha(...)`) continuem identicas: a
+    consolidacao nao deve aparecer no corpo de teste nenhum.
+    """
 
     def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        """Carrega linhas ja montadas sob o cabecalho com Resultado.
+
+        Args:
+            linhas: Linhas de CSV, cada uma como lista de campos.
+
+        Returns:
+            Linhas tipadas do dataset.
+        """
         return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def _linha(self, **kwargs) -> dict:
+        """Monta e carrega UMA linha Meta de 2026-08-01.
+
+        Args:
+            **kwargs: Campos repassados a `linha_csv_resultado`.
+
+        Returns:
+            A linha tipada.
+        """
+        return carregar(
+            [linha_csv_resultado("2026-08-01", "Meta Ads", **kwargs)],
+            CABECALHO_RESULTADO,
+        ).linhas[0]
+
+
+class TestResultadoPorCampanha(CSVComResultado, unittest.TestCase):
+    """Resultado Meta e agregado somente para um tipo/janela validado."""
 
     def _lead(self, custo_um: str = "99", custo_dois: str = "1") -> list[dict]:
         return self._carregar([
@@ -1979,16 +2017,13 @@ class TestResultadoPorCampanha(unittest.TestCase):
                 self.assertIn(f'"{coluna}"', fonte)
 
 
-class TestFormasReaisDeResultado(unittest.TestCase):
+class TestFormasReaisDeResultado(CSVComResultado, unittest.TestCase):
     """Formas que a Meta realmente devolve, medidas no bloco 2026-08-01..07.
 
     Cobrem os rotulos dos indicators observados, a quantidade zero legitima e
     os dois estados da janela de atribuicao. Nenhuma delas pode virar
     interpretacao de negocio inventada na camada de apresentacao.
     """
-
-    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
-        return carregar(linhas, CABECALHO_RESULTADO).linhas
 
     def test_indicators_de_lead_observados_recebem_rotulo_lead(self):
         for indicator in ("actions:offsite_conversion.fb_pixel_lead",
@@ -2126,14 +2161,8 @@ class TestFormasReaisDeResultado(unittest.TestCase):
         self.assertIsNone(m.agregar(linhas)["reach"])
 
 
-class TestContratoDasFormasReais(unittest.TestCase):
+class TestContratoDasFormasReais(CSVComResultado, unittest.TestCase):
     """O CSV aceita janela e custo vazios, e so nas condicoes da Silver."""
-
-    def _linha(self, **kwargs):
-        return carregar(
-            [linha_csv_resultado("2026-08-01", "Meta Ads", **kwargs)],
-            CABECALHO_RESULTADO,
-        ).linhas[0]
 
     def test_janela_vazia_e_aceita_como_ausencia(self):
         linha = self._linha(
@@ -2170,7 +2199,7 @@ class TestContratoDasFormasReais(unittest.TestCase):
             self._linha(result_count="5", cost_per_result="1")
 
 
-class TestAusenciaTotalNaAgregacao(unittest.TestCase):
+class TestAusenciaTotalNaAgregacao(CSVComResultado, unittest.TestCase):
     """Ausencia total nao herda o Resultado observado em outro dia.
 
     Medicao do bloco real 2026-08-01..07: 56 campanhas, 17 apenas com ausencia
@@ -2180,9 +2209,6 @@ class TestAusenciaTotalNaAgregacao(unittest.TestCase):
     """
 
     LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
-
-    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
-        return carregar(linhas, CABECALHO_RESULTADO).linhas
 
     def _ausente(self, data: str, anuncio: str, spend: str) -> list[str]:
         """Linha de ausencia total: a Meta nao devolveu results nem custo."""
@@ -2342,7 +2368,7 @@ class TestAusenciaTotalNaAgregacao(unittest.TestCase):
                 self.assertNotIn(f"'{termo}'", corpo)
 
 
-class TestJanelaNeutraEmResultadoZero(unittest.TestCase):
+class TestJanelaNeutraEmResultadoZero(CSVComResultado, unittest.TestCase):
     """O NULL de janela da FORMA A e neutro, nao uma segunda semantica.
 
     Medido no bloco real de 2026-08-01..07: tratar os dois NULLs como iguais
@@ -2353,9 +2379,6 @@ class TestJanelaNeutraEmResultadoZero(unittest.TestCase):
 
     LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
     THRU: str = "video_thruplay_watched_actions"
-
-    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
-        return carregar(linhas, CABECALHO_RESULTADO).linhas
 
     def _forma_a(self, data: str, anuncio: str, spend: str,
                  tipo: str | None = None) -> list[str]:
@@ -2558,11 +2581,8 @@ class TestJanelaNeutraEmResultadoZero(unittest.TestCase):
         self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
 
 
-class TestMappingSinteticoRemovido(unittest.TestCase):
+class TestMappingSinteticoRemovido(CSVComResultado, unittest.TestCase):
     """`lead` sem prefixo saiu do mapping; `actions[lead]` continua intacto."""
-
-    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
-        return carregar(linhas, CABECALHO_RESULTADO).linhas
 
     def test_indicator_lead_sem_prefixo_nao_tem_rotulo(self):
         self.assertNotIn("lead", m.ROTULOS_RESULTADO)
@@ -2635,19 +2655,13 @@ class TestContratoOpcionalDeResultado(unittest.TestCase):
         self.assertEqual(linha["cost_per_result"], Decimal("15.35555556"))
 
 
-class TestContratoTipadoDaLinha(unittest.TestCase):
+class TestContratoTipadoDaLinha(CSVComResultado, unittest.TestCase):
     """`LinhaDataset` descreve o runtime — nao o modifica.
 
     O `TypedDict` e anotacao: a linha continua sendo um `dict` comum. Estes
     testes existem para que a anotacao nao possa divergir do que
     `dados._converter` realmente produz sem alguem perceber.
     """
-
-    def _linha(self, **kwargs) -> dict:
-        return carregar(
-            [linha_csv_resultado("2026-08-01", "Meta Ads", **kwargs)],
-            CABECALHO_RESULTADO,
-        ).linhas[0]
 
     def test_linha_continua_sendo_dict(self):
         linha = self._linha()
