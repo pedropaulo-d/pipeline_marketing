@@ -98,6 +98,53 @@ def _parse_reference_date(raw_value: str | None) -> date | None:
         return None
 
 
+def _preparar_linhas(
+    registros: list[dict], source: str, date_field: str, batch_id: uuid.UUID
+) -> list[dict]:
+    """Converte os registros brutos nas linhas que a bronze recebe.
+
+    E a metade PURA de :func:`load_source`: nao le disco, nao abre sessao e nao
+    emite instrucao nenhuma. Registro sem dia de referencia utilizavel e
+    descartado aqui, antes de qualquer contato com o banco — a bronze so
+    aceita linha que sabe a que dia pertence.
+
+    O aviso de descarte fica junto porque descreve esta decisao, e nao a
+    gravacao que vem depois.
+
+    Args:
+        registros: Registros lidos do arquivo bruto.
+        source: Identificador da plataforma (``meta_ads`` ou ``google_ads``).
+        date_field: Nome do campo que contem o dia de referencia. Difere entre
+            as plataformas, entao vem do registro em ``plataformas.py`` — o
+            loader nao presume o nome do Meta.
+        batch_id: Identificador desta unidade de carga.
+
+    Returns:
+        Linhas prontas para o insert, na ordem original. Lista vazia quando
+        nenhum registro tinha data utilizavel.
+    """
+    linhas = []
+    descartados = 0
+    for registro in registros:
+        referencia = _parse_reference_date(registro.get(date_field))
+        if referencia is None:
+            descartados += 1
+            continue
+        linhas.append({
+            "source": source,
+            "reference_date": referencia,
+            "batch_id": str(batch_id),
+            "payload": json.dumps(registro, ensure_ascii=False),
+        })
+
+    if descartados:
+        logger.warning(
+            "%s: %d registros sem '%s' valido foram descartados.",
+            source, descartados, date_field,
+        )
+    return linhas
+
+
 def load_source(
     session: Session, source: str, path: Path, date_field: str, batch_id: uuid.UUID
 ) -> int:
@@ -122,25 +169,7 @@ def load_source(
         logger.warning("Arquivo bruto vazio: %s", path.name)
         return 0
 
-    linhas = []
-    descartados = 0
-    for registro in registros:
-        referencia = _parse_reference_date(registro.get(date_field))
-        if referencia is None:
-            descartados += 1
-            continue
-        linhas.append({
-            "source": source,
-            "reference_date": referencia,
-            "batch_id": str(batch_id),
-            "payload": json.dumps(registro, ensure_ascii=False),
-        })
-
-    if descartados:
-        logger.warning(
-            "%s: %d registros sem '%s' valido foram descartados.",
-            source, descartados, date_field,
-        )
+    linhas = _preparar_linhas(registros, source, date_field, batch_id)
 
     if not linhas:
         return 0
