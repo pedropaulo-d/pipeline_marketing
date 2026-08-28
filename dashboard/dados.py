@@ -132,8 +132,6 @@ FORMATO_ID: dict[str, re.Pattern] = {
 # impede que texto arbitrario (e portanto identificavel) passe por ali.
 FORMATO_PLATAFORMA: re.Pattern = re.compile(r"^[A-Za-z0-9 ._-]{1,30}$")
 
-PLATAFORMAS_CONHECIDAS: tuple[str, ...] = ("Meta Ads", "Google Ads")
-
 FORMATO_RESULT_TYPE: re.Pattern = re.compile(r"^[A-Za-z0-9_.:]{1,120}$")
 FORMATO_ATTRIBUTION_WINDOW: re.Pattern = re.compile(r"^[A-Za-z0-9_|]{1,120}$")
 
