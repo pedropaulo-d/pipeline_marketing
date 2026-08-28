@@ -493,6 +493,85 @@ class TestValorAnaliticoPreservado(BaseExportacao):
         self.assertTrue(com_duas_versoes)
 
 
+class TestPosChecksDeIdentidade(unittest.TestCase):
+    """Congela as checagens estruturais antes de extraí-las de ``conferir``."""
+
+    def setUp(self):
+        self.origem = linhas_da_view()
+        with com_chave():
+            self.artefato = exportador.transformar(self.origem)
+
+    def test_artefato_valido_nao_produz_problema(self):
+        self.assertEqual(exportador.conferir(self.origem, self.artefato), [])
+
+    def test_colisao_de_pseudonimo_preserva_mensagem(self):
+        contas = list(dict.fromkeys(
+            linha["conta_id"] for linha in self.artefato
+        ))
+        for linha in self.artefato:
+            if linha["conta_id"] == contas[1]:
+                linha["conta_id"] = contas[0]
+
+        self.assertEqual(
+            exportador.conferir(self.origem, self.artefato),
+            [
+                "colisao de pseudonimo em conta: 2 entidades na origem para "
+                "1 identificadores publicos"
+            ],
+        )
+
+    def test_hierarquia_quebrada_preserva_mensagem(self):
+        contas = list(dict.fromkeys(
+            linha["conta_id"] for linha in self.artefato
+        ))
+        self.artefato[0]["conta_id"] = contas[1]
+
+        self.assertEqual(
+            exportador.conferir(self.origem, self.artefato),
+            ["hierarquia quebrada: 1 campanha(s) com mais de um conta"],
+        )
+
+    def test_ordem_de_colisao_e_schema_permanece_estavel(self):
+        contas = list(dict.fromkeys(
+            linha["conta_id"] for linha in self.artefato
+        ))
+        for linha in self.artefato:
+            if linha["conta_id"] == contas[1]:
+                linha["conta_id"] = contas[0]
+
+        primeira = self.artefato[0]
+        self.artefato[0] = {
+            "plataforma": primeira["plataforma"],
+            "data": primeira["data"],
+            **{
+                coluna: valor for coluna, valor in primeira.items()
+                if coluna not in {"data", "plataforma"}
+            },
+        }
+
+        self.assertEqual(
+            exportador.conferir(self.origem, self.artefato),
+            [
+                "colisao de pseudonimo em conta: 2 entidades na origem para "
+                "1 identificadores publicos",
+                "schema do artefato tem 20 colunas, esperadas 20",
+            ],
+        )
+
+    def test_chave_natural_em_valor_preserva_mensagem(self):
+        conta_nk = self.origem[0]["conta_nk"]
+        with com_chave():
+            conta_id = pseudonimos.gerar_id_publico("conta", conta_nk)
+        for linha in self.artefato:
+            if linha["conta_id"] == conta_id:
+                linha["conta_id"] = conta_nk
+
+        self.assertEqual(
+            exportador.conferir(self.origem, self.artefato),
+            ["chave natural de conta encontrada entre os valores do artefato"],
+        )
+
+
 class TestDeterminismoEManifesto(BaseExportacao):
     """Duas geracoes iguais, e um manifesto que descreve o artefato."""
 

@@ -499,36 +499,19 @@ def cardinalidades(linhas: list[dict], sufixo: str) -> dict:
     }
 
 
-def conferir(origem: list[dict], artefato: list[dict]) -> list[str]:
-    """Roda os pos-checks do exportador.
-
-    Nenhum deles confia na transformacao: todos comparam o artefato produzido
-    com a origem lida, ou verificam propriedades do proprio artefato.
+def _conferir_estrutura_de_identidade(
+    origem: list[dict], artefato: list[dict]
+) -> list[str]:
+    """Confere pseudonimos, hierarquia, schema e ausencia de chaves naturais.
 
     Args:
-        origem: Linhas lidas da view.
-        artefato: Linhas ja transformadas.
+        origem: Linhas lidas da view, ainda com chaves naturais.
+        artefato: Linhas transformadas, apenas com identidade publica.
 
     Returns:
-        Lista de problemas. Vazia quando o artefato pode ser publicado no
-        diretorio de exposicao.
+        Problemas estruturais de identidade, na ordem dos pos-checks.
     """
     problemas: list[str] = []
-
-    # 1. Contagem.
-    if len(artefato) != len(origem):
-        problemas.append(
-            f"contagem divergente: {len(origem)} na origem, "
-            f"{len(artefato)} no artefato"
-        )
-
-    # 2. Grao unico.
-    graos = {(linha["anuncio_id"], str(linha["data"])) for linha in artefato}
-    if len(graos) != len(artefato):
-        problemas.append(
-            f"grao nao e unico: {len(artefato)} linhas para {len(graos)} "
-            "pares (anuncio_id, data)"
-        )
 
     # 3-6. Colisao de pseudonimo: duas entidades distintas na origem nao podem
     #      virar o mesmo ID publico. A comparacao e por CARDINALIDADE, e nao
@@ -585,6 +568,42 @@ def conferir(origem: list[dict], artefato: list[dict]) -> list[str]:
                 f"chave natural de {nivel} encontrada entre os valores do "
                 "artefato"
             )
+
+    return problemas
+
+
+def conferir(origem: list[dict], artefato: list[dict]) -> list[str]:
+    """Roda os pos-checks do exportador.
+
+    Nenhum deles confia na transformacao: todos comparam o artefato produzido
+    com a origem lida, ou verificam propriedades do proprio artefato.
+
+    Args:
+        origem: Linhas lidas da view.
+        artefato: Linhas ja transformadas.
+
+    Returns:
+        Lista de problemas. Vazia quando o artefato pode ser publicado no
+        diretorio de exposicao.
+    """
+    problemas: list[str] = []
+
+    # 1. Contagem.
+    if len(artefato) != len(origem):
+        problemas.append(
+            f"contagem divergente: {len(origem)} na origem, "
+            f"{len(artefato)} no artefato"
+        )
+
+    # 2. Grao unico.
+    graos = {(linha["anuncio_id"], str(linha["data"])) for linha in artefato}
+    if len(graos) != len(artefato):
+        problemas.append(
+            f"grao nao e unico: {len(artefato)} linhas para {len(graos)} "
+            "pares (anuncio_id, data)"
+        )
+
+    problemas += _conferir_estrutura_de_identidade(origem, artefato)
 
     # 10. Agregados por (plataforma, data).
     if agregados(origem) != agregados(artefato):
