@@ -1449,6 +1449,69 @@ uma resposta honesta.
 
 
 
+### 5.20 Dois `NULL` iguais na coluna, diferentes no significado
+
+🔍 Achado que só apareceu quando a regra encontrou o dado real — e que teria
+apagado metade do painel.
+
+Depois de aceitar as três formas da seção 5.17, a agregação por campanha
+passou a exigir uma única semântica de janela de atribuição no recorte: se
+parte das linhas tem janela explícita e parte tem janela `NULL`, o número
+agregado fica indisponível. A regra é correta em princípio — misturar
+semânticas de atribuição produziria um total sem significado.
+
+**Aplicada ao bloco real, ela zerou 20 das 39 campanhas com Resultado
+observado.** Mais da metade. Antes de aceitar o resultado, a causa foi medida
+campanha a campanha, e o diagnóstico foi unânime: as 20 tinham **um único**
+tipo de Resultado, nenhuma linha da Forma B, e a suposta "segunda janela" era o
+`NULL` das linhas de **Forma A**.
+
+Aí está o erro. A coluna guarda `NULL` nos dois casos, mas eles não dizem a
+mesma coisa:
+
+| Origem do `NULL` | O que significa | Papel na comparação |
+|---|---|---|
+| Forma A | não há `values`, logo não há janela factual a comparar | **neutro** — ausência de evidência |
+| Forma B | há quantidade e custo, e o indicador não tem janela aplicável | **informativo** — é uma semântica real de "sem janela" |
+
+A Forma A não tem janela porque **não tem quantidade**, não porque use outra
+janela. Tratá-la como uma segunda semântica é comparar uma afirmação com um
+silêncio.
+
+Confirmação estrutural no censo por indicador: para todos os indicadores de
+prefixo `actions:` e para o de vídeo, as linhas com quantidade zero e as linhas
+com janela `NULL` coincidem exatamente — 20/20, 4/4, 178/178, 3/3. As linhas de
+janela `NULL` desses tipos *são* as linhas de Forma A.
+
+**A correção introduziu a distinção entre janela neutra e janela `NULL`
+informativa.** Só as linhas informativas — quantidade positiva, ou custo
+presente, ou janela explícita — decidem a compatibilidade. Consequências:
+
+- Forma A + janela explícita do mesmo tipo: **agrega**, e a janela efetiva do
+  agregado é a que a linha informativa declarou;
+- Forma B + janela explícita: **continua incompatível**, como antes;
+- recorte inteiramente de Forma A: agrega com quantidade zero, tipo conhecido e
+  custo indisponível — não há divisor, o que é diferente de não haver dado;
+- quantidade zero **com** janela explícita continua informativa: declaração
+  explícita não é neutralizada por o resultado ter sido zero.
+
+Dois limites que a correção não cruza. Primeiro, **o investimento das linhas
+neutras continua no denominador**: uma campanha que gastou em dois dias e
+converteu num só custa a soma dos dois dias por conversão, não a de um. No
+exemplo mínimo, 10 + 10 de investimento com 2 resultados dá 10 por resultado, e
+não 5. Segundo, **nenhuma janela é imputada ao grão factual**: a linha de Forma
+A permanece gravada com janela `NULL` na camada Silver e na Gold. A
+neutralidade existe apenas na análise agregada, e nunca vira valor herdado de
+outro dia — o que reincidiria na inferência recusada na seção 5.18.
+
+O padrão metodológico vale registrar, porque é o mesmo das seções 5.1, 5.7 e
+5.9 em roupa nova: **a regra passava em todos os testes**. Ela só falhou contra
+o dado real, e o sintoma não foi erro nem exceção — foi um painel educadamente
+vazio. Número ausente também é um resultado errado, e mais difícil de notar que
+um número absurdo, porque parece prudência.
+
+
+
 ## 6. Validação e evidências
 
 ### 6.1 Paridade entre implementações

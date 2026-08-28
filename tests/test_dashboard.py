@@ -2342,6 +2342,222 @@ class TestAusenciaTotalNaAgregacao(unittest.TestCase):
                 self.assertNotIn(f"'{termo}'", corpo)
 
 
+class TestJanelaNeutraEmResultadoZero(unittest.TestCase):
+    """O NULL de janela da FORMA A e neutro, nao uma segunda semantica.
+
+    Medido no bloco real de 2026-08-01..07: tratar os dois NULLs como iguais
+    tornava 20 das 39 campanhas tipadas artificialmente incompativeis. Todas as
+    20 tinham um unico result_type e nenhuma FORMA B — a segunda "janela" era o
+    NULL de linhas de FORMA A ao lado de linhas com janela explicita.
+    """
+
+    LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
+    THRU: str = "video_thruplay_watched_actions"
+
+    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def _forma_a(self, data: str, anuncio: str, spend: str,
+                 tipo: str | None = None) -> list[str]:
+        """Tipo declarado, sem quantidade, sem custo e sem janela."""
+        return linha_csv_resultado(
+            data, "Meta Ads", spend=spend, anuncio=anuncio,
+            result_type=tipo or self.LEAD, result_count="0",
+        )
+
+    def _forma_b(self, data: str, anuncio: str, spend: str, quantidade: str,
+                 custo: str, tipo: str | None = None) -> list[str]:
+        """Quantidade e custo presentes; a fonte nao aplica janela ao tipo."""
+        return linha_csv_resultado(
+            data, "Meta Ads", spend=spend, anuncio=anuncio,
+            result_type=tipo or self.LEAD, result_count=quantidade,
+            cost_per_result=custo,
+        )
+
+    def _explicita(self, data: str, anuncio: str, spend: str, quantidade: str,
+                   custo: str = "", janela: str = "default",
+                   tipo: str | None = None) -> list[str]:
+        return linha_csv_resultado(
+            data, "Meta Ads", spend=spend, anuncio=anuncio,
+            result_type=tipo or self.LEAD, result_count=quantidade,
+            result_attribution_window=janela, cost_per_result=custo,
+        )
+
+    # 1, 2, 3 e 13 — o caso central medido no bloco real.
+    def test_forma_a_com_janela_explicita_agrega(self):
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_DISPONIVEL)
+        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["result_count"], Decimal(2))
+        # A janela efetiva vem SO da linha que a declarou.
+        self.assertEqual(resultado["result_attribution_window"], "default")
+        # 20 / 2 = 10, nao 10 / 2 = 5: o spend da linha neutra conta.
+        self.assertEqual(resultado["cost_per_result"], Decimal(10))
+        self.assertNotEqual(resultado["cost_per_result"], Decimal(5))
+
+    def test_forma_a_nao_cria_segunda_janela(self):
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertNotEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertNotEqual(
+            resultado["status_resultado"], m.RESULTADO_INCOMPATIVEL
+        )
+
+    def test_linha_neutra_nao_ganha_janela_imputada(self):
+        # A neutralidade vive no agregado. O grao factual permanece NULL.
+        linha = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+        ])[0]
+        self.assertIsNone(linha["result_attribution_window"])
+        self.assertIsNone(linha["cost_per_result"])
+        self.assertEqual(linha["result_count"], Decimal(0))
+        self.assertFalse(m.janela_informativa(linha))
+
+    # 4 — varias neutras e uma informativa.
+    def test_varias_formas_a_com_uma_explicita_agregam(self):
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._forma_a("2026-08-02", "Anuncio-AAAA0002", "10"),
+            self._forma_a("2026-08-03", "Anuncio-AAAA0003", "10"),
+            self._explicita("2026-08-04", "Anuncio-AAAA0004", "10", "5", "2"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_DISPONIVEL)
+        self.assertEqual(resultado["result_count"], Decimal(5))
+        self.assertEqual(resultado["result_attribution_window"], "default")
+        self.assertEqual(resultado["cost_per_result"], Decimal(40) / Decimal(5))
+
+    # 5 — recorte inteiramente neutro.
+    def test_somente_forma_a_agrega_com_zero_e_custo_indisponivel(self):
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._forma_a("2026-08-02", "Anuncio-AAAA0002", "25"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_DISPONIVEL)
+        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["result_count"], Decimal(0))
+        self.assertIsNone(resultado["result_attribution_window"])
+        # Nao ha resultado para dividir; o spend nao some, so nao tem divisor.
+        self.assertIsNone(resultado["cost_per_result"])
+
+    # 6 — FORMA B continua informativa.
+    def test_forma_b_com_explicita_continua_incompativel(self):
+        linhas = self._carregar([
+            self._forma_b("2026-08-01", "Anuncio-AAAA0001", "10", "2", "5"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_INCOMPATIVEL)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    def test_forma_b_isolada_e_informativa(self):
+        linha = self._carregar([
+            self._forma_b("2026-08-01", "Anuncio-AAAA0001", "10", "2", "5"),
+        ])[0]
+        self.assertTrue(m.janela_informativa(linha))
+
+    # 7 — zero declarado COM janela explicita continua informativo.
+    def test_quantidade_zero_com_janela_explicita_participa(self):
+        linha = self._carregar([
+            self._explicita("2026-08-01", "Anuncio-AAAA0001", "10", "0"),
+        ])[0]
+        self.assertEqual(linha["result_count"], Decimal(0))
+        self.assertIsNone(linha["cost_per_result"])
+        self.assertTrue(m.janela_informativa(linha))
+
+    def test_zero_com_janela_explicita_choca_com_outra_explicita(self):
+        linhas = self._carregar([
+            self._explicita("2026-08-01", "Anuncio-AAAA0001", "10", "0"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "4", "2.5",
+                            janela="7d_click"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_INCOMPATIVEL)
+        self.assertIsNone(resultado["result_count"])
+
+    # 8 — duas janelas explicitas.
+    def test_duas_janelas_explicitas_ficam_indisponiveis(self):
+        linhas = self._carregar([
+            self._explicita("2026-08-01", "Anuncio-AAAA0001", "10", "2", "5"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "3", "3.33",
+                            janela="7d_click"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertIsNone(resultado["cost_per_result"])
+
+    # 9 — neutra nao salva um recorte que ja e incompativel.
+    def test_forma_a_com_duas_explicitas_continua_indisponivel(self):
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+            self._explicita("2026-08-03", "Anuncio-AAAA0003", "10", "3", "3.33",
+                            janela="7d_click"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertIsNone(resultado["result_count"])
+
+    # 10 e 11 — ausencia total nao virou linha neutra.
+    def test_ausencia_total_com_tipada_continua_incompleto(self):
+        linhas = self._carregar([
+            linha_csv_resultado("2026-08-01", "Meta Ads", spend="10"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_PARCIAL)
+        self.assertIsNone(resultado["result_count"])
+
+    def test_ausencia_total_nao_e_linha_neutra(self):
+        ausente = self._carregar([
+            linha_csv_resultado("2026-08-01", "Meta Ads", spend="10"),
+        ])[0]
+        neutra = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+        ])[0]
+        # As duas tem janela NULL, e so uma delas declara tipo e quantidade.
+        self.assertIsNone(ausente["result_attribution_window"])
+        self.assertIsNone(neutra["result_attribution_window"])
+        self.assertIsNone(ausente["result_type"])
+        self.assertIsNotNone(neutra["result_type"])
+        self.assertIsNone(ausente["result_count"])
+        self.assertEqual(neutra["result_count"], Decimal(0))
+
+    # 12 — dois tipos continuam "Multiplos", nao "Dados incompletos".
+    def test_dois_result_types_continuam_multiplos(self):
+        linhas = self._carregar([
+            self._explicita("2026-08-01", "Anuncio-AAAA0001", "10", "2", "5"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "4", "2.5",
+                            tipo=self.THRU),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertNotEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+
+    def test_tipo_unico_com_neutra_precede_checagem_de_janela(self):
+        # Dois tipos + uma neutra: o defeito e a multiplicidade de tipo, e a
+        # neutralidade nao pode mascara-la.
+        linhas = self._carregar([
+            self._forma_a("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._explicita("2026-08-02", "Anuncio-AAAA0002", "10", "2", "5"),
+            self._explicita("2026-08-03", "Anuncio-AAAA0003", "10", "4", "2.5",
+                            tipo=self.THRU),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+
+
 class TestMappingSinteticoRemovido(unittest.TestCase):
     """`lead` sem prefixo saiu do mapping; `actions[lead]` continua intacto."""
 

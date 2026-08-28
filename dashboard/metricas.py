@@ -676,6 +676,46 @@ def dividir(numerador, denominador, fator: Decimal = Decimal(1)):
     return numerador / denominador * fator
 
 
+def janela_informativa(linha: dict) -> bool:
+    """Diz se a linha carrega evidencia factual sobre a janela de atribuicao.
+
+    Nem todo `result_attribution_window` NULL significa a mesma coisa, e tratar
+    os dois casos como um so foi um erro medido: no bloco real de sete dias ele
+    tornava 20 das 39 campanhas tipadas artificialmente incompativeis.
+
+    - **NULL neutro** — a linha e FORMA A: a fonte declarou o `indicator` e nao
+      entregou `values`. Sem `values` nao existe janela factual a comparar, e o
+      NULL e ausencia de evidencia, nao uma janela alternativa. A linha continua
+      factual e valida, e seu investimento continua entrando no denominador —
+      ela apenas nao acrescenta semantica ao conjunto de janelas do recorte.
+
+    - **NULL informativo** — a linha e FORMA B: ha quantidade e custo, e a fonte
+      simplesmente nao aplica janela a esse `indicator`. Isso e uma semantica
+      real de "sem janela" e continua incompativel com uma janela explicita.
+
+    Quantidade zero COM janela explicita tambem e informativa: ali a fonte
+    declarou a janela, e declaracao explicita nunca e neutralizada por o
+    resultado ter sido zero.
+
+    A neutralidade existe apenas nesta analise agregada. O grao factual
+    persistido na Silver e no Gold nao muda: nenhuma janela e imputada, nenhum
+    valor e herdado de outro dia.
+
+    Args:
+        linha: Linha factual tipada (`result_type` nao nulo).
+
+    Returns:
+        ``True`` quando a linha deve participar da decisao de compatibilidade
+        de janela.
+    """
+    quantidade = linha.get("result_count")
+    return (
+        (quantidade is not None and quantidade > 0)
+        or linha.get("cost_per_result") is not None
+        or linha.get("result_attribution_window") is not None
+    )
+
+
 def resultado_campanha(linhas: list[dict]) -> dict:
     """Agrega Resultado Meta no grao campanha x periodo filtrado.
 
@@ -705,8 +745,15 @@ def resultado_campanha(linhas: list[dict]) -> dict:
     problema nao e haver mais de um tipo, e sim faltar contrato em parte do
     periodo.
 
-    Mais de um tipo/janela, indicador desconhecido, Google ou ausencia total
-    tambem devolvem valores indisponiveis.
+    Compatibilidade de janela
+    -------------------------
+    So as linhas informativas decidem — ver :func:`janela_informativa`. Uma
+    linha de FORMA A (quantidade zero, sem custo e sem janela) e NEUTRA: entra
+    no investimento, nao entra no conjunto de janelas. Um recorte inteiramente
+    neutro continua agregavel, com quantidade zero e custo indisponivel.
+
+    Mais de um tipo, mais de uma janela informativa, indicador desconhecido,
+    Google ou ausencia total devolvem valores indisponiveis.
 
     Args:
         linhas: Linhas factuais de uma unica campanha no recorte.
@@ -747,24 +794,20 @@ def resultado_campanha(linhas: list[dict]) -> dict:
             "status_resultado": RESULTADO_PARCIAL,
         }
 
-    pares = {
-        (linha.get("result_type"), linha.get("result_attribution_window"))
-        for linha in com_resultado
-    }
-    if len(pares) != 1:
+    tipos = {linha.get("result_type") for linha in com_resultado}
+    if len(tipos) != 1:
         return {
             **base,
             "tipo_resultado": RESULTADO_MULTIPLOS,
             "status_resultado": RESULTADO_INCOMPATIVEL,
         }
 
-    result_type, janela = next(iter(pares))
+    result_type = next(iter(tipos))
     rotulo = ROTULOS_RESULTADO.get(result_type)
     if rotulo is None:
         return {
             **base,
             "result_type": result_type,
-            "result_attribution_window": janela,
             "tipo_resultado": RESULTADO_NAO_MAPEADO,
             "status_resultado": RESULTADO_DESCONHECIDO,
         }
@@ -779,6 +822,27 @@ def resultado_campanha(linhas: list[dict]) -> dict:
             "tipo_resultado": RESULTADO_INCOMPLETO,
             "status_resultado": RESULTADO_PARCIAL,
         }
+
+    # So as linhas INFORMATIVAS decidem a compatibilidade de janela. Ver
+    # `janela_informativa`: a linha de FORMA A nao tem `values`, logo nao tem
+    # janela factual a comparar, e seu NULL nao pode contar como uma segunda
+    # semantica.
+    janelas = {
+        linha.get("result_attribution_window")
+        for linha in com_resultado
+        if janela_informativa(linha)
+    }
+    if len(janelas) > 1:
+        return {
+            **base,
+            "tipo_resultado": RESULTADO_MULTIPLOS,
+            "status_resultado": RESULTADO_INCOMPATIVEL,
+        }
+
+    # Sem nenhuma linha informativa (o recorte inteiro e FORMA A) o agregado
+    # continua valido: o tipo e conhecido, a quantidade e zero e a janela
+    # permanece NULL. Nao ha janela a imputar porque nao houve resultado.
+    janela = next(iter(janelas)) if janelas else None
 
     result_count = sum(quantidades, Decimal(0))
     spend = sum((linha["spend"] for linha in linhas), Decimal(0))
