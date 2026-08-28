@@ -9,9 +9,17 @@ from facebook_business.api import FacebookAdsApi
 
 from config import mask, validate_env
 from extractors.comum import executar_cli, executar_extracao
+from extractors.meta_rate_limit import (
+    Coletor, observar_cursor, observar_excecao,
+)
 from plataformas import PLATAFORMAS, Plataforma
 
 logger = logging.getLogger(__name__)
+
+# Telemetria passiva dos headers de uso que a Meta ja devolve. Vive no modulo
+# porque `executar_extracao` e comum as duas plataformas e nao deve conhecer
+# detalhe do SDK do Meta. Ver `extractors/meta_rate_limit.py`.
+_COLETOR: Coletor = Coletor()
 
 INSIGHT_FIELDS: list[str] = [
     "campaign_id",
@@ -234,7 +242,9 @@ def extract_daily_ads(
     cursor = account.get_insights(fields=INSIGHT_FIELDS, params=params)
 
     rows: list[dict] = []
-    for item in cursor:
+    # `observar_cursor` le os headers de uso que cada pagina ja trouxe. Nao
+    # emite request, nao muda a paginacao e nao toca no item devolvido.
+    for item in observar_cursor(cursor, _COLETOR):
         row = dict(item)
         row["account_id"] = account_id
         row["account_name"] = account_name
@@ -261,14 +271,26 @@ def run(start_date: str, end_date: str, run_id: str | None = None) -> int:
     validate_env(groups=[PLATAFORMA.nome])
     init_api()
 
-    return executar_extracao(
-        PLATAFORMA,
-        descobrir_contas=discover_accounts,
-        extrair_conta=extract_daily_ads,
-        start_date=start_date,
-        end_date=end_date,
-        run_id=run_id,
-    )
+    try:
+        total = executar_extracao(
+            PLATAFORMA,
+            descobrir_contas=discover_accounts,
+            extrair_conta=extract_daily_ads,
+            start_date=start_date,
+            end_date=end_date,
+            run_id=run_id,
+        )
+    except Exception as erro:
+        # O 403 de limite carrega os headers de uso da resposta que o gerou —
+        # a leitura mais informativa que existe, porque e o estado exato em que
+        # a quota acabou. Ler nao trata: o erro segue subindo e a execucao
+        # continua terminando em falha.
+        observar_excecao(erro, _COLETOR)
+        _COLETOR.registrar_resumo()
+        raise
+
+    _COLETOR.registrar_resumo()
+    return total
 
 
 def main() -> None:

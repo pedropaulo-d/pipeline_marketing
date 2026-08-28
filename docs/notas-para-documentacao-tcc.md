@@ -1512,6 +1512,82 @@ um número absurdo, porque parece prudência.
 
 
 
+### 5.21 O limite da fonte é parte do sistema, e ele já se anuncia
+
+🔍 Achado operacional: a restrição externa que só aparece quando o volume
+cresce — e o instrumento que já existia sem ser lido.
+
+A reextração para incorporar os campos de Resultado foi feita em blocos de sete
+dias, sequenciais. Dois blocos completaram normalmente, cada um percorrendo 93
+contas em pouco menos de quatro minutos. **O terceiro, disparado cerca de dez
+minutos depois do segundo, foi cortado a um terço do caminho** — 28 de 93
+contas — com HTTP 403, `code 4`, `error_subcode 1504022`, "Application request
+limit reached", `is_transient: true`.
+
+Três leituras erradas eram possíveis, e vale registrá-las porque todas são
+tentadoras:
+
+- **"o token expirou"** — não: a descoberta de contas, que também consome a
+  credencial, passou normalmente nos três disparos;
+- **"o pipeline quebrou"** — não: o comportamento foi o correto. A escrita do
+  bruto é atômica, nenhum arquivo parcial ficou em disco, a camada Bronze
+  permaneceu intacta e a execução terminou em falha, como deve;
+- **"é só tentar de novo"** — pior das três: cada tentativa consome
+  exatamente a cota que está faltando.
+
+O que faltava não era resiliência, era **informação**. A pergunta operacional
+real é "quanto esperar", e a resposta não estava em lugar nenhum — a decisão
+virava tentativa e erro.
+
+**A fonte já respondia essa pergunta.** A Graph API devolve, em cada resposta
+HTTP, headers de utilização: percentual consumido da janela do app, utilização
+específica do endpoint de Insights, uso por conta e, quando o limite estoura,
+uma estimativa de tempo até a liberação. Esses headers chegavam em todas as
+chamadas que o extrator já fazia e eram descartados sem serem lidos.
+
+Foi adicionada **observabilidade passiva**, e cada palavra do termo carrega uma
+decisão de projeto:
+
+- **passiva** — nenhum request novo. Não há endpoint de quota consultado, nem
+  health check, nem página repetida. O SDK expõe os headers da página corrente
+  por acessor público durante a paginação, e o próprio erro de limite preserva
+  os headers da resposta que o gerou — que é a leitura mais informativa que
+  existe, porque é o estado exato no instante em que a cota acabou. Nada disso
+  exigiu alterar o pacote de terceiro nem depender de atributo privado. Um
+  teste com cursor sintético afirma que habilitar a telemetria não muda a
+  contagem de chamadas HTTP;
+
+- **observabilidade, e só** — sem `sleep`, sem *backoff*, sem *retry*, sem
+  troca de conta ou de credencial, sem *circuit breaker* e, deliberadamente,
+  **sem limiar**. A tentação de escrever "acima de 80% de uso, pausar" é
+  grande e seria um número inventado: ainda não há uma única observação real
+  desses headers neste app. Primeiro medir, depois decidir o ritmo com
+  evidência. Rate limit continua sendo falha terminal.
+
+Um detalhe de privacidade decidiu a forma da implementação. O header de uso por
+caso de negócio é um objeto **indexado por identificador** — a chave é o ID do
+business ou da conta. Registrar o header bruto publicaria esses IDs em todo
+lugar que o log alcança, incluindo esta documentação. Por isso a leitura
+**itera apenas sobre os valores, nunca sobre as chaves**, e cada métrica sai
+por nome declarado numa allowlist: campo que a plataforma inventar amanhã é
+ignorado até ser avaliado, em vez de capturado por padrão. É a mesma disciplina
+do contrato de campos consumidos da camada Silver e do exportador da superfície
+de exposição — o que sai é o que foi declarado, nunca o que sobrou de uma
+cópia. Um teste dedicado injeta identificadores falsos reconhecíveis nos
+pontos onde o header poderia carregá-los e prova que eles não aparecem no
+retorno, no `repr` nem no log.
+
+Robustez pelo mesmo princípio: header ausente, JSON malformado, campo novo,
+tipo inesperado — tudo devolve ausência de métrica, nunca exceção. **Telemetria
+não pode tornar inválida uma resposta que a API entregou corretamente.**
+
+O achado metodológico que fica: a **restrição externa é parte do sistema**, não
+um acidente que acontece com ele. Um pipeline que só funciona enquanto a fonte
+não impõe limite não está pronto — e instrumentar essa fronteira custou zero
+chamada adicional, porque o instrumento já vinha junto com o dado.
+
+
+
 ## 6. Validação e evidências
 
 ### 6.1 Paridade entre implementações
