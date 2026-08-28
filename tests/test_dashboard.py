@@ -1857,13 +1857,13 @@ class TestResultadoPorCampanha(unittest.TestCase):
         return self._carregar([
             linha_csv_resultado(
                 "2026-08-01", "Meta Ads", spend="100.00", conversions="4",
-                result_type="lead", result_count="4",
+                result_type="actions:offsite_conversion.fb_pixel_lead", result_count="4",
                 result_attribution_window="default",
                 cost_per_result=custo_um,
             ),
             linha_csv_resultado(
                 "2026-08-02", "Meta Ads", spend="38.20", conversions="5",
-                anuncio="Anuncio-AAAA0002", result_type="lead",
+                anuncio="Anuncio-AAAA0002", result_type="actions:offsite_conversion.fb_pixel_lead",
                 result_count="5", result_attribution_window="default",
                 cost_per_result=custo_dois,
             ),
@@ -1951,7 +1951,7 @@ class TestResultadoPorCampanha(unittest.TestCase):
         linhas = self._carregar([
             linha_csv_resultado(
                 "2026-08-01", "Google Ads", spend="100", conversions="5",
-                result_type="lead", result_count="5",
+                result_type="actions:offsite_conversion.fb_pixel_lead", result_count="5",
                 result_attribution_window="default", cost_per_result="20",
             ),
         ])
@@ -1979,6 +1979,421 @@ class TestResultadoPorCampanha(unittest.TestCase):
                 self.assertIn(f'"{coluna}"', fonte)
 
 
+class TestFormasReaisDeResultado(unittest.TestCase):
+    """Formas que a Meta realmente devolve, medidas no bloco 2026-08-01..07.
+
+    Cobrem os rotulos dos indicators observados, a quantidade zero legitima e
+    os dois estados da janela de atribuicao. Nenhuma delas pode virar
+    interpretacao de negocio inventada na camada de apresentacao.
+    """
+
+    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def test_indicators_de_lead_observados_recebem_rotulo_lead(self):
+        for indicator in ("actions:offsite_conversion.fb_pixel_lead",
+                          "actions:onsite_conversion.lead_grouped"):
+            with self.subTest(indicator=indicator):
+                self.assertEqual(m.ROTULOS_RESULTADO[indicator], "Lead")
+
+    def test_conversa_iniciada_nao_e_lead(self):
+        indicator = "actions:onsite_conversion.messaging_conversation_started_7d"
+        self.assertNotIn(indicator, m.ROTULOS_RESULTADO)
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type=indicator, result_count="3",
+                result_attribution_window="default", cost_per_result="3.33",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO)
+        self.assertIsNone(resultado["result_count"])
+
+    def test_thruplay_mantem_rotulo(self):
+        self.assertEqual(
+            m.ROTULOS_RESULTADO["video_thruplay_watched_actions"], "ThruPlay"
+        )
+
+    def test_indicator_desconhecido_estruturalmente_valido_e_nao_mapeado(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="profile_visit_view", result_count="78",
+                cost_per_result="0.09551282",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_DESCONHECIDO)
+        self.assertEqual(resultado["result_type"], "profile_visit_view")
+
+    def test_dia_com_zero_resultado_ainda_contribui_com_investimento(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="actions:offsite_conversion.fb_pixel_lead",
+                result_count="0", result_attribution_window="default",
+            ),
+            linha_csv_resultado(
+                "2026-08-02", "Meta Ads", spend="10",
+                anuncio="Anuncio-AAAA0002",
+                result_type="actions:offsite_conversion.fb_pixel_lead",
+                result_count="2", result_attribution_window="default",
+                cost_per_result="5",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["result_count"], Decimal(2))
+        # 20 / 2, nao 10 / 2: o dia sem resultado gastou e continua no
+        # numerador.
+        self.assertEqual(resultado["cost_per_result"], Decimal(10))
+        self.assertNotEqual(resultado["cost_per_result"], Decimal(5))
+
+    def test_janela_null_em_todas_as_linhas_continua_agregavel(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="video_thruplay_watched_actions",
+                result_count="40", cost_per_result="0.25",
+            ),
+            linha_csv_resultado(
+                "2026-08-02", "Meta Ads", spend="30",
+                anuncio="Anuncio-AAAA0002",
+                result_type="video_thruplay_watched_actions",
+                result_count="60", cost_per_result="0.5",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_attribution_window"])
+        self.assertEqual(resultado["result_count"], Decimal(100))
+        self.assertEqual(resultado["tipo_resultado"], "ThruPlay")
+        self.assertEqual(
+            resultado["cost_per_result"], Decimal(40) / Decimal(100)
+        )
+
+    def test_janela_null_misturada_com_explicita_fica_indisponivel(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="video_thruplay_watched_actions",
+                result_count="40", cost_per_result="0.25",
+            ),
+            linha_csv_resultado(
+                "2026-08-02", "Meta Ads", spend="30",
+                anuncio="Anuncio-AAAA0002",
+                result_type="video_thruplay_watched_actions",
+                result_count="60", result_attribution_window="default",
+                cost_per_result="0.5",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_MULTIPLOS)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_INCOMPATIVEL)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    def test_custo_factual_ausente_nao_vira_zero_na_interface(self):
+        linha = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="video_thruplay_watched_actions",
+                result_count="0",
+            ),
+        ])[0]
+        self.assertIsNone(linha["cost_per_result"])
+        self.assertEqual(linha["result_count"], Decimal(0))
+        self.assertEqual(m.formatar(linha["cost_per_result"], m.MOEDA),
+                         m.INDISPONIVEL)
+
+        agregado = m.resultado_campanha([linha])
+        self.assertIsNone(agregado["cost_per_result"])
+        self.assertEqual(m.formatar(agregado["cost_per_result"], m.MOEDA),
+                         m.INDISPONIVEL)
+
+    def test_reach_continua_nao_aditivo_com_as_formas_novas(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10", reach="100",
+                result_type="reach", result_count="100", cost_per_result="0.1",
+            ),
+            linha_csv_resultado(
+                "2026-08-02", "Meta Ads", spend="10", reach="80",
+                anuncio="Anuncio-AAAA0002",
+                result_type="reach", result_count="80", cost_per_result="0.125",
+            ),
+        ])
+        self.assertIsNone(m.agregar(linhas)["reach"])
+
+
+class TestContratoDasFormasReais(unittest.TestCase):
+    """O CSV aceita janela e custo vazios, e so nas condicoes da Silver."""
+
+    def _linha(self, **kwargs):
+        return carregar(
+            [linha_csv_resultado("2026-08-01", "Meta Ads", **kwargs)],
+            CABECALHO_RESULTADO,
+        ).linhas[0]
+
+    def test_janela_vazia_e_aceita_como_ausencia(self):
+        linha = self._linha(
+            result_type="profile_visit_view", result_count="78",
+            cost_per_result="0.09551282",
+        )
+        self.assertIsNone(linha["result_attribution_window"])
+        self.assertEqual(linha["result_count"], Decimal(78))
+
+    def test_custo_vazio_com_quantidade_zero_e_aceito(self):
+        linha = self._linha(
+            result_type="video_thruplay_watched_actions", result_count="0",
+            result_attribution_window="default",
+        )
+        self.assertEqual(linha["result_count"], Decimal(0))
+        self.assertIsNone(linha["cost_per_result"])
+
+    def test_custo_vazio_com_quantidade_positiva_falha_fechado(self):
+        with self.assertRaises(dados.ContratoInvalido):
+            self._linha(
+                result_type="video_thruplay_watched_actions", result_count="5",
+                result_attribution_window="default",
+            )
+
+    def test_quantidade_vazia_com_tipo_presente_falha_fechado(self):
+        with self.assertRaises(dados.ContratoInvalido):
+            self._linha(
+                result_type="video_thruplay_watched_actions",
+                result_attribution_window="default", cost_per_result="1",
+            )
+
+    def test_valor_sem_tipo_falha_fechado(self):
+        with self.assertRaises(dados.ContratoInvalido):
+            self._linha(result_count="5", cost_per_result="1")
+
+
+class TestAusenciaTotalNaAgregacao(unittest.TestCase):
+    """Ausencia total nao herda o Resultado observado em outro dia.
+
+    Medicao do bloco real 2026-08-01..07: 56 campanhas, 17 apenas com ausencia
+    total, 39 apenas com Resultado observado, intersecao ZERO. Nao ha uma unica
+    campanha real em que a inferencia entre dias pudesse ser verificada — entao
+    ela nao existe, e o recorte misto falha semanticamente fechado.
+    """
+
+    LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
+
+    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def _ausente(self, data: str, anuncio: str, spend: str) -> list[str]:
+        """Linha de ausencia total: a Meta nao devolveu results nem custo."""
+        return linha_csv_resultado(
+            data, "Meta Ads", spend=spend, anuncio=anuncio,
+        )
+
+    def _tipada(self, data: str, anuncio: str, spend: str, tipo: str,
+                quantidade: str, custo: str = "",
+                janela: str = "default") -> list[str]:
+        return linha_csv_resultado(
+            data, "Meta Ads", spend=spend, anuncio=anuncio,
+            result_type=tipo, result_count=quantidade,
+            result_attribution_window=janela, cost_per_result=custo,
+        )
+
+    # 2 — so ausencia total.
+    def test_campanha_so_com_ausencia_total_fica_indisponivel(self):
+        linhas = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._ausente("2026-08-02", "Anuncio-AAAA0002", "20"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_AUSENTE)
+        self.assertIsNone(resultado["result_type"])
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+        self.assertIsNone(resultado["tipo_resultado"])
+
+    # 3 — ausencia total + Lead.
+    def test_ausencia_total_com_lead_fica_incompleto(self):
+        linhas = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._tipada("2026-08-02", "Anuncio-AAAA0002", "20",
+                         self.LEAD, "4", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_PARCIAL)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+        self.assertIsNone(resultado["result_type"])
+
+    # 4 — ausencia total + ThruPlay.
+    def test_ausencia_total_com_thruplay_fica_incompleto(self):
+        linhas = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._tipada("2026-08-02", "Anuncio-AAAA0002", "20",
+                         "video_thruplay_watched_actions", "40", "0.5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+        self.assertEqual(resultado["status_resultado"], m.RESULTADO_PARCIAL)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+
+    # 5 — ausencia total + dois tipos.
+    def test_ausencia_total_com_dois_tipos_fica_indisponivel(self):
+        linhas = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "10"),
+            self._tipada("2026-08-02", "Anuncio-AAAA0002", "20",
+                         self.LEAD, "4", "5"),
+            self._tipada("2026-08-03", "Anuncio-AAAA0003", "30",
+                         "video_thruplay_watched_actions", "40", "0.75"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_count"])
+        self.assertIsNone(resultado["cost_per_result"])
+        # O defeito mais grave e a falta de contrato, nao a multiplicidade.
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+
+    def test_investimento_sem_tipo_nunca_entra_no_denominador_alheio(self):
+        # O caso que a auditoria pegou: 20 de gasto sem tipo, ao lado de 4
+        # Leads em outro dia, produziria "R$ 7,50 por Lead" por inferencia.
+        linhas = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "20"),
+            self._tipada("2026-08-02", "Anuncio-AAAA0002", "10",
+                         self.LEAD, "4", "2.5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["cost_per_result"])
+        self.assertNotEqual(resultado["cost_per_result"], Decimal("7.5"))
+
+    # 10 — FORMA A nao e ausencia total.
+    def test_forma_a_nao_e_tratada_como_ausencia_total(self):
+        linhas = self._carregar([
+            self._tipada("2026-08-01", "Anuncio-AAAA0001", "10",
+                         self.LEAD, "0"),
+            self._tipada("2026-08-02", "Anuncio-AAAA0002", "10",
+                         self.LEAD, "2", "5"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertNotEqual(
+            resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO
+        )
+        self.assertEqual(resultado["result_count"], Decimal(2))
+        # 20 / 2: a linha da FORMA A declarou o tipo e o gasto dela conta.
+        self.assertEqual(resultado["cost_per_result"], Decimal(10))
+
+    def test_forma_a_isolada_declara_tipo_com_quantidade_zero(self):
+        linhas = self._carregar([
+            self._tipada("2026-08-01", "Anuncio-AAAA0001", "10",
+                         self.LEAD, "0"),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["result_type"], self.LEAD)
+        self.assertEqual(resultado["result_count"], Decimal(0))
+        self.assertNotEqual(resultado["status_resultado"], m.RESULTADO_AUSENTE)
+        # Denominador zero: custo indisponivel, nunca zero nem divisao.
+        self.assertIsNone(resultado["cost_per_result"])
+
+    # 11 — quantidade ausente nunca vira zero.
+    def test_quantidade_ausente_nao_vira_zero(self):
+        linhas = self._carregar([
+            self._tipada("2026-08-01", "Anuncio-AAAA0001", "10",
+                         self.LEAD, "4", "2.5"),
+        ])
+        # Estado que o contrato do CSV ja recusa; a defesa fica no agregado.
+        linhas.append({**linhas[0], "result_count": None,
+                       "anuncio_id": "Anuncio-AAAA0002"})
+        resultado = m.resultado_campanha(linhas)
+        self.assertIsNone(resultado["result_count"])
+        self.assertNotEqual(resultado["result_count"], Decimal(0))
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO)
+
+    # 12 — zero declarado permanece zero.
+    def test_zero_declarado_permanece_zero(self):
+        linha = self._carregar([
+            self._tipada("2026-08-01", "Anuncio-AAAA0001", "10",
+                         self.LEAD, "0"),
+        ])[0]
+        self.assertEqual(linha["result_count"], Decimal(0))
+        self.assertIsNotNone(linha["result_count"])
+
+    def test_ausencia_total_deixa_todos_os_campos_nulos_na_linha(self):
+        linha = self._carregar([
+            self._ausente("2026-08-01", "Anuncio-AAAA0001", "10"),
+        ])[0]
+        for campo in ("result_type", "result_count",
+                      "result_attribution_window", "cost_per_result"):
+            with self.subTest(campo=campo):
+                self.assertIsNone(linha[campo])
+
+    def test_objetivo_da_campanha_nao_infere_tipo_de_resultado(self):
+        # OUTCOME_LEADS / LEAD_GENERATION sao contexto, nao contrato: nao
+        # existe coluna deles na superficie, e a agregacao nao pode inventa-la.
+        fonte = (BASE_DIR / "dashboard" / "metricas.py").read_text(
+            encoding="utf-8"
+        )
+        corpo = fonte.split("def resultado_campanha(")[1]
+        corpo = corpo.split("\ndef ")[0]
+        for termo in ("objective", "optimization_goal", "OUTCOME_LEADS",
+                      "LEAD_GENERATION", "campaign_name"):
+            with self.subTest(termo=termo):
+                self.assertNotIn(f'"{termo}"', corpo)
+                self.assertNotIn(f"'{termo}'", corpo)
+
+
+class TestMappingSinteticoRemovido(unittest.TestCase):
+    """`lead` sem prefixo saiu do mapping; `actions[lead]` continua intacto."""
+
+    def _carregar(self, linhas: list[list[str]]) -> list[dict]:
+        return carregar(linhas, CABECALHO_RESULTADO).linhas
+
+    def test_indicator_lead_sem_prefixo_nao_tem_rotulo(self):
+        self.assertNotIn("lead", m.ROTULOS_RESULTADO)
+
+    def test_indicator_lead_sem_prefixo_cai_em_nao_mapeado(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="lead", result_count="9",
+                result_attribution_window="default", cost_per_result="1.11",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO)
+        self.assertIsNone(resultado["result_count"])
+
+    def test_conversions_meta_continua_vindo_de_actions_lead(self):
+        # Regressao conceitual: `results[].indicator` e
+        # `actions[].action_type` sao vocabularios diferentes. Remover o
+        # rotulo do primeiro nao pode mexer no segundo, que e a origem de
+        # `conversions` (e portanto do CPL) no Meta.
+        modelo = (BASE_DIR / "dbt" / "models" / "silver"
+                  / "stg_meta_ads.sql").read_text(encoding="utf-8")
+        self.assertIn("'lead'", modelo)
+
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="100", conversions="4",
+                result_type="actions:offsite_conversion.fb_pixel_lead",
+                result_count="4", result_attribution_window="default",
+                cost_per_result="25",
+            ),
+        ])
+        self.assertEqual(m.agregar(linhas)["conversions"], Decimal(4))
+        self.assertEqual(m.painel(linhas)["cpl_meta"], Decimal(25))
+
+    def test_fixture_sintetica_usa_indicator_real(self):
+        bruto = (BASE_DIR / "tests" / "fixtures"
+                 / "temp_meta_raw.json").read_text(encoding="utf-8")
+        self.assertNotIn('"indicator": "lead"', bruto)
+        self.assertIn(
+            '"indicator": "actions:offsite_conversion.fb_pixel_lead"', bruto
+        )
+        # O action_type real continua sendo `lead` — nao foi migrado junto.
+        self.assertIn('"action_type": "lead"', bruto)
+
+
 class TestContratoOpcionalDeResultado(unittest.TestCase):
     """A v2 abre sem Resultado; a futura v3 entra inteira e tipada."""
 
@@ -1990,12 +2405,12 @@ class TestContratoOpcionalDeResultado(unittest.TestCase):
     def test_grupo_futuro_incompleto_falha_fechado(self):
         cabecalho = CABECALHO + ["result_type"]
         with self.assertRaises(dados.ContratoInvalido):
-            carregar([linha_csv("2026-08-01", "Meta Ads") + ["lead"]], cabecalho)
+            carregar([linha_csv("2026-08-01", "Meta Ads") + ["actions:offsite_conversion.fb_pixel_lead"]], cabecalho)
 
     def test_grupo_futuro_preserva_decimal(self):
         linha = carregar([
             linha_csv_resultado(
-                "2026-08-01", "Meta Ads", result_type="lead",
+                "2026-08-01", "Meta Ads", result_type="actions:offsite_conversion.fb_pixel_lead",
                 result_count="9", result_attribution_window="default",
                 cost_per_result="15.35555556",
             )

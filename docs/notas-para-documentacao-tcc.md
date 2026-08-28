@@ -1285,6 +1285,170 @@ executável: o módulo falha na importação, com mensagem explícita, se qualqu
 chave sintética passar a existir no golden.
 
 
+### 5.17 Contrato não documentado: o que a fonte devolve não é o que ela promete
+
+🔍 Achado central da etapa de Resultado, e o mais caro em tempo de análise.
+
+A família `results` / `cost_per_result` da API de Insights é o número que a
+própria plataforma exibe como "Resultado" e "Custo por resultado" na interface
+de gestão. Ela **não tem esquema publicado**: a documentação nomeia os campos,
+não descreve as formas que a resposta pode assumir. A implementação inicial foi
+escrita a partir da forma observada em sondagem — um item de cada lado, com
+`values` e `attribution_windows` preenchidos — e tratada como se fosse *a*
+forma.
+
+**O primeiro request real desmentiu a hipótese.** Foram 901 registros num
+recorte de sete dias, e o parser marcou **418 deles como inválidos**. A
+primeira leitura possível era "a extração falhou". Era a leitura errada: a
+extração estava correta e o parser é que supunha uma estrutura mais estreita
+que a real. Três formas legítimas apareceram, nenhuma prevista:
+
+- **Forma A** (237 registros) — o item traz apenas `indicator`, sem `values`,
+  **dos dois lados**. A fonte declarou o tipo de Resultado e não entregou
+  quantidade. Isso é zero resultado no grão factual, não resultado
+  desconhecido.
+- **Forma B** (179 registros) — `values` existe dos dois lados, mas sem
+  `attribution_windows`. Acontece com indicadores que não têm janela de
+  atribuição aplicável. O par é inequívoco; falta apenas a janela.
+- **Forma C** (2 registros) — `results` traz um único valor zero e o custo traz
+  o mesmo `indicator` sem `values`. Custo por resultado não existe quando o
+  denominador é zero.
+
+A medição que explica o padrão: no recorte observado, `attribution_windows`
+(sempre `["default"]`) aparece **somente** nos indicadores de prefixo
+`actions:` e em `video_thruplay_watched_actions`. Três outros indicadores
+observados nunca a trazem. A ausência de janela é, portanto, uma propriedade do
+indicador — não um defeito da resposta.
+
+Disso saiu a formalização de **três estados da janela de atribuição**:
+explícita; não aplicável / não fornecida (`NULL`, legítimo); e contraditória
+(janela de um lado contra outra, ou contra nenhuma, do outro) — esta última
+continua bloqueando o build.
+
+O que **não** foi relaxado, e é o que impede a correção de virar tolerância
+geral: mais de um item em qualquer dos lados, indicador divergente ou ausente,
+mais de um valor de um lado, janela explícita contra janela ausente, custo com
+valor diante de resultado sem valor — e, sobretudo, **quantidade positiva sem
+custo correspondente**. A Forma C só é aceita porque o denominador é zero;
+com quantidade positiva, a mesma estrutura continua bloqueando o build. A
+diferença entre "custo não existe" e "custo não veio" é toda a distância entre
+um estado legítimo e uma lacuna silenciosa.
+
+Detalhe de implementação com valor didático: para distinguir "sem janela dos
+dois lados" (legítimo) de "janela só de um lado" (contraditório) o pareamento
+usa um **sentinela técnico** no lugar do `NULL`, porque `NULL = NULL` é
+*unknown* em SQL e faria a Forma B nunca parear consigo mesma. O sentinela
+existe apenas dentro da macro e é convertido de volta em `NULL` antes da
+projeção; ele nunca alcança a camada Silver, a Gold, a superfície de exposição
+ou o painel.
+
+**O que o episódio ensina sobre método.** O fail closed não errou — ele fez
+exatamente o que devia: recusou-se a adivinhar diante de uma estrutura que não
+reconhecia, e a recusa aconteceu **antes da carga na camada Bronze**, que
+permaneceu intacta. Um parser tolerante teria escolhido o primeiro elemento do
+array, ou o maior valor, e produzido 901 linhas plausíveis com semântica
+inventada em 418 delas. O custo do fail closed é uma parada para análise; o
+custo da tolerância é um número errado que passa em todos os testes — o padrão
+que este projeto já encontrou três vezes por outros mecanismos (seções 5.1,
+5.7, 5.9).
+
+Também mudou a operação da reextração: passou a ser feita em **blocos de no
+máximo sete dias por request**, sequenciais, com um identificador de execução
+por bloco. Isso mantém cada resposta auditável e limita o efeito de uma
+suposição errada a um bloco.
+
+### 5.18 Ausência de dado e ausência de contrato são estados diferentes
+
+🔍 Achado derivado do anterior, e a decisão mais delicada da etapa.
+
+Depois de aceitar as três formas, **312 dos 901 registros** continuavam sem
+Resultado algum: `results` e `cost_per_result` simplesmente não vieram. Chamar
+isso de "zero resultados" seria confortável e errado. São coisas distintas:
+
+| Estado | O que a fonte disse | Como o DW registra |
+|---|---|---|
+| Forma A | "o tipo é X, e a quantidade não veio" | tipo preenchido, quantidade `0` |
+| Ausência total | nada — nenhum tipo foi declarado | os quatro campos em `NULL` |
+
+Achatar um no outro é inferência disfarçada de normalização: ou se afirma um
+tipo que a fonte não declarou, ou se nega uma quantidade que ela declarou.
+
+**A hipótese testada — e rejeitada.** Era tentador inferir o tipo de Resultado
+de uma linha ausente a partir de outro dia da mesma campanha: se a campanha
+reportou Lead na segunda-feira, o gasto de terça sem Resultado provavelmente
+também é Lead. A hipótese foi verificada contra o bloco real e **não se
+sustentou** — não porque tenha sido refutada, mas porque **não há um único caso
+em que pudesse ser verificada**:
+
+- 56 campanhas no bloco;
+- 17 apenas com ausência total;
+- 39 apenas com Resultado observado;
+- **interseção: zero campanhas.**
+
+Não existe evidência real de que uma linha sem Resultado possa herdar o tipo
+observado em outro dia da mesma campanha. Implementar a herança seria escrever
+uma regra sobre um caso que o dado nunca apresentou.
+
+**A consequência no agregado.** O custo agregado por Resultado é
+`SUM(investimento) / SUM(quantidade)` — nunca soma nem média dos custos
+diários, porque somar razões é incorreto. A pergunta é *quais linhas entram no
+numerador*. Uma linha de Forma A, com quantidade zero, entra: ela declarou o
+mesmo tipo, o investimento pertence à mesma semântica, e diluir o custo pelos
+dias sem resultado é justamente o comportamento correto. Uma linha de ausência
+total **não** entra, e mais: sua simples presença ao lado de linhas tipadas
+invalida o agregado do recorte, que passa a exibir *"Dados incompletos"*.
+
+O rótulo é deliberadamente distinto de *"Múltiplos"*, usado quando há mais de
+um tipo de Resultado no recorte. Os dois estados produzem indisponibilidade,
+mas por motivos opostos: em "Múltiplos" **sobra** semântica — há dois
+significados e nenhum critério neutro para escolher; em "Dados incompletos"
+**falta** contrato — parte do período não diz a que semântica pertence. Coletar
+os dois sob o mesmo rótulo apagaria a diferença justamente para quem precisa
+agir sobre ela.
+
+Regra que ficou explícita no código e nos testes: **`objective` e
+`optimization_goal` são contexto, não contrato.** Uma campanha declarada
+`OUTCOME_LEADS` com meta de otimização de geração de leads *não* implica
+Resultado = Lead. São campos de configuração da campanha; o Resultado é o que a
+plataforma efetivamente reporta. A distância entre os dois é exatamente onde
+mora a inferência que este projeto recusa.
+
+### 5.19 Fixture sintética não pode virar fonte de vocabulário
+
+🔍 Achado pequeno, com a mesma raiz da seção 5.16.
+
+O painel traduz o indicador técnico do Resultado em rótulo legível. Antes do
+primeiro request real, a tabela de tradução foi montada a partir da fixture
+sintética escrita para exercitar o código sem credenciais — e nela o indicador
+de lead era, simplesmente, `lead`.
+
+O contrato real usa outro vocabulário. Nas 901 observações, o Resultado do tipo
+lead aparece **sempre qualificado pela origem**: conversão de pixel externo, ou
+formulário nativo agrupado. O valor `lead` sem qualificação **não ocorreu
+nenhuma vez**.
+
+Manter o rótulo sintético não é neutro: ele faz o painel confirmar a própria
+fixture. Se a fonte um dia devolvesse esse valor, a tela exibiria um rótulo
+amigável para uma estrutura nunca observada, e a validação seria circular — o
+sistema concordando consigo mesmo. O mapeamento passou a conter apenas
+indicadores efetivamente observados, e as fixtures foram migradas para o
+vocabulário real, de modo que teste e produção falem a mesma língua.
+
+Cuidado registrado junto da mudança, porque a coincidência de nomes é uma
+armadilha real: a **métrica** de conversões do Meta continua vindo da família
+`actions`, cujo tipo de ação *é* `lead` sem qualificação. São dois vocabulários
+distintos dentro da mesma resposta da API — o das ações e o dos resultados. A
+remoção do rótulo atingiu apenas o segundo; confundir os dois teria alterado a
+contagem de conversões e o custo por lead do trabalho inteiro.
+
+Um indicador de Resultado observado ficou deliberadamente **sem** rótulo: o de
+conversa iniciada por mensagem. Conversa iniciada não é lead — é outro
+Resultado, e traduzi-lo como lead seria interpretação de negócio inventada na
+camada de apresentação. Ele aparece na tela como Resultado não mapeado, que é
+uma resposta honesta.
+
+
+
 ## 6. Validação e evidências
 
 ### 6.1 Paridade entre implementações

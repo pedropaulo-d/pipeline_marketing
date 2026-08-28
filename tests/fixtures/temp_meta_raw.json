@@ -178,7 +178,7 @@
     "optimization_goal": "OFFSITE_CONVERSIONS",
     "results": [
       {
-        "indicator": "lead",
+        "indicator": "actions:offsite_conversion.fb_pixel_lead",
         "values": [
           {
             "attribution_windows": [
@@ -191,7 +191,7 @@
     ],
     "cost_per_result": [
       {
-        "indicator": "lead",
+        "indicator": "actions:offsite_conversion.fb_pixel_lead",
         "values": [
           {
             "attribution_windows": [

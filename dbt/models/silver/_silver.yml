@@ -301,11 +301,11 @@ unit_tests:
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
                    "objective":"OUTCOME_LEADS","optimization_goal":"OFFSITE_CONVERSIONS",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
-                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35555556"}]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"15.35555556"}]}]}'::jsonb as payload
     expect:
       rows:
-        - {anuncio_external_id: A, result_type: lead, result_count: 9,
+        - {anuncio_external_id: A, result_type: 'actions:offsite_conversion.fb_pixel_lead', result_count: 9,
            result_attribution_window: default, cost_per_result: 15.35555556,
            objective: OUTCOME_LEADS, optimization_goal: OFFSITE_CONVERSIONS,
            resultado_valido: true}
@@ -342,7 +342,7 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"9"}]}],
                    "cost_per_result":[{"indicator":"outro","values":[{"attribution_windows":["default"],"value":"10"}]}]}'::jsonb as payload
     expect:
       rows:
@@ -359,8 +359,8 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["7d_click"],"value":"9"}]}],
-                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["1d_view"],"value":"10"}]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["7d_click"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["1d_view"],"value":"10"}]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_type: null, cost_per_result: null,
@@ -376,11 +376,11 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["7d_click","1d_view"],"value":"9"}]}],
-                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["1d_view","7d_click"],"value":"15.35"}]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["7d_click","1d_view"],"value":"9"}]}],
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["1d_view","7d_click"],"value":"15.35"}]}]}'::jsonb as payload
     expect:
       rows:
-        - {anuncio_external_id: A, result_type: lead, result_count: 9,
+        - {anuncio_external_id: A, result_type: 'actions:offsite_conversion.fb_pixel_lead', result_count: 9,
            result_attribution_window: '1d_view|7d_click', cost_per_result: 15.35,
            resultado_valido: true}
 
@@ -394,7 +394,7 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"9"}]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_type: null, resultado_valido: false}
@@ -409,7 +409,7 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_type: null, resultado_valido: false}
@@ -425,11 +425,11 @@ unit_tests:
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
                    "results":[
-                     {"indicator":"lead","values":[{"attribution_windows":["default"],"value":"9"}]},
+                     {"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"9"}]},
                      {"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"81"}]}],
                    "cost_per_result":[
                      {"indicator":"video_thruplay_watched_actions","values":[{"attribution_windows":["default"],"value":"0.42"}]},
-                     {"indicator":"lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
+                     {"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"15.35"}]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_type: null, resultado_valido: false}
@@ -444,10 +444,10 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[
                      {"attribution_windows":["7d_click"],"value":"9"},
                      {"attribution_windows":["1d_view"],"value":"2"}]}],
-                   "cost_per_result":[{"indicator":"lead","values":[
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[
                      {"attribution_windows":["1d_view"],"value":"20"},
                      {"attribution_windows":["7d_click"],"value":"15"}]}]}'::jsonb as payload
     expect:
@@ -455,7 +455,11 @@ unit_tests:
         - {anuncio_external_id: A, result_type: null, resultado_valido: false}
 
   - name: resultado_meta_ausencia_legitima_permanece_null
-    description: Ausencia simultanea nao inventa zero nem quebra o pipeline.
+    description: >
+      Ausencia total: a fonte nao devolveu results nem cost_per_result, entao
+      nenhum tipo foi declarado e os quatro campos ficam NULL. NAO e a FORMA A
+      (result_type declarado com result_count zero) — comparar com
+      resultado_meta_forma_a_declara_tipo_sem_quantidade.
     model: stg_meta_ads
     given:
       - input: source('bronze', 'raw_ads')
@@ -480,7 +484,7 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_type: null, resultado_valido: false}
@@ -513,9 +517,153 @@ unit_tests:
           select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
                  timestamptz '2026-08-02 10:00:00+00' as extracted_at,
                  '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
-                   "results":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"2.75"}]}],
-                   "cost_per_result":[{"indicator":"lead","values":[{"attribution_windows":["default"],"value":"4.12345678"}]}]}'::jsonb as payload
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"2.75"}]}],
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"4.12345678"}]}]}'::jsonb as payload
     expect:
       rows:
         - {anuncio_external_id: A, result_count: 2.75,
            cost_per_result: 4.12345678, resultado_valido: true}
+
+  # Formas reais observadas no primeiro request com a familia completa
+  # (bloco 2026-08-01..07). Ver o cabecalho de macros/resultado_meta.sql.
+
+  - name: resultado_meta_forma_a_declara_tipo_sem_quantidade
+    description: Indicator nos dois lados sem values e zero resultado, nao ambiguidade.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"video_thruplay_watched_actions"}],
+                   "cost_per_result":[{"indicator":"video_thruplay_watched_actions"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: video_thruplay_watched_actions,
+           result_count: 0, result_attribution_window: null,
+           cost_per_result: null, resultado_valido: true}
+
+  - name: resultado_meta_forma_b_pareia_sem_attribution_window
+    description: Par inequivoco sem janela vale e persiste a janela em NULL.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"profile_visit_view","values":[{"value":"78"}]}],
+                   "cost_per_result":[{"indicator":"profile_visit_view","values":[{"value":"0.09551282"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: profile_visit_view,
+           result_count: 78, result_attribution_window: null,
+           cost_per_result: 0.09551282, resultado_valido: true}
+
+  - name: resultado_meta_forma_c_zero_sem_custo_correspondente
+    description: Quantidade zero dispensa custo; o denominador nao existe.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"actions:onsite_conversion.lead_grouped","values":[{"attribution_windows":["default"],"value":"0"}]}],
+                   "cost_per_result":[{"indicator":"actions:onsite_conversion.lead_grouped"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A,
+           result_type: 'actions:onsite_conversion.lead_grouped',
+           result_count: 0, result_attribution_window: default,
+           cost_per_result: null, resultado_valido: true}
+
+  - name: resultado_meta_quantidade_positiva_sem_custo_falha_fechado
+    description: A tolerancia da forma C vale so com quantidade zero.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"actions:offsite_conversion.fb_pixel_lead","values":[{"attribution_windows":["default"],"value":"5"}]}],
+                   "cost_per_result":[{"indicator":"actions:offsite_conversion.fb_pixel_lead"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, result_count: null,
+           cost_per_result: null, resultado_valido: false}
+
+  - name: resultado_meta_custo_com_valor_sem_quantidade_falha_fechado
+    description: Custo entregue sem quantidade correspondente nao vira zero.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"actions:post_engagement"}],
+                   "cost_per_result":[{"indicator":"actions:post_engagement","values":[{"value":"3"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, result_count: null,
+           cost_per_result: null, resultado_valido: false}
+
+  - name: resultado_meta_dois_indicators_sem_values_falha_fechado
+    description: A forma A exige um unico indicator inequivoco dos dois lados.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"reach"},{"indicator":"profile_visit_view"}],
+                   "cost_per_result":[{"indicator":"reach"},{"indicator":"profile_visit_view"}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, result_count: null,
+           cost_per_result: null, resultado_valido: false}
+
+  - name: resultado_meta_janela_ausente_dos_dois_lados_e_equivalente
+    description: Ausencia de janela nos dois lados pareia; o sentinel nao vaza.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"reach","values":[{"value":"4"}]}],
+                   "cost_per_result":[{"indicator":"reach","values":[{"value":"1.5"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: reach, result_count: 4,
+           result_attribution_window: null, cost_per_result: 1.5,
+           resultado_valido: true}
+
+  - name: resultado_meta_janela_so_de_um_lado_falha_fechado
+    description: Janela explicita contra janela ausente e contradicao, nao ausencia.
+    model: stg_meta_ads
+    given:
+      - input: source('bronze', 'raw_ads')
+        format: sql
+        rows: |
+          select 'meta_ads'::text as source, date '2026-08-01' as reference_date,
+                 timestamptz '2026-08-02 10:00:00+00' as extracted_at,
+                 '{"account_id":"C1","campaign_id":"CP1","adset_id":"S1","ad_id":"A",
+                   "results":[{"indicator":"estimated_ad_recallers","values":[{"attribution_windows":["default"],"value":"4"}]}],
+                   "cost_per_result":[{"indicator":"estimated_ad_recallers","values":[{"value":"1.5"}]}]}'::jsonb as payload
+    expect:
+      rows:
+        - {anuncio_external_id: A, result_type: null, result_count: null,
+           cost_per_result: null, resultado_valido: false}

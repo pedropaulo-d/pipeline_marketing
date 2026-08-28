@@ -29,27 +29,17 @@ with ultimo_snapshot as (
 
 ),
 
-validacao_resultado as (
-
-    select
-        *,
-        {{ resultado_meta_valido(
-            'payload', 'results', 'cost_per_result'
-        ) }} as resultado_valido
-    from ultimo_snapshot
-
-),
-
 resultado_parseado as (
 
+    -- Uma unica passagem do parser devolve validade E par no mesmo jsonb.
+    -- Antes eram dois macros percorrendo os mesmos arrays, que precisavam
+    -- concordar por disciplina; agora nao ha o que divergir.
     select
         *,
-        case
-            when resultado_valido then {{ resultado_meta_par(
-                'payload', 'results', 'cost_per_result'
-            ) }}
-        end as resultado
-    from validacao_resultado
+        {{ resultado_meta_analise(
+            'payload', 'results', 'cost_per_result'
+        ) }} as resultado
+    from ultimo_snapshot
 
 )
 
@@ -107,11 +97,36 @@ select
     {{ acao_canonica('payload', 'action_values', ['omni_purchase', 'purchase']) }}::numeric
         as purchase_value,
 
-    -- Resultado oficial escolhido pela propria Meta. `resultado` so existe
-    -- quando `results` e `cost_per_result` formam exatamente um par por
-    -- indicator + conjunto canonico de attribution windows. Ausencia legitima
-    -- permanece NULL; ambiguidade deixa `resultado_valido = false` e bloqueia
-    -- o build pelo data test, sem escolher primeiro/maior/objetivo.
+    -- Resultado oficial escolhido pela propria Meta. `resultado` carrega o
+    -- par quando a estrutura e inequivoca, em qualquer das formas reais que a
+    -- API devolve (ver o cabecalho de `macros/resultado_meta.sql`). Ausencia
+    -- legitima permanece NULL; ambiguidade deixa `resultado_valido = false` e
+    -- bloqueia o build pelo data test, sem escolher primeiro/maior/objetivo.
+    --
+    -- `cost_per_result` NULL com `result_count` = 0 e um estado esperado, nao
+    -- lacuna: custo por resultado nao existe quando o denominador e zero.
+    -- `result_attribution_window` NULL significa janela nao aplicavel ou nao
+    -- fornecida pela fonte — nao significa contradicao, que e fail closed.
+    --
+    -- AUSENCIA TOTAL x FORMA A. Sao dois estados diferentes e o DW os mantem
+    -- distintos:
+    --
+    --   ausencia total — a fonte nao devolveu `results` nem `cost_per_result`.
+    --     Nenhum tipo foi declarado, entao os quatro campos ficam NULL.
+    --     `result_count` NULL nao vira zero: zero e uma afirmacao sobre a
+    --     quantidade, e aqui nao ha sequer tipo sobre o que afirmar.
+    --
+    --   FORMA A — a fonte declarou o `indicator` dos dois lados e nao entregou
+    --     `values`. O tipo existe e a quantidade e zero de fato.
+    --
+    -- Os unit tests `resultado_meta_ausencia_legitima_permanece_null` e
+    -- `resultado_meta_forma_a_declara_tipo_sem_quantidade` fixam o contraste.
+    -- Achatar um no outro reintroduz inferencia: seria afirmar tipo onde a
+    -- fonte nao declarou, ou negar quantidade onde ela declarou.
+    --
+    -- `objective` e `optimization_goal` viajam como CONTEXTO. Nunca entram na
+    -- decisao de `result_type`: `OUTCOME_LEADS` + `LEAD_GENERATION` nao
+    -- implica Resultado = Lead neste contrato.
     resultado->>'result_type'                            as result_type,
     (resultado->>'result_count')::numeric                as result_count,
     resultado->>'result_attribution_window'              as result_attribution_window,
@@ -120,7 +135,7 @@ select
     payload->>'optimization_goal'                        as optimization_goal,
 
     -- Guarda interna da Silver; nao segue para o contrato unificado/Gold.
-    resultado_valido,
+    (resultado->>'valido')::boolean                      as resultado_valido,
 
     extracted_at
 

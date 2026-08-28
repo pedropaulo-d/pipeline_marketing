@@ -177,14 +177,14 @@ def _registro_meta(
             "objective": "OUTCOME_LEADS",
             "optimization_goal": "OFFSITE_CONVERSIONS",
             "results": [{
-                "indicator": "lead",
+                "indicator": "actions:offsite_conversion.fb_pixel_lead",
                 "values": [{
                     "attribution_windows": ["default"],
                     "value": "9",
                 }],
             }],
             "cost_per_result": [{
-                "indicator": "lead",
+                "indicator": "actions:offsite_conversion.fb_pixel_lead",
                 "values": [{
                     "attribution_windows": ["default"],
                     "value": "15.35555556",

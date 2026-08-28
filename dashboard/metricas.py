@@ -324,18 +324,41 @@ GOOGLE: str = "Google Ads"
 # Camada de apresentacao deliberadamente pequena: so os indicators validados
 # pelos probes reais recebem rotulo amigavel. Valor desconhecido permanece
 # tecnico internamente, mas nao ganha quantidade/custo agregado por inferencia.
+#
+# Os dois indicators prefixados de Lead vieram do primeiro request real com a
+# familia completa (bloco 2026-08-01..07): a Meta nomeia a origem do lead —
+# pixel offsite e formulario onsite agrupado — e as duas sao Lead para quem le
+# o painel.
+#
+# `lead` sem prefixo NAO entra. Ele existiu aqui enquanto o unico material
+# disponivel era fixture sintetica escrita antes de observar o contrato real;
+# nenhuma das 901 observacoes reais devolveu `results[].indicator = "lead"`.
+# Rotulo derivado de fixture propria e o dashboard confirmando a si mesmo, nao
+# evidencia da fonte.
+#
+# CUIDADO — contrato diferente, nome igual: a metrica `conversions` do Meta
+# continua sendo `actions[action_type = "lead"]`, e essa remocao nao a toca.
+# `actions[].action_type` e `results[].indicator` sao dois vocabularios
+# distintos da mesma resposta da API.
+#
+# `actions:onsite_conversion.messaging_conversation_started_7d` NAO entra: e
+# conversa iniciada, outro Resultado. Chamar de Lead seria interpretacao de
+# negocio inventada na camada de apresentacao.
 ROTULOS_RESULTADO: dict[str, str] = {
-    "lead": "Lead",
+    "actions:offsite_conversion.fb_pixel_lead": "Lead",
+    "actions:onsite_conversion.lead_grouped": "Lead",
     "video_thruplay_watched_actions": "ThruPlay",
 }
 
 RESULTADO_MULTIPLOS: str = "Múltiplos"
+RESULTADO_INCOMPLETO: str = "Dados incompletos"
 RESULTADO_NAO_MAPEADO: str = "Resultado não mapeado"
 RESULTADO_DISPONIVEL: str = "disponivel"
 RESULTADO_AUSENTE: str = "ausente"
 RESULTADO_INCOMPATIVEL: str = "incompativel"
 RESULTADO_SEM_SUPORTE: str = "sem_suporte"
 RESULTADO_DESCONHECIDO: str = "desconhecido"
+RESULTADO_PARCIAL: str = "parcial"
 
 
 @dataclass(frozen=True)
@@ -657,14 +680,33 @@ def resultado_campanha(linhas: list[dict]) -> dict:
     """Agrega Resultado Meta no grao campanha x periodo filtrado.
 
     O custo factual vindo da API e guardado para auditoria, mas nao participa
-    desta conta: somar ou tirar media de razoes seria incorreto. Para um unico
-    `result_type` + `result_attribution_window` validado, o custo agregado e
-    `SUM(spend de toda a campanha) / SUM(result_count reportado)`. Linhas sem
-    Resultado ainda carregam investimento e portanto participam do numerador.
+    desta conta: somar ou tirar media de razoes seria incorreto. Quando TODAS
+    as linhas do recorte declaram o mesmo `result_type` +
+    `result_attribution_window`, o custo agregado e
+    `SUM(spend) / SUM(result_count)`.
+
+    Ausencia total e ausencia declarada sao coisas diferentes
+    -------------------------------------------------------
+    Uma linha com `result_type` NULL e AUSENCIA TOTAL: a Meta nao devolveu
+    `results` nem `cost_per_result`, entao nao declarou tipo algum. Nao e a
+    FORMA A do parser, em que a fonte declara o `indicator` e entrega
+    `result_count = 0` — ali o tipo existe e a linha participa normalmente da
+    soma de investimento.
+
+    Por que o recorte misto e fail closed
+    -------------------------------------
+    Somar o investimento de uma linha sem tipo ao denominador de um Resultado
+    observado em OUTRO dia assume que aquele gasto pertence a mesma semantica.
+    Nada no dado sustenta isso: `objective` e `optimization_goal` sao contexto,
+    nao contrato, e a auditoria do bloco real (56 campanhas: 17 so com ausencia
+    total, 39 so com Resultado observado, intersecao ZERO) nao produziu uma
+    unica campanha em que a inferencia pudesse ser verificada. Sem evidencia, o
+    recorte misto devolve "Dados incompletos" — nao "Multiplos", porque o
+    problema nao e haver mais de um tipo, e sim faltar contrato em parte do
+    periodo.
 
     Mais de um tipo/janela, indicador desconhecido, Google ou ausencia total
-    devolvem valores indisponiveis. Objective e optimization_goal nao entram
-    na decisao.
+    tambem devolvem valores indisponiveis.
 
     Args:
         linhas: Linhas factuais de uma unica campanha no recorte.
@@ -694,6 +736,17 @@ def resultado_campanha(linhas: list[dict]) -> dict:
     if not com_resultado:
         return base
 
+    # Recorte misto: ha tipo declarado em parte do periodo e ausencia total no
+    # resto. Barrado antes de qualquer conta — inclusive antes da checagem de
+    # multiplos tipos, porque a falta de contrato e o defeito mais grave e o
+    # rotulo precisa dizer isso, nao "Multiplos".
+    if len(com_resultado) != len(linhas):
+        return {
+            **base,
+            "tipo_resultado": RESULTADO_INCOMPLETO,
+            "status_resultado": RESULTADO_PARCIAL,
+        }
+
     pares = {
         (linha.get("result_type"), linha.get("result_attribution_window"))
         for linha in com_resultado
@@ -716,12 +769,15 @@ def resultado_campanha(linhas: list[dict]) -> dict:
             "status_resultado": RESULTADO_DESCONHECIDO,
         }
 
+    # Defensivo. O parser da Silver nunca emite tipo com quantidade NULL, e o
+    # contrato do CSV recusa a linha antes daqui. Se chegasse, a quantidade
+    # ausente NAO vira zero: o recorte fica incompleto.
     quantidades = [linha.get("result_count") for linha in com_resultado]
     if any(valor is None for valor in quantidades):
         return {
             **base,
-            "tipo_resultado": RESULTADO_MULTIPLOS,
-            "status_resultado": RESULTADO_INCOMPATIVEL,
+            "tipo_resultado": RESULTADO_INCOMPLETO,
+            "status_resultado": RESULTADO_PARCIAL,
         }
 
     result_count = sum(quantidades, Decimal(0))

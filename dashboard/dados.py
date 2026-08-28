@@ -401,38 +401,52 @@ def _converter(bruto: dict, numero_linha: int) -> dict:
         janela = (bruto.get("result_attribution_window") or "").strip()
         quantidade_texto = (bruto.get("result_count") or "").strip()
         custo_texto = (bruto.get("cost_per_result") or "").strip()
-        preenchidos = [bool(tipo), bool(quantidade_texto), bool(janela), bool(custo_texto)]
 
-        if any(preenchidos) and not all(preenchidos):
-            raise ContratoInvalido(
-                f"Par de Resultado incompleto na linha {numero_linha}."
-            )
-
-        if all(preenchidos):
+        # O tipo governa o grupo. Janela e custo sao legitimamente vazios em
+        # formas que a Meta realmente devolve: indicador sem janela de
+        # atribuicao aplicavel, e quantidade zero (custo por resultado nao
+        # existe quando o denominador e zero). Quantidade, nao.
+        if not tipo:
+            if janela or quantidade_texto or custo_texto:
+                raise ContratoInvalido(
+                    f"Resultado sem result_type na linha {numero_linha}."
+                )
+        else:
+            if not quantidade_texto:
+                raise ContratoInvalido(
+                    f"Resultado sem result_count na linha {numero_linha}."
+                )
             if not FORMATO_RESULT_TYPE.fullmatch(tipo):
                 raise ContratoInvalido(
                     f"result_type fora do formato aceito na linha {numero_linha}."
                 )
-            if not FORMATO_ATTRIBUTION_WINDOW.fullmatch(janela):
+            if janela and not FORMATO_ATTRIBUTION_WINDOW.fullmatch(janela):
                 raise ContratoInvalido(
                     "result_attribution_window fora do formato aceito na linha "
                     f"{numero_linha}."
                 )
             try:
                 quantidade = Decimal(quantidade_texto)
-                custo = Decimal(custo_texto)
+                custo = Decimal(custo_texto) if custo_texto else None
             except InvalidOperation:
                 raise ContratoInvalido(
                     f"Resultado nao numerico na linha {numero_linha}."
                 ) from None
-            if quantidade < 0 or custo < 0:
+            if quantidade < 0 or (custo is not None and custo < 0):
                 raise ContratoInvalido(
                     f"Resultado negativo na linha {numero_linha}."
+                )
+            # Mesma regra do parser da Silver: custo ausente so e aceito
+            # quando nao ha resultado para dividir.
+            if custo is None and quantidade > 0:
+                raise ContratoInvalido(
+                    "Resultado com quantidade positiva e sem cost_per_result "
+                    f"na linha {numero_linha}."
                 )
             linha.update({
                 "result_type": tipo,
                 "result_count": quantidade,
-                "result_attribution_window": janela,
+                "result_attribution_window": janela or None,
                 "cost_per_result": custo,
             })
 
