@@ -7,9 +7,9 @@ carrega metricas reais de clientes de uma agencia e nao sobrevive a um clone
 limpo. Sem uma alternativa versionada, quem clonasse o repositorio veria uma
 tela de erro em vez do artefato do TCC.
 
-Este gerador produz um arquivo **inteiramente ficticio**, no mesmo contrato de
-19 colunas, que permite exercitar filtros, comparacao de periodo, rankings e
-graficos sem nenhum dado de cliente.
+Este gerador produz um arquivo **inteiramente ficticio**, no contrato v3 de
+24 colunas, que permite exercitar filtros, comparacao de periodo, rankings,
+graficos e Resultado sem nenhum dado de cliente.
 
 O que NAO e
 -----------
@@ -61,6 +61,7 @@ NOME_CSV: str = "metricas.csv"
 NOME_MANIFESTO: str = "manifesto.json"
 
 SEMENTE: int = 20260825
+VERSAO_CONTRATO: int = 3
 
 # Periodo deliberadamente distinto do periodo real do artefato, para que
 # ninguem confunda um screenshot de demonstracao com um de dado real.
@@ -76,7 +77,10 @@ PREFIXO: dict[str, str] = {
 
 PLATAFORMAS: tuple[str, ...] = ("Meta Ads", "Google Ads")
 
-COLUNAS: tuple[str, ...] = (
+RESULTADO_LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
+RESULTADO_THRUPLAY: str = "video_thruplay_watched_actions"
+
+COLUNAS_V2: tuple[str, ...] = (
     "data", "plataforma",
     "conta_id", "conta_versao",
     "campanha_id", "campanha_versao",
@@ -86,6 +90,13 @@ COLUNAS: tuple[str, ...] = (
     "conversion_value", "video_views", "reach", "profile_views", "purchases",
     "purchase_value",
 )
+
+COLUNAS_RESULTADO: tuple[str, ...] = (
+    "result_type", "result_count", "result_attribution_window",
+    "cost_per_result",
+)
+
+COLUNAS: tuple[str, ...] = COLUNAS_V2 + COLUNAS_RESULTADO
 
 
 def identificador(nivel: str, indice: int) -> str:
@@ -130,6 +141,16 @@ def montar_hierarquia(sorteio: random.Random) -> list[dict]:
             seq["campanha"] += 1
             campanha = identificador("campanha", seq["campanha"])
             campanha_versao_2 = seq["campanha"] in (2, 7)
+            # Resultado e definido por campanha, sem novo sorteio: acrescentar
+            # a v3 nao pode mudar as 20 metricas antigas ao deslocar a sequencia
+            # pseudoaleatoria. Um terco das campanhas Meta representa ausencia
+            # total; as demais alternam dois tipos reais aceitos pelo contrato.
+            if plataforma != "Meta Ads" or seq["campanha"] % 3 == 0:
+                result_type = None
+            elif seq["campanha"] % 2:
+                result_type = RESULTADO_LEAD
+            else:
+                result_type = RESULTADO_THRUPLAY
 
             for _ in range(2):
                 seq["adset"] += 1
@@ -143,6 +164,7 @@ def montar_hierarquia(sorteio: random.Random) -> list[dict]:
                         "conta_versao_2": conta_versao_2,
                         "campanha_id": campanha,
                         "campanha_versao_2": campanha_versao_2,
+                        "result_type": result_type,
                         "adset_id": adset,
                         "anuncio_id": identificador("anuncio", seq["anuncio"]),
                         "anuncio_versao_2": seq["anuncio"] % 17 == 0,
@@ -233,6 +255,34 @@ def gerar_linhas() -> list[dict]:
                 reach = 0
                 video_views = int(impressions * sorteio.uniform(0.0, 0.06))
 
+            result_type = anuncio["result_type"]
+            if result_type is None:
+                result_count = None
+                result_attribution_window = None
+                cost_per_result = None
+            else:
+                # Lead acompanha a conversao sintetica. ThruPlay usa uma
+                # fracao deterministica das visualizacoes Meta: continua
+                # ficticio, nao reutiliza numero da superficie operacional.
+                if result_type == RESULTADO_LEAD:
+                    result_count = conversions
+                else:
+                    result_count = Decimal(
+                        int(Decimal(video_views) * Decimal("0.60"))
+                    )
+
+                # Zero aqui e factual: o tipo foi declarado, mas nao houve
+                # resultado. Sem denominador, custo e janela ficam NULL — a
+                # mesma semantica da Forma A aceita pelo contrato real.
+                if result_count > 0:
+                    result_attribution_window = "default"
+                    cost_per_result = (spend / result_count).quantize(
+                        Decimal("0.00000001")
+                    )
+                else:
+                    result_attribution_window = None
+                    cost_per_result = None
+
             linhas.append({
                 "data": data.isoformat(),
                 "plataforma": anuncio["plataforma"],
@@ -255,6 +305,10 @@ def gerar_linhas() -> list[dict]:
                 "profile_views": 0,
                 "purchases": purchases,
                 "purchase_value": purchase_value,
+                "result_type": result_type,
+                "result_count": result_count,
+                "result_attribution_window": result_attribution_window,
+                "cost_per_result": cost_per_result,
             })
 
     linhas.sort(key=lambda l: (
@@ -262,6 +316,18 @@ def gerar_linhas() -> list[dict]:
         l["adset_id"], l["anuncio_id"],
     ))
     return linhas
+
+
+def _texto(valor) -> str:
+    """Serializa ausencia como campo vazio, nunca como texto inventado.
+
+    Args:
+        valor: Valor de uma celula.
+
+    Returns:
+        Texto do valor, ou vazio quando ele for ``None``.
+    """
+    return "" if valor is None else str(valor)
 
 
 def serializar_csv(linhas: list[dict]) -> str:
@@ -277,7 +343,7 @@ def serializar_csv(linhas: list[dict]) -> str:
     escritor = csv.writer(buffer, lineterminator="\n")
     escritor.writerow(COLUNAS)
     for linha in linhas:
-        escritor.writerow([str(linha[coluna]) for coluna in COLUNAS])
+        escritor.writerow([_texto(linha[coluna]) for coluna in COLUNAS])
     return buffer.getvalue()
 
 
@@ -302,6 +368,10 @@ TIPOS: dict[str, str] = {
     "profile_views": "integer",
     "purchases": "integer",
     "purchase_value": "decimal",
+    "result_type": "text nullable (indicador oficial da Meta)",
+    "result_count": "decimal nullable (NULL = ausencia, nao zero)",
+    "result_attribution_window": "text nullable (NULL = janela nao aplicavel)",
+    "cost_per_result": "decimal nullable (NULL = sem denominador)",
 }
 
 AVISO_VIDEO_VIEWS: str = (
@@ -340,7 +410,7 @@ def montar_manifesto(linhas: list[dict], conteudo: str) -> dict:
     """
     datas = sorted(linha["data"] for linha in linhas)
     return {
-        "versao_contrato": 2,
+        "versao_contrato": VERSAO_CONTRATO,
         "modo": "demonstracao",
         "natureza": (
             "DADOS SINTETICOS E FICTICIOS. Nao derivam de nome, identificador "

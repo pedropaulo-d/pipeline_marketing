@@ -69,7 +69,9 @@ def linhas_validas() -> list[dict]:
     return linhas
 
 
-def montar_csv(linhas: list[dict], colunas=None) -> str:
+def montar_csv(
+    linhas: list[dict], colunas=None, versao: int = 3
+) -> str:
     """Serializa linhas no formato do artefato.
 
     Args:
@@ -79,14 +81,16 @@ def montar_csv(linhas: list[dict], colunas=None) -> str:
     Returns:
         Texto do CSV.
     """
-    colunas = colunas or list(auditor.COLUNAS_ESPERADAS)
+    colunas = colunas or list(auditor.SCHEMAS[versao])
     saida = [",".join(colunas)]
     for linha in linhas:
         saida.append(",".join(str(linha.get(coluna, "")) for coluna in colunas))
     return "\n".join(saida) + "\n"
 
 
-def montar_manifesto(texto_csv: str, linhas: list[dict], colunas=None) -> dict:
+def montar_manifesto(
+    texto_csv: str, linhas: list[dict], colunas=None, versao: int = 3
+) -> dict:
     """Monta um manifesto coerente com o CSV.
 
     Args:
@@ -99,7 +103,7 @@ def montar_manifesto(texto_csv: str, linhas: list[dict], colunas=None) -> dict:
     """
     datas = sorted(linha["data"] for linha in linhas)
     return {
-        "versao_contrato": 2,
+        "versao_contrato": versao,
         "gerado_em": "2026-08-18T00:00:00+00:00",
         "artefato": auditor.NOME_CSV,
         "sha256": hashlib.sha256(texto_csv.encode("utf-8")).hexdigest(),
@@ -107,8 +111,8 @@ def montar_manifesto(texto_csv: str, linhas: list[dict], colunas=None) -> dict:
         "data_min": datas[0],
         "data_max": datas[-1],
         "grao": "1 anuncio x 1 dia",
-        "colunas": colunas or list(auditor.COLUNAS_ESPERADAS),
-        "tipos": {c: "text" for c in auditor.COLUNAS_ESPERADAS},
+        "colunas": colunas or list(auditor.SCHEMAS[versao]),
+        "tipos": {c: "text" for c in auditor.SCHEMAS[versao]},
         "fingerprint_chave": "0123456789ABCDEF",
         "avisos": {
             "video_views": (
@@ -285,31 +289,149 @@ class TestArtefatoValido(BaseAuditoria):
         self.assertEqual(self.auditar(), 1)
 
 
+class TestVersaoDoContrato(BaseAuditoria):
+    """O schema vem da versao declarada, nao da contagem de colunas.
+
+    Contar colunas confundiria "artefato v2 legitimo" com "artefato v3
+    mutilado": os dois teriam 20 nomes. E a versao do manifesto que diz contra
+    qual contrato conferir — e versao que ninguem reconhece nao vira a mais
+    nova por conveniencia.
+    """
+
+    def _gravar_versao(self, versao: int, colunas=None) -> None:
+        colunas = colunas or list(auditor.SCHEMAS[versao])
+        texto = montar_csv(self.linhas, colunas)
+        manifesto = montar_manifesto(texto, self.linhas, colunas, versao=versao)
+        self.gravar(colunas=colunas, manifesto=manifesto, texto_csv=texto)
+
+    def test_v2_continua_aprovado(self):
+        # Retrocompatibilidade: o artefato publicado hoje e v2 e nao sera
+        # regenerado nesta etapa. Passar a recusa-lo so porque o codigo agora
+        # conhece a v3 quebraria o dashboard em producao.
+        self._gravar_versao(2)
+
+        self.assertEqual(self.auditar(), 0)
+
+    def test_v3_aprovado(self):
+        self._gravar_versao(3)
+
+        self.assertEqual(self.auditar(), 0)
+
+    def test_manifesto_v2_com_csv_v3_reprova(self):
+        texto = montar_csv(self.linhas, list(auditor.COLUNAS_V3))
+        manifesto = montar_manifesto(
+            texto, self.linhas, list(auditor.COLUNAS_V2), versao=2
+        )
+        self.gravar(
+            colunas=list(auditor.COLUNAS_V3), manifesto=manifesto,
+            texto_csv=texto,
+        )
+
+        self.assertEqual(self.auditar(), 1)
+
+    def test_manifesto_v3_com_csv_v2_reprova(self):
+        texto = montar_csv(self.linhas, list(auditor.COLUNAS_V2))
+        manifesto = montar_manifesto(
+            texto, self.linhas, list(auditor.COLUNAS_V3), versao=3
+        )
+        self.gravar(
+            colunas=list(auditor.COLUNAS_V2), manifesto=manifesto,
+            texto_csv=texto,
+        )
+
+        self.assertEqual(self.auditar(), 1)
+
+    def test_versao_desconhecida_reprova(self):
+        for versao in (1, 4, 99, None, "3", 3.0, True):
+            with self.subTest(versao=versao):
+                texto = montar_csv(self.linhas)
+                manifesto = montar_manifesto(texto, self.linhas)
+                manifesto["versao_contrato"] = versao
+                self.gravar(manifesto=manifesto, texto_csv=texto)
+
+                self.assertEqual(self.auditar(), 1)
+
+    def test_versao_ausente_reprova(self):
+        texto = montar_csv(self.linhas)
+        manifesto = montar_manifesto(texto, self.linhas)
+        del manifesto["versao_contrato"]
+        self.gravar(manifesto=manifesto, texto_csv=texto)
+
+        self.assertEqual(self.auditar(), 1)
+
+    def test_nao_ha_fallback_para_a_versao_mais_nova(self):
+        # O modo mais facil de errar aqui e tratar versao desconhecida como
+        # "provavelmente a ultima". Um artefato que declara v99 e tem o schema
+        # exato da v3 continua reprovado.
+        texto = montar_csv(self.linhas, list(auditor.COLUNAS_V3))
+        manifesto = montar_manifesto(
+            texto, self.linhas, list(auditor.COLUNAS_V3), versao=3
+        )
+        manifesto["versao_contrato"] = 99
+        self.gravar(
+            colunas=list(auditor.COLUNAS_V3), manifesto=manifesto,
+            texto_csv=texto,
+        )
+
+        self.assertEqual(self.auditar(), 1)
+
+
+class TestSchemaV3(BaseAuditoria):
+    """A v3 nao afrouxa nada: continua igualdade estrita."""
+
+    def test_resultado_incompleto_reprova(self):
+        for ausente in auditor.COLUNAS_RESULTADO:
+            with self.subTest(ausente=ausente):
+                colunas = [c for c in auditor.COLUNAS_V3 if c != ausente]
+                self.gravar(colunas=colunas)
+
+                self.assertEqual(self.auditar(), 1)
+
+    def test_contexto_do_dw_no_artefato_reprova(self):
+        # `objective` e `optimization_goal` sao SOMENTE_DW: existem no Gold e
+        # nao podem chegar a superficie por nenhuma versao do contrato.
+        for coluna in ("objective", "optimization_goal"):
+            with self.subTest(coluna=coluna):
+                colunas = list(auditor.COLUNAS_V3) + [coluna]
+                linhas = [dict(l, **{coluna: "OUTCOME_LEADS"})
+                          for l in self.linhas]
+                self.gravar(linhas=linhas, colunas=colunas)
+
+                self.assertEqual(self.auditar(), 1)
+
+    def test_v3_com_coluna_extra_reprova(self):
+        colunas = list(auditor.COLUNAS_V3) + ["result_rate"]
+        linhas = [dict(l, result_rate="0.5") for l in self.linhas]
+        self.gravar(linhas=linhas, colunas=colunas)
+
+        self.assertEqual(self.auditar(), 1)
+
+
 class TestSchema(BaseAuditoria):
     """O cabecalho e contrato, nao sugestao."""
 
     def test_coluna_extra_reprova(self):
-        colunas = list(auditor.COLUNAS_ESPERADAS) + ["landing_page_url"]
+        colunas = list(auditor.COLUNAS_V3) + ["landing_page_url"]
         linhas = [dict(l, landing_page_url="x") for l in self.linhas]
         self.gravar(linhas=linhas, colunas=colunas)
 
         self.assertEqual(self.auditar(), 1)
 
     def test_coluna_ausente_reprova(self):
-        colunas = [c for c in auditor.COLUNAS_ESPERADAS if c != "conta_versao"]
+        colunas = [c for c in auditor.COLUNAS_V3 if c != "conta_versao"]
         self.gravar(colunas=colunas)
 
         self.assertEqual(self.auditar(), 1)
 
     def test_coluna_com_sufixo_interno_reprova(self):
-        colunas = list(auditor.COLUNAS_ESPERADAS) + ["conta_nk"]
+        colunas = list(auditor.COLUNAS_V3) + ["conta_nk"]
         linhas = [dict(l, conta_nk=NK_PLANTADA) for l in self.linhas]
         self.gravar(linhas=linhas, colunas=colunas)
 
         self.assertEqual(self.auditar(), 1)
 
     def test_ordem_trocada_reprova(self):
-        colunas = list(auditor.COLUNAS_ESPERADAS)
+        colunas = list(auditor.COLUNAS_V3)
         colunas[0], colunas[1] = colunas[1], colunas[0]
         self.gravar(colunas=colunas)
 
@@ -609,9 +731,9 @@ class TestIndependencia(unittest.TestCase):
         # Os dois tem de concordar hoje, mas cada um declara o seu: se o
         # produtor mudar sozinho, a auditoria reprova em vez de acompanhar.
         self.assertEqual(
-            list(auditor.COLUNAS_ESPERADAS), list(produtor.COLUNAS_SAIDA)
+            list(auditor.COLUNAS_V3), list(produtor.COLUNAS_SAIDA)
         )
-        self.assertIsNot(auditor.COLUNAS_ESPERADAS, produtor.COLUNAS_SAIDA)
+        self.assertIsNot(auditor.COLUNAS_V3, produtor.COLUNAS_SAIDA)
 
 
 if __name__ == "__main__":

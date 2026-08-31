@@ -68,13 +68,18 @@ NOME_MANIFESTO: str = "manifesto.json"
 SUFIXO_PARCIAL: str = ".parcial"
 
 # Versao 2 desde 26/08/2026: `purchase_value` entrou como coluna publica.
+# Versao 3 desde 31/08/2026: as quatro colunas de Resultado do Meta entraram,
+# depois que a reextracao autorizada trouxe `results`/`cost_per_result` para a
+# bronze e o `dbt build` as materializou no Gold. Antes disso elas existiam na
+# view mas ficavam fora do artefato de proposito (ver `RESERVADA_EXPOSICAO`).
+#
 # Acrescentar coluna E mudanca de schema neste contrato — os consumidores
 # declaram a lista esperada e comparam por igualdade, nao por conjunto: o
-# dashboard (`dados.COLUNAS_OBRIGATORIAS`) e o auditor (`COLUNAS_ESPERADAS`)
-# recusam o artefato inteiro se a lista nao bater. Um artefato v2 lido por um
-# consumidor v1 falha fechado, que e o comportamento desejado; o numero e o
-# que permite dizer POR QUE falhou.
-VERSAO_CONTRATO: int = 2
+# dashboard (`dados.COLUNAS_OBRIGATORIAS` mais o grupo opcional de Resultado) e
+# o auditor (`SCHEMAS`) recusam o artefato inteiro se a lista nao bater. Um
+# artefato v3 lido por um consumidor v2 falha fechado, que e o comportamento
+# desejado; o numero e o que permite dizer POR QUE falhou.
+VERSAO_CONTRATO: int = 3
 
 VIEW: str = "gold.vw_metricas_completas"
 
@@ -86,9 +91,11 @@ VIEW: str = "gold.vw_metricas_completas"
 #                    pseudonimo)
 # - PROIBIDA         identifica cliente; nunca sai, nem transformada
 # - IGNORADA_SEGURA  inofensiva, mas desnecessaria: derivavel de `data`
-# - RESERVADA_EXPOSICAO campo aprovado para a proxima versao do contrato, mas
-#                    ainda fora da v2 para nao mudar a superficie sem a
-#                    reextracao/revisao autorizada
+# - RESERVADA_EXPOSICAO campo aprovado para uma versao futura do contrato, mas
+#                    ainda fora da superficie: classificar sem exportar mantem
+#                    o fail closed verde sem mudar o artefato. Sem ocupante
+#                    desde a v3 — os quatro campos de Resultado que estavam
+#                    aqui viraram USADA
 # - SOMENTE_DW       contexto util para diagnostico interno, desnecessario ao
 #                    dashboard pela politica de minimizacao
 USADA: str = "USADA"
@@ -126,14 +133,19 @@ CLASSIFICACAO: dict[str, str] = {
     # Nao e identificador nem carrega informacao reidentificavel.
     "purchase_value": USADA,
 
-    # Resultado Meta: o dashboard precisara destas quatro colunas numa futura
-    # versao do contrato. Elas ficam classificadas agora para o fail closed da
-    # view continuar verde depois do dbt build, mas NAO entram em
-    # COLUNAS_ORIGEM/COLUNAS_SAIDA nem alteram a superficie v2 nesta etapa.
-    "result_type": RESERVADA_EXPOSICAO,
-    "result_count": RESERVADA_EXPOSICAO,
-    "result_attribution_window": RESERVADA_EXPOSICAO,
-    "cost_per_result": RESERVADA_EXPOSICAO,
+    # Resultado Meta, publico desde a v3. O par (quantidade, custo) e o
+    # Resultado oficial escolhido pela propria Meta; o dashboard o consome como
+    # grupo indivisivel. Nenhum dos quatro identifica cliente: sao um rotulo de
+    # indicador, uma contagem, uma janela de atribuicao e um custo unitario.
+    #
+    # `result_count` NULL nao e zero — zero e quantidade declarada, NULL e
+    # ausencia de contrato. `cost_per_result` e `result_attribution_window`
+    # NULL sao estados legitimos (sem denominador, janela nao aplicavel). O
+    # exportador nao preenche nenhum deles: transporta o que o Gold resolveu.
+    "result_type": USADA,
+    "result_count": USADA,
+    "result_attribution_window": USADA,
+    "cost_per_result": USADA,
 
     # Contexto operacional oficial, sem funcao no consumidor. Mantido no DW
     # para diagnostico; minimizacao evita expor coluna que a UI nao usa.
@@ -183,10 +195,26 @@ COLUNAS_ORIGEM: tuple[str, ...] = (
     "profile_views",
     "purchases",
     "purchase_value",
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result",
 )
 
-# As 20 colunas do artefato. Nao ha coluna de nome publico: o proprio ID e o
-# rotulo. Nao ha `linha_id`: o grao ja e `(anuncio_id, data)`.
+# O grupo de Resultado, nomeado porque entra e sai inteiro. Meia colunagem
+# obrigaria o consumidor a inventar a outra metade do par oficial da Meta —
+# `dados.COLUNAS_RESULTADO_OPCIONAIS` afirma a mesma regra do outro lado.
+COLUNAS_RESULTADO: tuple[str, ...] = (
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result",
+)
+
+# As 24 colunas do artefato. Nao ha coluna de nome publico: o proprio ID e o
+# rotulo. Nao ha `linha_id`: o grao ja e `(anuncio_id, data)`. As quatro de
+# Resultado vao no FIM: o prefixo v2 permanece na mesma ordem, entao um leitor
+# posicional antigo nao troca coluna de lugar em silencio.
 COLUNAS_SAIDA: tuple[str, ...] = (
     "data",
     "plataforma",
@@ -208,6 +236,10 @@ COLUNAS_SAIDA: tuple[str, ...] = (
     "profile_views",
     "purchases",
     "purchase_value",
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result",
 )
 
 TIPOS_SAIDA: dict[str, str] = {
@@ -231,6 +263,10 @@ TIPOS_SAIDA: dict[str, str] = {
     "profile_views": "integer",
     "purchases": "integer",
     "purchase_value": "decimal",
+    "result_type": "text nullable (indicador oficial da Meta)",
+    "result_count": "decimal nullable (NULL = ausencia, nao zero)",
+    "result_attribution_window": "text nullable (NULL = janela nao aplicavel)",
+    "cost_per_result": "decimal nullable (NULL = sem denominador)",
 }
 
 # Os 12 campos que NUNCA podem aparecer no artefato: 4 nomes, 4 external IDs
@@ -389,6 +425,12 @@ def transformar(linhas: list[dict]) -> list[dict]:
             registro[f"{nivel}_versao"] = linha[f"{nivel}_versao"]
         for metrica in METRICAS:
             registro[metrica] = linha[metrica]
+        # Resultado: copia direta, sem coalesce e sem default. `None` chega ao
+        # CSV como campo vazio (`_texto`), que e como a ausencia se escreve
+        # neste contrato — trocar por 0 afirmaria quantidade que a fonte nao
+        # declarou, e trocar por texto ("N/A") inventaria um valor de dominio.
+        for coluna in COLUNAS_RESULTADO:
+            registro[coluna] = linha[coluna]
         saida.append(registro)
 
     saida.sort(

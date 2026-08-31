@@ -105,6 +105,291 @@ def diff_de(dados: dict, nome: str) -> vp.DiffKeyed:
     raise KeyError(nome)
 
 
+def agregados_resultado_sinteticos() -> dict:
+    """Monta as duas colecoes Result sem dado real nem identificador privado.
+
+    Returns:
+        Snapshot minimo com Google sem suporte, Meta historico sem contrato e
+        Meta atual com ausencia, zero factual e resultado positivo.
+    """
+    return {
+        vp.COLECAO_COBERTURA_RESULTADO: [
+            {
+                "plataforma": "Google Ads",
+                "data": "2026-08-01",
+                "linhas": 2,
+                "linhas_com_result_type": 0,
+                "linhas_sem_result_type": 2,
+                "linhas_com_result_count": 0,
+                "linhas_com_result_count_zero": 0,
+                "linhas_com_cost_per_result": 0,
+                "linhas_com_result_attribution_window": 0,
+            },
+            {
+                "plataforma": "Meta Ads",
+                "data": "2026-07-15",
+                "linhas": 2,
+                "linhas_com_result_type": 0,
+                "linhas_sem_result_type": 2,
+                "linhas_com_result_count": 0,
+                "linhas_com_result_count_zero": 0,
+                "linhas_com_cost_per_result": 0,
+                "linhas_com_result_attribution_window": 0,
+            },
+            {
+                "plataforma": "Meta Ads",
+                "data": "2026-08-01",
+                "linhas": 3,
+                "linhas_com_result_type": 2,
+                "linhas_sem_result_type": 1,
+                "linhas_com_result_count": 2,
+                "linhas_com_result_count_zero": 1,
+                "linhas_com_cost_per_result": 1,
+                "linhas_com_result_attribution_window": 1,
+            },
+        ],
+        vp.COLECAO_DISTRIBUICAO_RESULTADO: [
+            {
+                "plataforma": "Meta Ads",
+                "data": "2026-08-01",
+                "result_type": "actions:offsite_conversion.fb_pixel_lead",
+                "result_attribution_window": None,
+                "linhas": 1,
+                "soma_result_count_no_grupo": "0.000000",
+                "linhas_com_result_count_zero": 1,
+                "linhas_com_result_count_positivo": 0,
+                "linhas_com_cost_per_result": 0,
+                "checksum_tecnico_result_count": "a" * 32,
+                "checksum_tecnico_cost_per_result": "b" * 32,
+            },
+            {
+                "plataforma": "Meta Ads",
+                "data": "2026-08-01",
+                "result_type": "actions:offsite_conversion.fb_pixel_lead",
+                "result_attribution_window": "default",
+                "linhas": 1,
+                "soma_result_count_no_grupo": "2.000000",
+                "linhas_com_result_count_zero": 0,
+                "linhas_com_result_count_positivo": 1,
+                "linhas_com_cost_per_result": 1,
+                "checksum_tecnico_result_count": "c" * 32,
+                "checksum_tecnico_cost_per_result": "d" * 32,
+            },
+        ],
+    }
+
+
+def cobertura_resultado(
+    dados: dict, plataforma: str, data: str
+) -> dict:
+    """Localiza uma cobertura Result pela chave natural.
+
+    Args:
+        dados: Snapshot sintetico.
+        plataforma: Plataforma da chave.
+        data: Data da chave.
+
+    Returns:
+        Item da cobertura, para mutacao no proprio snapshot.
+
+    Raises:
+        KeyError: Se a chave nao existir.
+    """
+    for linha in dados[vp.COLECAO_COBERTURA_RESULTADO]:
+        if (linha["plataforma"], linha["data"]) == (plataforma, data):
+            return linha
+    raise KeyError((plataforma, data))
+
+
+def distribuicao_resultado(dados: dict, janela) -> dict:
+    """Localiza o grupo Lead sintetico por janela.
+
+    Args:
+        dados: Snapshot sintetico.
+        janela: Janela factual, inclusive ``None``.
+
+    Returns:
+        Grupo da distribuicao, para mutacao no proprio snapshot.
+
+    Raises:
+        KeyError: Se a janela nao existir.
+    """
+    for linha in dados[vp.COLECAO_DISTRIBUICAO_RESULTADO]:
+        if linha["result_attribution_window"] == janela:
+            return linha
+    raise KeyError(janela)
+
+
+class TestCoberturaGoldenDeResultado(unittest.TestCase):
+    """Result e protegido como factual, nunca como KPI global heterogeneo."""
+
+    def test_snapshot_captura_cobertura_e_distribuicao(self):
+        dados = agregados_resultado_sinteticos()
+
+        self.assertEqual(
+            set(dados), {
+                vp.COLECAO_COBERTURA_RESULTADO,
+                vp.COLECAO_DISTRIBUICAO_RESULTADO,
+            },
+        )
+        self.assertEqual(
+            vp._CHAVES_NATURAIS[vp.COLECAO_COBERTURA_RESULTADO],
+            ("plataforma", "data"),
+        )
+        self.assertEqual(
+            vp._CHAVES_NATURAIS[vp.COLECAO_DISTRIBUICAO_RESULTADO],
+            (
+                "plataforma", "data", "result_type",
+                "result_attribution_window",
+            ),
+        )
+
+    def test_typed_virar_ausencia_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        cobertura = cobertura_resultado(atual, "Meta Ads", "2026-08-01")
+        cobertura.update({
+            "linhas_com_result_type": 1,
+            "linhas_sem_result_type": 2,
+            "linhas_com_result_count": 1,
+        })
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_COBERTURA_RESULTADO
+        )
+
+        self.assertEqual(len(diff.alteradas), 1)
+
+    def test_mudanca_de_result_type_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        distribuicao_resultado(atual, "default")["result_type"] = (
+            "video_thruplay_watched_actions"
+        )
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_DISTRIBUICAO_RESULTADO
+        )
+
+        self.assertEqual(len(diff.novas), 1)
+        self.assertEqual(len(diff.removidas), 1)
+
+    def test_mudanca_de_result_count_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        grupo = distribuicao_resultado(atual, "default")
+        grupo["soma_result_count_no_grupo"] = "3.000000"
+        grupo["checksum_tecnico_result_count"] = "e" * 32
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_DISTRIBUICAO_RESULTADO
+        )
+
+        self.assertEqual(len(diff.alteradas), 1)
+        self.assertEqual(
+            {campo.campo for campo in diff.alteradas[0].campos},
+            {
+                "soma_result_count_no_grupo",
+                "checksum_tecnico_result_count",
+            },
+        )
+
+    def test_mudanca_de_cost_per_result_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        distribuicao_resultado(atual, "default")[
+            "checksum_tecnico_cost_per_result"
+        ] = "f" * 32
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_DISTRIBUICAO_RESULTADO
+        )
+
+        self.assertEqual(
+            diff.alteradas[0].campos[0].campo,
+            "checksum_tecnico_cost_per_result",
+        )
+
+    def test_mudanca_de_attribution_window_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        distribuicao_resultado(atual, "default")[
+            "result_attribution_window"
+        ] = "7d_click"
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_DISTRIBUICAO_RESULTADO
+        )
+
+        self.assertEqual(len(diff.novas), 1)
+        self.assertEqual(len(diff.removidas), 1)
+
+    def test_result_inesperado_no_google_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        google = cobertura_resultado(atual, "Google Ads", "2026-08-01")
+        google.update({
+            "linhas_com_result_type": 1,
+            "linhas_sem_result_type": 1,
+            "linhas_com_result_count": 1,
+            "linhas_com_cost_per_result": 1,
+        })
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_COBERTURA_RESULTADO
+        )
+
+        self.assertEqual(len(diff.alteradas), 1)
+
+    def test_result_inesperado_no_meta_historico_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        historico = cobertura_resultado(atual, "Meta Ads", "2026-07-15")
+        historico.update({
+            "linhas_com_result_type": 1,
+            "linhas_sem_result_type": 1,
+            "linhas_com_result_count": 1,
+        })
+
+        diff = diff_de(
+            vp.comparar(esperado, atual), vp.COLECAO_COBERTURA_RESULTADO
+        )
+
+        self.assertEqual(len(diff.alteradas), 1)
+
+    def test_ordem_das_duas_colecoes_nao_diverge(self):
+        esperado = agregados_resultado_sinteticos()
+        atual = copy.deepcopy(esperado)
+        atual[vp.COLECAO_COBERTURA_RESULTADO].reverse()
+        atual[vp.COLECAO_DISTRIBUICAO_RESULTADO].reverse()
+
+        self.assertFalse(vp.comparar(esperado, atual).houve())
+
+    def test_nao_existe_resultados_totais_como_kpi(self):
+        dados = agregados_resultado_sinteticos()
+
+        self.assertNotIn("resultados_totais", dados)
+        self.assertNotIn("soma_result_count_global", dados)
+        for linha in dados[vp.COLECAO_COBERTURA_RESULTADO]:
+            self.assertNotIn("soma_result_count_no_grupo", linha)
+
+    def test_janela_null_permanece_null(self):
+        dados = agregados_resultado_sinteticos()
+
+        self.assertIsNone(
+            distribuicao_resultado(dados, None)[
+                "result_attribution_window"
+            ]
+        )
+
+    def test_snapshot_sintetico_e_deterministico(self):
+        primeiro = agregados_resultado_sinteticos()
+        segundo = agregados_resultado_sinteticos()
+
+        self.assertEqual(primeiro, segundo)
+        self.assertFalse(vp.comparar(primeiro, segundo).houve())
+
+
 class TestSemDivergencia(unittest.TestCase):
     """O golden comparado consigo mesmo, e com ele embaralhado."""
 
@@ -323,9 +608,9 @@ class TestEstruturasSemChaveNatural(unittest.TestCase):
         divergencias = vp.comparar(agregados(), atual)
 
         self.assertTrue(divergencias.houve())
-        self.assertEqual(
-            [diff.nome for diff in divergencias.keyed], ["contagens"]
-        )
+        nomes_keyed = [diff.nome for diff in divergencias.keyed]
+        self.assertNotIn("por_plataforma_dia", nomes_keyed)
+        self.assertIn("contagens", nomes_keyed)
         self.assertIn("nao foi possivel indexar", divergencias.outros[0])
         self.assertIn("por_plataforma_dia", divergencias.outros[0])
 

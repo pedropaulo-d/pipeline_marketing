@@ -57,7 +57,13 @@ NOME_MANIFESTO: str = "manifesto.json"
 # Schema esperado, declarado AQUI de proposito. Se o exportador mudar o
 # contrato sem que esta lista mude junto, a auditoria reprova — que e o
 # comportamento desejado.
-COLUNAS_ESPERADAS: tuple[str, ...] = (
+#
+# O schema e escolhido pela versao que o MANIFESTO declara, nao pela contagem
+# de colunas. Contar colunas confundiria "artefato v2 legitimo" com "artefato
+# v3 mutilado": os dois teriam 20 nomes, e so a versao declarada distingue um
+# do outro. Versao ausente ou desconhecida reprova — nunca cai no schema mais
+# novo por conveniencia.
+COLUNAS_V2: tuple[str, ...] = (
     "data",
     "plataforma",
     "conta_id",
@@ -79,6 +85,26 @@ COLUNAS_ESPERADAS: tuple[str, ...] = (
     "purchases",
     "purchase_value",
 )
+
+# Resultado Meta, publico desde a v3. Derivado da v2 por concatenacao porque a
+# v3 e literalmente "a v2 mais quatro colunas no fim": escrever as 20 de novo
+# criaria duas listas para manter em acordo dentro do MESMO arquivo, sem
+# ganhar independencia nenhuma. A independencia que importa e contra o
+# produtor, e ela continua — `test_auditor_e_produtor_concordam` compara as
+# duas declaracoes, que vivem em modulos diferentes.
+COLUNAS_RESULTADO: tuple[str, ...] = (
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result",
+)
+
+COLUNAS_V3: tuple[str, ...] = COLUNAS_V2 + COLUNAS_RESULTADO
+
+SCHEMAS: dict[int, tuple[str, ...]] = {
+    2: COLUNAS_V2,
+    3: COLUNAS_V3,
+}
 
 NIVEIS: tuple[str, ...] = ("conta", "campanha", "adset", "anuncio")
 
@@ -173,20 +199,42 @@ def _decimal(valor: str):
         return None
 
 
-def checar_schema(cabecalho: list[str]) -> list[str]:
-    """Confere o cabecalho contra o contrato.
+def schema_da_versao(manifesto: dict) -> tuple[str, ...] | None:
+    """Devolve o schema declarado pelo manifesto, ou ``None`` se invalido.
+
+    Fail closed: versao ausente, nao inteira ou fora de :data:`SCHEMAS` nao
+    tem schema. Nao existe fallback para o contrato mais novo — assumir a
+    ultima versao faria um artefato de versao desconhecida ser auditado contra
+    regras que ninguem afirmou que ele segue.
+
+    Args:
+        manifesto: Manifesto carregado.
+
+    Returns:
+        Tupla de colunas esperadas, ou ``None``.
+    """
+    versao = manifesto.get("versao_contrato")
+    # `bool` e subclasse de `int`: `True` passaria por versao 1 sem o guarda.
+    if isinstance(versao, bool) or not isinstance(versao, int):
+        return None
+    return SCHEMAS.get(versao)
+
+
+def checar_schema(cabecalho: list[str], esperadas: tuple[str, ...]) -> list[str]:
+    """Confere o cabecalho contra o contrato da versao declarada.
 
     Args:
         cabecalho: Colunas lidas do CSV.
+        esperadas: Colunas exigidas pela versao do manifesto.
 
     Returns:
         Lista de falhas.
     """
     falhas: list[str] = []
 
-    if tuple(cabecalho) != COLUNAS_ESPERADAS:
-        extras = sorted(set(cabecalho) - set(COLUNAS_ESPERADAS))
-        faltando = sorted(set(COLUNAS_ESPERADAS) - set(cabecalho))
+    if tuple(cabecalho) != esperadas:
+        extras = sorted(set(cabecalho) - set(esperadas))
+        faltando = sorted(set(esperadas) - set(cabecalho))
         if extras:
             falhas.append(f"coluna inesperada no artefato: {extras}")
         if faltando:
@@ -340,7 +388,13 @@ def checar_manifesto(manifesto: dict, texto_csv: str, linhas: list[dict]) -> lis
             f"{len(linhas)}"
         )
 
-    if list(manifesto["colunas"]) != list(COLUNAS_ESPERADAS):
+    esperadas = schema_da_versao(manifesto)
+    if esperadas is None:
+        falhas.append(
+            f"versao_contrato desconhecida: {manifesto['versao_contrato']!r}. "
+            f"Versoes suportadas: {sorted(SCHEMAS)}"
+        )
+    elif list(manifesto["colunas"]) != list(esperadas):
         falhas.append("lista de colunas do manifesto diverge do contrato")
 
     datas = sorted(l["data"] for l in linhas)
@@ -600,10 +654,24 @@ def auditar(diretorio: Path, usar_dw: bool = True) -> int:
 
     falhas: list[str] = []
 
+    # A versao declarada escolhe o schema. Sem ela nao ha contra o que
+    # conferir o cabecalho, entao a auditoria para aqui: seguir usando o
+    # contrato mais novo transformaria "versao desconhecida" em "aprovado por
+    # acidente".
+    esperadas = schema_da_versao(manifesto)
+    if esperadas is None:
+        logger.error("AUDITORIA REPROVADA — 1 violacao(oes):")
+        logger.error(
+            "  FALHA: versao_contrato ausente ou desconhecida: %r. Versoes "
+            "suportadas: %s",
+            manifesto.get("versao_contrato"), sorted(SCHEMAS),
+        )
+        return 1
+
     # Schema errado interrompe a auditoria: os checks de conteudo pressupoem
     # as colunas do contrato, e o certo e reprovar com a causa raiz — nao
     # estourar KeyError em cima de um artefato ja invalido.
-    falhas += checar_schema(cabecalho)
+    falhas += checar_schema(cabecalho, esperadas)
     if falhas:
         logger.error("AUDITORIA REPROVADA — %d violacao(oes):", len(falhas))
         for falha in falhas:

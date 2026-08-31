@@ -66,17 +66,29 @@ BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 GOLDEN_PATH: Path = BASE_DIR / "tests" / "golden" / "agregados_gold.json"
 
+COLECAO_COBERTURA_RESULTADO: str = (
+    "cobertura_resultado_por_plataforma_dia"
+)
+COLECAO_DISTRIBUICAO_RESULTADO: str = (
+    "distribuicao_resultado_por_plataforma_dia_tipo_janela"
+)
+
 # Colecoes do golden que tem identidade natural — comparadas POR CHAVE, nunca
 # por posicao. Ordem de lista deixa de ser diferenca; dia novo vira NOVO em vez
 # de deslocar todo o resto.
 #
-# Sao so estas duas de proposito: `totais_fato` e `travessia` sao dicts
-# escalares, e nada mais no golden tem chave inequivoca. Nao existe framework
+# `totais_fato` e `travessia` sao dicts escalares. As duas colecoes de
+# Resultado tem identidade propria: cobertura por plataforma/data e
+# distribuicao factual por plataforma/data/tipo/janela. Nao existe framework
 # de diff aqui — o que nao esta nesta tabela cai na comparacao recursiva de
 # `_diferencas`.
 _CHAVES_NATURAIS: dict[str, tuple[str, ...]] = {
     "por_plataforma_dia": ("plataforma", "data"),
     "contagens": ("objeto",),
+    COLECAO_COBERTURA_RESULTADO: ("plataforma", "data"),
+    COLECAO_DISTRIBUICAO_RESULTADO: (
+        "plataforma", "data", "result_type", "result_attribution_window",
+    ),
 }
 
 # As metricas sao somadas com `round(...)::text` porque a comparacao precisa
@@ -174,8 +186,8 @@ def coletar(conn) -> dict:
         conn: Conexao aberta com o Data Warehouse.
 
     Returns:
-        Dict serializavel com os blocos ``por_plataforma_dia``,
-        ``totais_fato``, ``contagens`` e ``travessia``.
+        Dict serializavel com os quatro blocos historicos e as duas colecoes
+        factuais de Resultado.
     """
     somas = _somas_sql()
     resultado: dict = {}
@@ -240,6 +252,84 @@ def coletar(conn) -> dict:
         """)
         colunas = [d[0] for d in cur.description]
         resultado["travessia"] = dict(zip(colunas, cur.fetchone()))
+
+        # 5. Cobertura de Resultado por plataforma/dia. Este bloco protege a
+        #    diferenca entre ausencia e zero sem inventar um KPI global:
+        #    todas as medidas abaixo sao CONTAGENS de nulabilidade.
+        cur.execute(f"""
+            select p.nome as plataforma,
+                   t.data::text as data,
+                   count(*) as linhas,
+                   count(*) filter (
+                       where f.result_type is not null
+                   ) as linhas_com_result_type,
+                   count(*) filter (
+                       where f.result_type is null
+                   ) as linhas_sem_result_type,
+                   count(*) filter (
+                       where f.result_count is not null
+                   ) as linhas_com_result_count,
+                   count(*) filter (
+                       where f.result_count = 0
+                   ) as linhas_com_result_count_zero,
+                   count(*) filter (
+                       where f.cost_per_result is not null
+                   ) as linhas_com_cost_per_result,
+                   count(*) filter (
+                       where f.result_attribution_window is not null
+                   ) as linhas_com_result_attribution_window
+            {_TRAVESSIA}
+            group by p.nome, t.data
+            order by p.nome, t.data
+        """)
+        colunas = [d[0] for d in cur.description]
+        resultado[COLECAO_COBERTURA_RESULTADO] = [
+            dict(zip(colunas, linha)) for linha in cur.fetchall()
+        ]
+
+        # 6. Distribuicao factual das linhas tipadas. `result_count` so e
+        #    somado dentro do grupo semanticamente homogeneo
+        #    plataforma/data/tipo/janela. Os dois hashes protegem os valores
+        #    factuais linha a linha e sua nulabilidade; especialmente para
+        #    `cost_per_result`, uma razao que NAO pode ser somada ou
+        #    promediada como KPI. A chave do anuncio serve somente para impor
+        #    ordem deterministica dentro do hash e nunca sai no golden.
+        cur.execute(f"""
+            select p.nome as plataforma,
+                   t.data::text as data,
+                   f.result_type,
+                   f.result_attribution_window,
+                   count(*) as linhas,
+                   round(sum(f.result_count), 6)::text
+                       as soma_result_count_no_grupo,
+                   count(*) filter (
+                       where f.result_count = 0
+                   ) as linhas_com_result_count_zero,
+                   count(*) filter (
+                       where f.result_count > 0
+                   ) as linhas_com_result_count_positivo,
+                   count(*) filter (
+                       where f.cost_per_result is not null
+                   ) as linhas_com_cost_per_result,
+                   md5(string_agg(
+                       coalesce(f.result_count::text, '<NULL>'),
+                       '|' order by f.anuncio_sk
+                   )) as checksum_tecnico_result_count,
+                   md5(string_agg(
+                       coalesce(f.cost_per_result::text, '<NULL>'),
+                       '|' order by f.anuncio_sk
+                   )) as checksum_tecnico_cost_per_result
+            {_TRAVESSIA}
+            where f.result_type is not null
+            group by p.nome, t.data, f.result_type,
+                     f.result_attribution_window
+            order by p.nome, t.data, f.result_type,
+                     f.result_attribution_window nulls first
+        """)
+        colunas = [d[0] for d in cur.description]
+        resultado[COLECAO_DISTRIBUICAO_RESULTADO] = [
+            dict(zip(colunas, linha)) for linha in cur.fetchall()
+        ]
 
     return _normalizar(resultado)
 

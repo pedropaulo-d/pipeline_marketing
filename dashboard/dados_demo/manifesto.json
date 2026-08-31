@@ -1,12 +1,12 @@
 {
-  "versao_contrato": 2,
+  "versao_contrato": 3,
   "modo": "demonstracao",
   "natureza": "DADOS SINTETICOS E FICTICIOS. Nao derivam de nome, identificador ou metrica de cliente real, e nao usam a chave de pseudonimizacao da fronteira de exposicao.",
-  "gerado_em": "2026-08-26T14:59:12+00:00",
+  "gerado_em": "2026-08-31T19:33:58+00:00",
   "gerador": "dashboard/gerar_dados_demo.py",
   "semente": 20260825,
   "artefato": "metricas.csv",
-  "sha256": "6b881693db44e7e3fb8b8944391443713645698c78c8234d3093b10085466a89",
+  "sha256": "c6ba6db6e5bee813ddd11ec57e2b7f37c3adac93d2ae11d74d201c7f0be77425",
   "linhas": 1023,
   "data_min": "2026-06-01",
   "data_max": "2026-06-28",
@@ -31,7 +31,11 @@
     "reach",
     "profile_views",
     "purchases",
-    "purchase_value"
+    "purchase_value",
+    "result_type",
+    "result_count",
+    "result_attribution_window",
+    "cost_per_result"
   ],
   "tipos": {
     "data": "date (YYYY-MM-DD)",
@@ -53,7 +57,11 @@
     "reach": "integer",
     "profile_views": "integer",
     "purchases": "integer",
-    "purchase_value": "decimal"
+    "purchase_value": "decimal",
+    "result_type": "text nullable (indicador oficial da Meta)",
+    "result_count": "decimal nullable (NULL = ausencia, nao zero)",
+    "result_attribution_window": "text nullable (NULL = janela nao aplicavel)",
+    "cost_per_result": "decimal nullable (NULL = sem denominador)"
   },
   "cardinalidades": {
     "conta": 6,

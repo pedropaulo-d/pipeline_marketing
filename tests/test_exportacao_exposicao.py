@@ -96,6 +96,34 @@ def linhas_da_view() -> list[dict]:
                             "profile_views": 0,
                             "purchases": 0,
                             "purchase_value": Decimal("0.000000"),
+                            # Resultado: so o Meta declara. O Google nao tem o
+                            # campo na fonte, entao os quatro sao NULL — e a
+                            # fixture reproduz isso em vez de zerar, que e
+                            # justamente a distincao que o contrato preserva.
+                            "result_type": (
+                                "actions:offsite_conversion.fb_pixel_lead"
+                                if plataforma == "Meta Ads" else None
+                            ),
+                            "result_count": (
+                                Decimal("3.000000")
+                                if plataforma == "Meta Ads" else None
+                            ),
+                            # Janela explicita so em parte das linhas do Meta:
+                            # a FORMA A declara tipo sem janela aplicavel.
+                            "result_attribution_window": (
+                                "7d_click"
+                                if plataforma == "Meta Ads" and i_data == 0
+                                else None
+                            ),
+                            "cost_per_result": (
+                                Decimal("4.041152")
+                                if plataforma == "Meta Ads" and i_data == 0
+                                else None
+                            ),
+                            # Contexto que fica SO no DW: presente na view,
+                            # nunca no artefato.
+                            "objective": "OUTCOME_LEADS",
+                            "optimization_goal": "LEAD_GENERATION",
                             # Colunas proibidas, presentes na view real.
                             "conta_nome": NOME_PLANTADO,
                             "conta_external_id": EXTERNAL_ID_PLANTADO,
@@ -237,18 +265,64 @@ class BaseExportacao(unittest.TestCase):
         return [dict(zip(cabecalho, campos)) for campos in leitor]
 
 
-class TestSchemaDeSaida(BaseExportacao):
-    """As 19 colunas, nem uma a mais."""
+COLUNAS_V2: tuple[str, ...] = (
+    "data", "plataforma",
+    "conta_id", "conta_versao", "campanha_id", "campanha_versao",
+    "adset_id", "adset_versao", "anuncio_id", "anuncio_versao",
+    "spend", "impressions", "link_clicks", "conversions", "conversion_value",
+    "video_views", "reach", "profile_views", "purchases", "purchase_value",
+)
 
-    def test_schema_final_tem_vinte_colunas(self):
-        """Vinte desde o contrato v2: `purchase_value` entrou como coluna
-        publica, e acrescentar coluna e mudanca de schema neste contrato."""
-        self.assertEqual(len(exportador.COLUNAS_SAIDA), 20)
-        self.assertEqual(exportador.VERSAO_CONTRATO, 2)
+COLUNAS_RESULTADO: tuple[str, ...] = (
+    "result_type", "result_count", "result_attribution_window",
+    "cost_per_result",
+)
+
+
+class TestSchemaDeSaida(BaseExportacao):
+    """As 24 colunas do contrato v3, nem uma a mais."""
+
+    def test_schema_final_tem_vinte_e_quatro_colunas(self):
+        """Vinte e quatro desde o contrato v3: as quatro colunas de Resultado
+        entraram, e acrescentar coluna e mudanca de schema neste contrato."""
+        self.assertEqual(len(exportador.COLUNAS_SAIDA), 24)
+        self.assertEqual(exportador.VERSAO_CONTRATO, 3)
         self.assertEqual(self.exportar(), 0)
 
         cabecalho = self.csv.read_text(encoding="utf-8").splitlines()[0]
         self.assertEqual(cabecalho.split(","), list(exportador.COLUNAS_SAIDA))
+
+    def test_schema_v3_e_a_lista_inteira_esperada(self):
+        # Nao basta contar: a lista e o contrato, e e por igualdade que os
+        # consumidores decidem aceitar ou recusar o artefato.
+        self.assertEqual(
+            exportador.COLUNAS_SAIDA, COLUNAS_V2 + COLUNAS_RESULTADO
+        )
+
+    def test_prefixo_v2_preservado_na_ordem(self):
+        # As quatro novas entram no FIM. Reordenar o prefixo trocaria coluna de
+        # lugar para qualquer leitor posicional sem mudar a contagem.
+        self.assertEqual(exportador.COLUNAS_SAIDA[:20], COLUNAS_V2)
+
+    def test_nenhuma_coluna_v2_removida_ou_renomeada(self):
+        for coluna in COLUNAS_V2:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, exportador.COLUNAS_SAIDA)
+
+    def test_exatamente_quatro_colunas_novas(self):
+        novas = tuple(
+            c for c in exportador.COLUNAS_SAIDA if c not in COLUNAS_V2
+        )
+        self.assertEqual(novas, COLUNAS_RESULTADO)
+
+    def test_origem_le_resultado_e_nao_le_contexto(self):
+        for coluna in COLUNAS_RESULTADO:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, exportador.COLUNAS_ORIGEM)
+        # `objective` e `optimization_goal` existem no Gold e continuam la:
+        # ler para nao usar so ampliaria a fronteira sem consumidor.
+        self.assertNotIn("objective", exportador.COLUNAS_ORIGEM)
+        self.assertNotIn("optimization_goal", exportador.COLUNAS_ORIGEM)
 
     def test_nenhuma_coluna_proibida_no_schema_de_saida(self):
         # 12 campos nunca saem: 4 nomes, 4 external IDs, 4 chaves naturais.
@@ -276,17 +350,32 @@ class TestSchemaDeSaida(BaseExportacao):
     def test_nao_existe_linha_id(self):
         self.assertNotIn("linha_id", exportador.COLUNAS_SAIDA)
 
-    def test_resultado_fica_reservado_sem_mudar_contrato_v2(self):
+    def test_resultado_e_publico_no_contrato_v3(self):
+        publicas = {
+            coluna for coluna, classe in exportador.CLASSIFICACAO.items()
+            if classe == exportador.USADA
+        }
+        for coluna in COLUNAS_RESULTADO:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, publicas)
+
+    def test_nenhum_campo_ficou_reservado_por_acidente(self):
+        # A categoria continua existindo para o proximo campo aprovado mas nao
+        # exportado; o que nao pode e sobrar ocupante silencioso dela agora que
+        # os quatro de Resultado sairam.
         reservadas = {
             coluna for coluna, classe in exportador.CLASSIFICACAO.items()
             if classe == exportador.RESERVADA_EXPOSICAO
         }
-        self.assertEqual(reservadas, {
-            "result_type", "result_count", "result_attribution_window",
-            "cost_per_result",
-        })
-        self.assertTrue(reservadas.isdisjoint(exportador.COLUNAS_SAIDA))
-        self.assertEqual(exportador.VERSAO_CONTRATO, 2)
+        self.assertEqual(reservadas, set())
+
+    def test_tipos_do_manifesto_cobrem_o_schema(self):
+        self.assertEqual(
+            set(exportador.TIPOS_SAIDA), set(exportador.COLUNAS_SAIDA)
+        )
+        for coluna in COLUNAS_RESULTADO:
+            with self.subTest(coluna=coluna):
+                self.assertIn("nullable", exportador.TIPOS_SAIDA[coluna])
 
     def test_contexto_de_resultado_fica_somente_no_dw(self):
         somente_dw = {
@@ -294,6 +383,112 @@ class TestSchemaDeSaida(BaseExportacao):
             if classe == exportador.SOMENTE_DW
         }
         self.assertEqual(somente_dw, {"objective", "optimization_goal"})
+
+
+class TestResultadoNaSuperficie(BaseExportacao):
+    """Os quatro campos viajam intactos, inclusive quando sao ausencia."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.exportar(), 0)
+        self.linhas = self.linhas_do_csv()
+
+    def test_as_quatro_colunas_chegam_ao_artefato(self):
+        for coluna in COLUNAS_RESULTADO:
+            with self.subTest(coluna=coluna):
+                self.assertIn(coluna, self.linhas[0])
+
+    def test_contexto_do_dw_nao_chega_ao_artefato(self):
+        # Lidos da view pelo Gold, nunca projetados: a fronteira de exposicao
+        # e allowlist, e estes dois estao classificados SOMENTE_DW.
+        for coluna in ("objective", "optimization_goal"):
+            with self.subTest(coluna=coluna):
+                self.assertNotIn(coluna, self.linhas[0])
+                self.assertNotIn(coluna, self.csv.read_text(encoding="utf-8"))
+
+    def test_meta_com_resultado_preserva_o_valor(self):
+        meta = [l for l in self.linhas if l["plataforma"] == "Meta Ads"]
+        self.assertTrue(meta)
+        for linha in meta:
+            self.assertEqual(
+                linha["result_type"],
+                "actions:offsite_conversion.fb_pixel_lead",
+            )
+            self.assertEqual(linha["result_count"], "3.000000")
+
+    def test_google_sai_com_resultado_vazio(self):
+        # O Google nao fornece Resultado neste grao. Ausencia de suporte da
+        # fonte vira campo vazio, nunca zero: zero afirmaria quantidade.
+        google = [l for l in self.linhas if l["plataforma"] == "Google Ads"]
+        self.assertTrue(google)
+        for linha in google:
+            for coluna in COLUNAS_RESULTADO:
+                with self.subTest(coluna=coluna):
+                    self.assertEqual(linha[coluna], "")
+
+    def test_ausencia_nao_vira_zero_nem_texto(self):
+        # A linha Meta sem janela/custo (FORMA A) sai vazia nos dois campos.
+        # `0`, `"0"`, `N/A` e `None` seriam todos invencao de valor.
+        sem_janela = [
+            l for l in self.linhas
+            if l["plataforma"] == "Meta Ads" and not l["result_attribution_window"]
+        ]
+        self.assertTrue(sem_janela)
+        for linha in sem_janela:
+            self.assertEqual(linha["result_attribution_window"], "")
+            self.assertEqual(linha["cost_per_result"], "")
+        texto = self.csv.read_text(encoding="utf-8")
+        for invencao in (",N/A,", ",None,", ",Nao disponivel,", ",null,"):
+            with self.subTest(invencao=invencao):
+                self.assertNotIn(invencao, texto)
+
+    def test_janela_explicita_preservada_quando_existe(self):
+        com_janela = [
+            l for l in self.linhas if l["result_attribution_window"]
+        ]
+        self.assertTrue(com_janela)
+        for linha in com_janela:
+            self.assertEqual(linha["result_attribution_window"], "7d_click")
+            self.assertEqual(linha["cost_per_result"], "4.041152")
+
+    def test_custo_nao_e_recalculado(self):
+        # O exportador transporta o custo factual do Gold. Recalcular aqui
+        # (spend/result_count) daria outro numero e mudaria o significado.
+        com_custo = [l for l in self.linhas if l["cost_per_result"]]
+        self.assertTrue(com_custo)
+        for linha in com_custo:
+            self.assertEqual(linha["cost_per_result"], "4.041152")
+            self.assertNotEqual(
+                linha["cost_per_result"],
+                str(Decimal(linha["spend"]) / Decimal(linha["result_count"])),
+            )
+
+    def test_manifesto_declara_v3_e_as_24_colunas(self):
+        manifesto = self.manifesto
+        self.assertEqual(manifesto["versao_contrato"], 3)
+        self.assertEqual(manifesto["colunas"], list(exportador.COLUNAS_SAIDA))
+        self.assertEqual(set(manifesto["tipos"]), set(manifesto["colunas"]))
+
+    def test_pseudonimos_nao_mudaram_com_a_v3(self):
+        # A evolucao do contrato nao toca na identidade publica: mesmo formato
+        # de ID e fingerprint da mesma chave em uso. Os quatro campos de
+        # Resultado nao sao identificadores e nao passam por `gerar_id_publico`.
+        manifesto = self.manifesto
+        self.assertEqual(
+            len(manifesto["fingerprint_chave"]), pseudonimos.TAMANHO_FINGERPRINT
+        )
+        for linha in self.linhas:
+            self.assertTrue(linha["conta_id"].startswith("Cliente-"))
+            self.assertTrue(linha["anuncio_id"].startswith("Anuncio-"))
+
+    def test_resultado_nao_passa_por_pseudonimizacao(self):
+        with mock.patch.object(
+            exportador.pseudonimos, "gerar_id_publico",
+            wraps=exportador.pseudonimos.gerar_id_publico,
+        ) as gerar:
+            self.assertEqual(self.exportar(), 0)
+        niveis = {chamada.args[0] for chamada in gerar.call_args_list}
+        self.assertEqual(niveis, set(exportador.NIVEIS))
 
 
 class TestFailClosed(BaseExportacao):
@@ -554,7 +749,8 @@ class TestPosChecksDeIdentidade(unittest.TestCase):
             [
                 "colisao de pseudonimo em conta: 2 entidades na origem para "
                 "1 identificadores publicos",
-                "schema do artefato tem 20 colunas, esperadas 20",
+                f"schema do artefato tem {len(exportador.COLUNAS_SAIDA)} "
+                f"colunas, esperadas {len(exportador.COLUNAS_SAIDA)}",
             ],
         )
 

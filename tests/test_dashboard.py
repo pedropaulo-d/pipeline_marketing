@@ -1716,6 +1716,151 @@ class TestCatalogoDeMetricas(unittest.TestCase):
         self.assertFalse(m.suportada("clicks_totais", "Meta Ads"))
 
 
+class TestGeradorDemoV3(unittest.TestCase):
+    """O gerador puro produz v3 util sem tocar em dado operacional."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.linhas = gerar_dados_demo.gerar_linhas()
+        cls.texto = gerar_dados_demo.serializar_csv(cls.linhas)
+        cls.manifesto = gerar_dados_demo.montar_manifesto(
+            cls.linhas, cls.texto
+        )
+
+    def test_contrato_v3_tem_as_vinte_e_quatro_colunas(self):
+        self.assertEqual(gerar_dados_demo.VERSAO_CONTRATO, 3)
+        self.assertEqual(len(gerar_dados_demo.COLUNAS), 24)
+        self.assertEqual(
+            gerar_dados_demo.COLUNAS,
+            tuple(CABECALHO_RESULTADO),
+        )
+        self.assertEqual(self.manifesto["versao_contrato"], 3)
+        self.assertEqual(
+            self.manifesto["colunas"], list(gerar_dados_demo.COLUNAS)
+        )
+
+    def test_contexto_interno_nao_entra_na_demo(self):
+        for coluna in ("objective", "optimization_goal"):
+            with self.subTest(coluna=coluna):
+                self.assertNotIn(coluna, gerar_dados_demo.COLUNAS)
+                self.assertTrue(all(coluna not in linha for linha in self.linhas))
+
+    def test_meta_tem_typed_positivo_custo_janela_e_ausencia(self):
+        meta = [l for l in self.linhas if l["plataforma"] == "Meta Ads"]
+        tipadas = [l for l in meta if l["result_type"] is not None]
+        ausentes = [l for l in meta if l["result_type"] is None]
+
+        self.assertTrue(tipadas)
+        self.assertTrue(ausentes)
+        self.assertTrue(any(l["result_count"] > 0 for l in tipadas))
+        self.assertTrue(any(l["cost_per_result"] is not None for l in tipadas))
+        self.assertTrue(
+            any(l["result_attribution_window"] == "default" for l in tipadas)
+        )
+        for linha in ausentes:
+            for coluna in gerar_dados_demo.COLUNAS_RESULTADO:
+                self.assertIsNone(linha[coluna])
+
+    def test_google_tem_resultado_inteiramente_null(self):
+        google = [l for l in self.linhas if l["plataforma"] == "Google Ads"]
+        self.assertTrue(google)
+        for linha in google:
+            for coluna in gerar_dados_demo.COLUNAS_RESULTADO:
+                with self.subTest(coluna=coluna):
+                    self.assertIsNone(linha[coluna])
+
+    def test_zero_typed_nao_vira_ausencia_nem_ganha_custo(self):
+        zeros = [
+            linha for linha in self.linhas
+            if linha["result_type"] is not None and linha["result_count"] == 0
+        ]
+        self.assertTrue(zeros)
+        for linha in zeros:
+            self.assertIsNone(linha["cost_per_result"])
+            self.assertIsNone(linha["result_attribution_window"])
+
+    def test_custo_factual_e_spend_dividido_por_result_count(self):
+        positivas = [
+            linha for linha in self.linhas
+            if linha["result_count"] is not None and linha["result_count"] > 0
+        ]
+        self.assertTrue(positivas)
+        for linha in positivas:
+            esperado = (linha["spend"] / linha["result_count"]).quantize(
+                Decimal("0.00000001")
+            )
+            self.assertEqual(linha["cost_per_result"], esperado)
+
+    def test_tipos_sinteticos_sao_os_do_contrato_real(self):
+        tipos = {l["result_type"] for l in self.linhas if l["result_type"]}
+        self.assertEqual(tipos, {
+            gerar_dados_demo.RESULTADO_LEAD,
+            gerar_dados_demo.RESULTADO_THRUPLAY,
+        })
+        self.assertTrue(tipos <= set(m.ROTULOS_RESULTADO))
+
+    def test_campanhas_exercitam_resultado_agregavel_e_ausencia(self):
+        por_campanha: dict[str, list[dict]] = {}
+        for linha in self.linhas:
+            if linha["plataforma"] == "Meta Ads":
+                por_campanha.setdefault(linha["campanha_id"], []).append(linha)
+
+        agregaveis = []
+        ausentes = []
+        for linhas in por_campanha.values():
+            resultado = m.resultado_campanha(linhas)
+            if resultado["status_resultado"] == m.RESULTADO_DISPONIVEL:
+                agregaveis.append((linhas, resultado))
+            elif resultado["status_resultado"] == m.RESULTADO_AUSENTE:
+                ausentes.append(resultado)
+
+        self.assertTrue(agregaveis)
+        self.assertTrue(ausentes)
+        linhas, resultado = next(
+            par for par in agregaveis if par[1]["result_count"] > 0
+        )
+        gasto = sum((l["spend"] for l in linhas), Decimal(0))
+        self.assertEqual(
+            resultado["cost_per_result"],
+            gasto / resultado["result_count"],
+        )
+
+    def test_null_serializa_como_campo_vazio(self):
+        lidas = list(csv.DictReader(io.StringIO(self.texto)))
+        google = next(l for l in lidas if l["plataforma"] == "Google Ads")
+        for coluna in gerar_dados_demo.COLUNAS_RESULTADO:
+            self.assertEqual(google[coluna], "")
+        for inventado in (",None,", ",null,", ",N/A,"):
+            self.assertNotIn(inventado, self.texto)
+
+    def test_manifesto_cobre_schema_hash_e_natureza(self):
+        self.assertEqual(
+            set(self.manifesto["tipos"]), set(gerar_dados_demo.COLUNAS)
+        )
+        self.assertEqual(self.manifesto["linhas"], len(self.linhas))
+        self.assertIn("FICTICIOS", self.manifesto["natureza"])
+
+    def test_geracao_em_diretorio_temporario_carrega_v3(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destino = Path(tmp)
+            self.assertEqual(
+                gerar_dados_demo.gerar(destino), len(self.linhas)
+            )
+            dataset = dados.carregar(
+                dados.Fonte(destino / "metricas.csv", dados.MODO_DEMONSTRACAO)
+            )
+
+        self.assertEqual(len(dataset.linhas), len(self.linhas))
+        self.assertFalse(dataset.colunas_ignoradas)
+        self.assertTrue(any(l["result_type"] for l in dataset.linhas))
+
+    def test_geracao_resultado_e_deterministica(self):
+        novamente = gerar_dados_demo.serializar_csv(
+            gerar_dados_demo.gerar_linhas()
+        )
+        self.assertEqual(self.texto, novamente)
+
+
 class TestDatasetDeDemonstracao(unittest.TestCase):
     """O dataset sintetico versionado respeita o mesmo contrato."""
 
@@ -1731,6 +1876,13 @@ class TestDatasetDeDemonstracao(unittest.TestCase):
     def test_carrega_sob_o_contrato_de_exposicao(self):
         self.assertGreater(len(self.dataset.linhas), 0)
         self.assertEqual(self.dataset.colunas_ignoradas, ())
+
+    def test_arquivo_versionado_declara_v3_com_resultado(self):
+        self.assertEqual(self.dataset.manifesto.get("versao_contrato"), 3)
+        self.assertEqual(
+            self.dataset.manifesto.get("colunas"), CABECALHO_RESULTADO
+        )
+        self.assertTrue(any(l["result_type"] for l in self.dataset.linhas))
 
     def test_tem_as_duas_plataformas(self):
         resumo = dados.resumo(self.dataset)
@@ -2642,6 +2794,28 @@ class TestContratoOpcionalDeResultado(unittest.TestCase):
         cabecalho = CABECALHO + ["result_type"]
         with self.assertRaises(dados.ContratoInvalido):
             carregar([linha_csv("2026-08-01", "Meta Ads") + ["actions:offsite_conversion.fb_pixel_lead"]], cabecalho)
+
+    def test_v3_google_chega_com_resultado_nulo(self):
+        # O Google nao fornece Resultado neste grao da GAQL. Campo vazio no
+        # CSV v3 tem de virar None, nunca Decimal(0): zero e quantidade
+        # declarada, e nao ha sequer tipo sobre o que afirmar.
+        linha = carregar([
+            linha_csv_resultado("2026-08-01", "Google Ads")
+        ], CABECALHO_RESULTADO).linhas[0]
+        for campo in dados.COLUNAS_RESULTADO_OPCIONAIS:
+            with self.subTest(campo=campo):
+                self.assertIsNone(linha[campo])
+
+    def test_v3_meta_historico_chega_com_resultado_nulo(self):
+        # As extracoes Meta anteriores a 01/08/2026 nao tinham `results` na
+        # fonte. A linha existe no artefato v3 com os quatro campos vazios —
+        # ausencia de contrato, nao ausencia de desempenho.
+        linha = carregar([
+            linha_csv_resultado("2026-07-15", "Meta Ads")
+        ], CABECALHO_RESULTADO).linhas[0]
+        for campo in dados.COLUNAS_RESULTADO_OPCIONAIS:
+            with self.subTest(campo=campo):
+                self.assertIsNone(linha[campo])
 
     def test_grupo_futuro_preserva_decimal(self):
         linha = carregar([
