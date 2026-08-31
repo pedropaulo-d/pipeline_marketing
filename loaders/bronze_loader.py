@@ -20,6 +20,19 @@ mais recente, dado velho voltaria a valer.
 Sem ``--run-id`` (execucao local, `main.py --skip-extract`) a checagem e
 dispensada de proposito: ali os arquivos em disco SAO a entrada pretendida.
 
+Carga unica por execucao
+------------------------
+O manifesto prova que o artefato e DESTA execucao; ele nao impede rodar a
+carga duas vezes com o mesmo artefato. O ``batch_id`` e sorteado a cada carga,
+entao a segunda execucao nascia com identidade nova e a bronze terminava com
+tudo duplicado, sem erro em lugar nenhum.
+
+A identidade operacional e ``(source, run_id)``: ``bronze.ingestion_log``
+guarda o ``run_id`` e um indice unico parcial impede a segunda confirmacao.
+Antes de inserir, :func:`_conferir_replay` consulta o log e falha cedo; o
+indice e a garantia, a consulta e a mensagem util. Sem ``run_id`` nao ha o que
+comparar, e a carga local segue sem essa protecao.
+
 Uso:
     docker compose run --rm etl_app python loaders/bronze_loader.py
     python -m loaders.bronze_loader --sources meta_ads,google_ads \\
@@ -50,6 +63,15 @@ DDL_PATH: Path = BASE_DIR / "sql" / "bronze" / "init_bronze.sql"
 # do registro de plataformas — o mesmo lugar de onde o extrator tira o caminho
 # em que escreve. Sem isso, renomear o arquivo de um lado so faz o loader
 # emitir "arquivo bruto ausente" e o pipeline terminar sem carregar nada.
+
+
+class LoteJaCarregado(RuntimeError):
+    """Replay: a execucao ja tem lote confirmado para esta fonte.
+
+    Nao e sucesso. A carga pedida nao aconteceu, e fingir que sim esconderia
+    exatamente o caso que motivou esta checagem — reexecutar um artefato ja
+    ingerido e acabar com a bronze duplicada, sem erro nenhum no caminho.
+    """
 
 
 def get_engine() -> Engine:
@@ -146,7 +168,12 @@ def _preparar_linhas(
 
 
 def load_source(
-    session: Session, source: str, path: Path, date_field: str, batch_id: uuid.UUID
+    session: Session,
+    source: str,
+    path: Path,
+    date_field: str,
+    batch_id: uuid.UUID,
+    run_id: str | None,
 ) -> int:
     """Carrega um arquivo bruto na tabela ``bronze.raw_ads``.
 
@@ -155,7 +182,12 @@ def load_source(
         source: Identificador da plataforma (``meta_ads`` ou ``google_ads``).
         path: Caminho do arquivo JSON bruto.
         date_field: Nome do campo que contem o dia de referencia.
-        batch_id: Identificador desta execucao.
+        batch_id: Identificador FISICO deste lote — sorteado a cada carga.
+        run_id: Identificador LOGICO da execucao que produziu o artefato, ou
+            ``None`` em carga local. Gravado no ``ingestion_log``, onde o
+            indice unico parcial impede que a mesma execucao confirme duas
+            vezes a mesma fonte. Parametro obrigatorio de proposito: com valor
+            default, um chamador novo perderia a protecao em silencio.
 
     Returns:
         Quantidade de registros inseridos.
@@ -186,12 +218,14 @@ def load_source(
     session.execute(
         text(
             "INSERT INTO bronze.ingestion_log "
-            "(batch_id, source, start_date, end_date, row_count) "
-            "VALUES (:batch_id, :source, :start_date, :end_date, :row_count)"
+            "(batch_id, source, run_id, start_date, end_date, row_count) "
+            "VALUES (:batch_id, :source, :run_id, :start_date, :end_date, "
+            ":row_count)"
         ),
         {
             "batch_id": str(batch_id),
             "source": source,
+            "run_id": run_id,
             "start_date": min(datas),
             "end_date": max(datas),
             "row_count": len(linhas),
@@ -242,6 +276,47 @@ def _conferir_artefatos(
             )
 
 
+def _conferir_replay(
+    session: Session, selecionadas: list[str], run_id: str
+) -> None:
+    """Recusa carregar de novo o que esta execucao ja confirmou.
+
+    O ``batch_id`` e sorteado a cada carga, entao ele nao serve de identidade:
+    reexecutar o mesmo artefato produzia um lote novo e duplicava a bronze sem
+    erro nenhum. A identidade operacional e ``(source, run_id)``.
+
+    Consulta todas as fontes selecionadas antes de inserir qualquer linha, pelo
+    mesmo motivo de :func:`_conferir_artefatos`: recusar o Google so depois de
+    ja ter gravado o Meta e uma falha mais cara de entender.
+
+    Nao substitui o indice unico do banco — duas cargas simultaneas podem
+    consultar antes de qualquer uma confirmar, e ali as duas passariam por
+    aqui. Esta checagem serve para falhar cedo e com mensagem util; a garantia
+    e do banco.
+
+    Args:
+        session: Sessao SQLAlchemy ativa.
+        selecionadas: Fontes que esta carga pretende gravar.
+        run_id: Identificador da execucao atual.
+
+    Raises:
+        LoteJaCarregado: Se alguma das fontes ja tiver lote confirmado para
+            este ``run_id``.
+    """
+    resultado = session.execute(
+        text("SELECT source FROM bronze.ingestion_log WHERE run_id = :run_id"),
+        {"run_id": run_id},
+    )
+    confirmadas = {linha[0] for linha in resultado} & set(selecionadas)
+    if confirmadas:
+        raise LoteJaCarregado(
+            f"Execucao '{run_id}' ja tem lote confirmado para: "
+            f"{', '.join(sorted(confirmadas))}. Carregar de novo duplicaria a "
+            f"bronze. Consulte bronze.ingestion_log por (source, run_id) antes "
+            f"de uma nova tentativa."
+        )
+
+
 def run(
     sources: list[str] | None = None,
     run_id: str | None = None,
@@ -270,6 +345,8 @@ def run(
             ``run_id`` vier sem a janela correspondente.
         manifesto.ManifestoInvalido: Se algum artefato nao pertencer a esta
             execucao.
+        LoteJaCarregado: Se ``run_id`` ja tiver lote confirmado para alguma
+            das fontes pedidas.
     """
     selecionadas = fontes() if sources is None else sources
     invalidas = set(selecionadas) - set(fontes())
@@ -289,7 +366,9 @@ def run(
     else:
         logger.warning(
             "Carga sem run_id: os arquivos brutos em disco serao aceitos como "
-            "estao (modo local / --skip-extract)."
+            "estao (modo local / --skip-extract), e sem protecao contra "
+            "replay — a garantia de carga unica vale para execucao "
+            "identificada por run_id."
         )
 
     engine = get_engine()
@@ -298,6 +377,11 @@ def run(
     total = 0
     with Session(engine) as session:
         try:
+            # Depois do banco aberto e antes de qualquer insert: e o unico
+            # ponto em que da para saber o que ja foi confirmado.
+            if run_id is not None:
+                _conferir_replay(session, selecionadas, run_id)
+
             for source in selecionadas:
                 plataforma = por_fonte(source)
                 # batch_id por fonte — cada arquivo e uma unidade de carga.
@@ -308,6 +392,7 @@ def run(
                     plataforma.arquivo_bruto,
                     plataforma.campo_data,
                     batch_id,
+                    run_id,
                 )
             session.commit()
         except Exception as exc:
