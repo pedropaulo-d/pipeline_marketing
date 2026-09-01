@@ -243,3 +243,70 @@ def aplicar_em_periodo(
         Linhas do periodo alternativo sob os mesmos filtros de entidade.
     """
     return aplicar(linhas, replace(selecao, data_inicio=inicio, data_fim=fim))
+
+
+def universo_do_periodo(
+    linhas: list[LinhaDataset],
+    selecao: Selecao,
+    inicio: date | None = None,
+    fim: date | None = None,
+) -> list[LinhaDataset]:
+    """Recorta periodo e plataforma, mas **preserva as demais entidades**.
+
+    Existe para a classificacao de campanhas, que precisa de um grupo de
+    comparacao maior do que a tela mostra. O benchmark de nivel 2 do Meta
+    compara campanhas do mesmo tipo de Resultado em OUTRAS contas: passar ao
+    motor apenas as linhas da conta selecionada eliminaria esse nivel em
+    silencio, e a campanha apareceria como "sem pares suficientes" por um
+    defeito de recorte, nao por falta de dado.
+
+    Filtros de conta, campanha e ad set continuam valendo para tudo o que e
+    exibido — eles apenas nao encolhem a referencia estatistica.
+
+    Args:
+        linhas: Linhas do dataset completo.
+        selecao: Selecao vigente.
+        inicio: Primeiro dia alternativo. ``None`` mantem o da selecao.
+        fim: Ultimo dia alternativo. ``None`` mantem o da selecao.
+
+    Returns:
+        Linhas do periodo, filtradas apenas por plataforma.
+    """
+    janela = replace(
+        selecao,
+        data_inicio=inicio or selecao.data_inicio,
+        data_fim=fim or selecao.data_fim,
+        contas=(),
+        campanhas=(),
+        adsets=(),
+    )
+    return aplicar(linhas, janela)
+
+
+def universo_da_conta_no_periodo(
+    linhas: list[LinhaDataset],
+    selecao: Selecao,
+    conta_id: str,
+) -> list[LinhaDataset]:
+    """Preserva todos os peers de anuncio da conta no periodo selecionado.
+
+    A classificacao de anuncios nunca atravessa campanha nem conta, mas um
+    filtro visual de campanha ou ad set nao pode remover os pares usados em
+    N1/N2. Este recorte aplica periodo, plataforma e a conta obrigatoria;
+    campanha e ad set ficam exclusivamente para o filtro de saida.
+
+    Args:
+        linhas: Linhas do dataset completo.
+        selecao: Selecao vigente.
+        conta_id: Unica conta escolhida para a classificacao.
+
+    Returns:
+        Linhas da conta e do periodo, sem recorte de campanha ou ad set.
+    """
+    janela = replace(
+        selecao,
+        contas=(conta_id,),
+        campanhas=(),
+        adsets=(),
+    )
+    return aplicar(linhas, janela)

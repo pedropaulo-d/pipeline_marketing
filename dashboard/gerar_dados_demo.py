@@ -75,10 +75,300 @@ PREFIXO: dict[str, str] = {
     "anuncio": "Anuncio",
 }
 
-PLATAFORMAS: tuple[str, ...] = ("Meta Ads", "Google Ads")
+META: str = "Meta Ads"
+GOOGLE: str = "Google Ads"
+PLATAFORMAS: tuple[str, ...] = (META, GOOGLE)
 
 RESULTADO_LEAD: str = "actions:offsite_conversion.fb_pixel_lead"
 RESULTADO_THRUPLAY: str = "video_thruplay_watched_actions"
+
+# ── Papeis de campanha ───────────────────────────────────────
+# A demo existe para DEMONSTRAR o painel, e desde a classificacao relativa de
+# campanhas isso inclui demonstrar os estados dela. Uma carteira sorteada nao
+# produz esses estados: a versao anterior tinha 15 campanhas espalhadas por 6
+# contas, nenhum grupo de comparacao alcancava o minimo de pares e as 15
+# apareciam como "Dados insuficientes". Por isso a carteira passou a ser
+# declarada, e nao sorteada — o acaso continua governando o RUIDO diario, nunca
+# a estrutura.
+PAPEL_PADRAO: str = "padrao"
+PAPEL_ZERO_RESULT: str = "zero_result"
+PAPEL_SEM_KPI: str = "sem_kpi"
+PAPEL_RESULT_TARDIO: str = "result_tardio"
+PAPEL_POUCOS_DIAS: str = "poucos_dias"
+PAPEL_DENOMINADOR_BAIXO: str = "denominador_baixo"
+PAPEL_SEM_INVESTIMENTO: str = "sem_investimento"
+
+
+def _anuncio(
+    *,
+    cpc: float | None = None,
+    papel: str | None = None,
+    taxa: float | None = None,
+    escala: float | None = None,
+    cliques_fixos: int | None = None,
+    dias_maximos: int | None = None,
+) -> dict:
+    """Declara somente as diferencas de um anuncio dentro da campanha.
+
+    O perfil da campanha continua sendo a fonte dos valores omitidos. A
+    estrutura permite construir peers com custos distintos e papeis especiais
+    sem duplicar a definicao inteira da campanha nem gravar status no dado.
+    """
+    valores = {
+        "cpc": cpc,
+        "papel": papel,
+        "taxa": taxa,
+        "escala": escala,
+        "cliques_fixos": cliques_fixos,
+        "dias_maximos": dias_maximos,
+    }
+    return {chave: valor for chave, valor in valores.items() if valor is not None}
+
+
+def _grupo(*anuncios: dict) -> tuple[dict, ...]:
+    """Declara os anuncios que compartilham um ad set/grupo sintetico."""
+    return tuple(anuncios)
+
+
+def _campanha(
+    *,
+    tipo: str | None = None,
+    cpc: float = 1.0,
+    papel: str = PAPEL_PADRAO,
+    taxa: float = 0.05,
+    ctr: float = 0.02,
+    escala: float = 2.5,
+    ticket: float = 120.0,
+    cliques_fixos: int | None = None,
+    dias_maximos: int | None = None,
+    grupos: tuple[tuple[dict, ...], ...] | None = None,
+) -> dict:
+    """Descreve uma campanha sintetica da carteira de demonstracao.
+
+    O custo por resultado emerge da razao `cpc / taxa`, entao variar `cpc` com
+    `taxa` constante distribui as campanhas do grupo ao longo dos quartis de
+    forma previsivel — sem escrever o status desejado em lugar nenhum.
+
+    Args:
+        tipo: `result_type` da campanha, ou ``None`` para ausencia total.
+        cpc: Custo por clique sintetico.
+        papel: Comportamento especial. Ver as constantes `PAPEL_*`.
+        taxa: Fracao dos cliques que vira conversao.
+        ctr: Fracao das impressoes que vira clique.
+        escala: Multiplicador de volume diario.
+        ticket: Valor sintetico por compra ou conversao.
+        cliques_fixos: Cliques por dia, quando o volume precisa ser controlado
+            (usado no gasto sem resultado, em que o total investido decide o
+            status).
+        dias_maximos: Dias ativos, quando a campanha precisa ser curta.
+        grupos: Estrutura opcional de anuncios por ad set. Quando ausente, a
+            campanha preserva o padrao historico de dois grupos com um
+            anuncio em cada. Cada anuncio declara apenas overrides do perfil.
+
+    Returns:
+        Perfil da campanha.
+    """
+    return {
+        "tipo": tipo,
+        "cpc": cpc,
+        "papel": papel,
+        "taxa": taxa,
+        "ctr": ctr,
+        "escala": escala,
+        "ticket": ticket,
+        "cliques_fixos": cliques_fixos,
+        "dias_maximos": dias_maximos,
+        "grupos": grupos,
+    }
+
+
+# A carteira e declarada. Cada conta existe por um motivo de demonstracao, e o
+# comentario diz qual — quem for mexer aqui precisa saber o que quebra.
+CARTEIRA: tuple[dict, ...] = (
+    # Conta madura de Lead: seis campanhas no mesmo eixo dao a cada uma cinco
+    # pares e exercitam o benchmark MESMO_CLIENTE em toda a faixa de quartis.
+    # As duas ultimas cobrem os dois gates de evidencia.
+    {
+        "plataforma": META,
+        "scd2_conta": True,
+        "campanhas": (
+            # Um grupo com quatro anuncios Lead comparaveis demonstra N1 e
+            # produz os quatro quartis por dados, nunca por status gravado.
+            _campanha(
+                tipo=RESULTADO_LEAD,
+                cpc=0.50,
+                grupos=(
+                    _grupo(
+                        _anuncio(cpc=0.20),
+                        _anuncio(cpc=0.50),
+                        _anuncio(cpc=0.60),
+                        _anuncio(cpc=0.90),
+                    ),
+                ),
+            ),
+            _campanha(tipo=RESULTADO_LEAD, cpc=1.00),
+            _campanha(tipo=RESULTADO_LEAD, cpc=1.50),
+            _campanha(tipo=RESULTADO_LEAD, cpc=1.65),
+            _campanha(tipo=RESULTADO_LEAD, cpc=2.00),
+            _campanha(tipo=RESULTADO_LEAD, cpc=2.50),
+            _campanha(
+                tipo=RESULTADO_LEAD,
+                cpc=1.20,
+                papel=PAPEL_DENOMINADOR_BAIXO,
+                escala=0.4,
+            ),
+            _campanha(
+                tipo=RESULTADO_LEAD,
+                cpc=1.20,
+                papel=PAPEL_POUCOS_DIAS,
+                dias_maximos=2,
+            ),
+        ),
+    },
+    # Conta pequena de ThruPlay: dois pares proprios, abaixo do minimo de tres.
+    # Ela so e classificavel pelo portfolio do mesmo tipo — e e o unico caso da
+    # demo que exercita MESMO_TIPO_PORTFOLIO.
+    {
+        "plataforma": META,
+        "campanhas": (
+            _campanha(tipo=RESULTADO_THRUPLAY, cpc=1.00),
+            _campanha(tipo=RESULTADO_THRUPLAY, cpc=2.20),
+        ),
+    },
+    # Conta grande de ThruPlay: fornece os pares de portfolio para a conta
+    # anterior e tem benchmark proprio.
+    {
+        "plataforma": META,
+        "campanhas": (
+            # Grupo local mais denso para o segundo tipo de Result. A media
+            # dos CPCs permanece 0,60, preservando o papel da campanha.
+            _campanha(
+                tipo=RESULTADO_THRUPLAY,
+                cpc=0.60,
+                grupos=(
+                    _grupo(
+                        _anuncio(cpc=0.25),
+                        _anuncio(cpc=0.45),
+                        _anuncio(cpc=0.60),
+                        _anuncio(cpc=0.75),
+                        _anuncio(cpc=0.95),
+                    ),
+                ),
+            ),
+            _campanha(tipo=RESULTADO_THRUPLAY, cpc=1.20),
+            _campanha(tipo=RESULTADO_THRUPLAY, cpc=1.80),
+            _campanha(tipo=RESULTADO_THRUPLAY, cpc=2.40),
+        ),
+    },
+    # Conta sem Resultado declarado: o painel cai para custo por Lead, que e o
+    # fallback do contrato v3 quando a fonte nao devolveu `results`.
+    {
+        "plataforma": META,
+        "campanhas": (
+            # Result inteiramente ausente, mas Leads presentes: o grupo
+            # exercita o fallback CPL no nivel de anuncio.
+            _campanha(
+                cpc=0.80,
+                grupos=(
+                    _grupo(
+                        _anuncio(cpc=0.40),
+                        _anuncio(cpc=0.70),
+                        _anuncio(cpc=0.90),
+                        _anuncio(cpc=1.20),
+                    ),
+                ),
+            ),
+            _campanha(cpc=1.40),
+            _campanha(cpc=2.00),
+            _campanha(cpc=2.60),
+        ),
+    },
+    # Conta dos limites semanticos do Meta: uma campanha sem Resultado e sem
+    # Lead, e uma que so passa a declarar Resultado no meio do periodo — o
+    # mesmo formato da fronteira real de cobertura, que precisa aparecer como
+    # "Dados de Result incompletos" e nao como desempenho ruim.
+    {
+        "plataforma": META,
+        "scd2_campanha": True,
+        "campanhas": (
+            _campanha(papel=PAPEL_SEM_KPI, cpc=1.10),
+            _campanha(tipo=RESULTADO_LEAD, papel=PAPEL_RESULT_TARDIO, cpc=1.30),
+        ),
+    },
+    # Conta principal do Google: cinco campanhas com CPA distribuido e as tres
+    # faixas do gasto sem resultado.
+    {
+        "plataforma": GOOGLE,
+        "scd2_campanha": True,
+        "campanhas": (
+            # Dois grupos com dois anuncios: N1 falha e cada anuncio encontra
+            # exatamente tres peers no N2 da mesma campanha.
+            _campanha(
+                cpc=0.50,
+                grupos=(
+                    _grupo(_anuncio(cpc=0.20), _anuncio(cpc=0.40)),
+                    _grupo(_anuncio(cpc=0.60), _anuncio(cpc=0.80)),
+                ),
+            ),
+            # N1 Google com cinco anuncios e custo medio igual ao perfil
+            # anterior da campanha; aumenta a demonstrabilidade sem mover o
+            # eixo economico agregado que sustenta o motor de campanhas.
+            _campanha(
+                cpc=1.00,
+                grupos=(
+                    _grupo(
+                        _anuncio(cpc=0.40),
+                        _anuncio(cpc=0.70),
+                        _anuncio(cpc=1.00),
+                        _anuncio(cpc=1.30),
+                        _anuncio(cpc=1.60),
+                    ),
+                ),
+            ),
+            # N1 Google com tres peers elegiveis e um anuncio sem conversao.
+            # O gasto do quarto anuncio e comparado ao CPA mediano dos outros,
+            # demonstrando a regra de zero-result sem inventar status no CSV.
+            _campanha(
+                cpc=1.50,
+                grupos=(
+                    _grupo(
+                        _anuncio(cpc=1.00),
+                        _anuncio(cpc=1.50),
+                        _anuncio(cpc=2.00),
+                        _anuncio(
+                            cpc=1.50,
+                            papel=PAPEL_ZERO_RESULT,
+                            cliques_fixos=8,
+                            dias_maximos=3,
+                        ),
+                    ),
+                ),
+            ),
+            _campanha(cpc=2.00),
+            _campanha(cpc=2.50),
+            _campanha(
+                papel=PAPEL_ZERO_RESULT, cpc=1.00, cliques_fixos=2, dias_maximos=3
+            ),
+            _campanha(
+                papel=PAPEL_ZERO_RESULT, cpc=1.00, cliques_fixos=8, dias_maximos=3
+            ),
+            _campanha(
+                papel=PAPEL_ZERO_RESULT, cpc=2.00, cliques_fixos=30, dias_maximos=5
+            ),
+        ),
+    },
+    # Conta pequena do Google: duas campanhas validas nao formam grupo, e o
+    # Google nao atravessa clientes. E o caso que mostra a decisao conservadora
+    # da plataforma sem eixo semantico. A terceira campanha nao investe.
+    {
+        "plataforma": GOOGLE,
+        "campanhas": (
+            _campanha(cpc=1.10),
+            _campanha(cpc=1.90),
+            _campanha(papel=PAPEL_SEM_INVESTIMENTO, cpc=0.0),
+        ),
+    },
+)
 
 COLUNAS_V2: tuple[str, ...] = (
     "data", "plataforma",
@@ -118,45 +408,42 @@ def identificador(nivel: str, indice: int) -> str:
 
 
 def montar_hierarquia(sorteio: random.Random) -> list[dict]:
-    """Monta contas, campanhas, ad sets e anuncios ficticios.
+    """Materializa a carteira declarada em `CARTEIRA` como anuncios.
+
+    A estrutura — quantas contas, quantas campanhas por conta, qual eixo e
+    qual papel — vem da carteira e nao do sorteio. O gerador pseudoaleatorio
+    entra so no ruido de cada anuncio (presenca, jitter de volume), para a
+    serie diaria nao ficar artificialmente lisa.
 
     Args:
         sorteio: Gerador pseudoaleatorio ja semeado.
 
     Returns:
         Lista de anuncios, cada um com a cadeia hierarquica completa, a
-        plataforma, o dia de estreia e o perfil de desempenho.
+        plataforma, o perfil economico e o papel da campanha.
     """
     anuncios: list[dict] = []
     seq = {"conta": 0, "campanha": 0, "adset": 0, "anuncio": 0}
 
-    for indice_conta in range(6):
+    for conta_spec in CARTEIRA:
         seq["conta"] += 1
-        plataforma = PLATAFORMAS[indice_conta % 2]
         conta = identificador("conta", seq["conta"])
-        # Uma conta em duas versoes SCD2: renomeada no meio do periodo.
-        conta_versao_2 = indice_conta == 1
+        plataforma = conta_spec["plataforma"]
+        conta_versao_2 = conta_spec.get("scd2_conta", False)
 
-        for _ in range(sorteio.randint(2, 3)):
+        for indice, perfil in enumerate(conta_spec["campanhas"]):
             seq["campanha"] += 1
             campanha = identificador("campanha", seq["campanha"])
-            campanha_versao_2 = seq["campanha"] in (2, 7)
-            # Resultado e definido por campanha, sem novo sorteio: acrescentar
-            # a v3 nao pode mudar as 20 metricas antigas ao deslocar a sequencia
-            # pseudoaleatoria. Um terco das campanhas Meta representa ausencia
-            # total; as demais alternam dois tipos reais aceitos pelo contrato.
-            if plataforma != "Meta Ads" or seq["campanha"] % 3 == 0:
-                result_type = None
-            elif seq["campanha"] % 2:
-                result_type = RESULTADO_LEAD
-            else:
-                result_type = RESULTADO_THRUPLAY
+            # Uma campanha renomeada por conta marcada: a coluna de versao
+            # SCD2 precisa variar em algum lugar do artefato.
+            campanha_versao_2 = conta_spec.get("scd2_campanha", False) and indice == 0
 
-            for _ in range(2):
+            grupos = perfil["grupos"] or ((_anuncio(),), (_anuncio(),))
+            for grupo_spec in grupos:
                 seq["adset"] += 1
                 adset = identificador("adset", seq["adset"])
-
-                for _ in range(sorteio.randint(1, 2)):
+                for anuncio_spec in grupo_spec:
+                    perfil_anuncio = {**perfil, **anuncio_spec}
                     seq["anuncio"] += 1
                     anuncios.append({
                         "plataforma": plataforma,
@@ -164,19 +451,27 @@ def montar_hierarquia(sorteio: random.Random) -> list[dict]:
                         "conta_versao_2": conta_versao_2,
                         "campanha_id": campanha,
                         "campanha_versao_2": campanha_versao_2,
-                        "result_type": result_type,
                         "adset_id": adset,
                         "anuncio_id": identificador("anuncio", seq["anuncio"]),
                         "anuncio_versao_2": seq["anuncio"] % 17 == 0,
-                        # Anuncios que estreiam depois do inicio do periodo
-                        # dao ao dashboard um caso real de entrada tardia.
-                        "estreia": sorteio.choice([0, 0, 0, 5, 11]),
-                        "presenca": sorteio.uniform(0.65, 1.0),
-                        "escala": sorteio.uniform(0.3, 3.0),
-                        "ctr": sorteio.uniform(0.005, 0.04),
-                        "cpc": sorteio.uniform(0.45, 3.5),
-                        "taxa_conversao": sorteio.uniform(0.01, 0.09),
-                        "ticket": sorteio.uniform(35.0, 260.0),
+                        "perfil": perfil_anuncio,
+                        # Papel especial nao sorteia estreia nem presenca: o
+                        # caso demonstrado depende de dias e investimento
+                        # controlados no nivel em que o override foi declarado.
+                        "estreia": (
+                            0
+                            if perfil_anuncio["papel"] != PAPEL_PADRAO
+                            else sorteio.choice([0, 0, 0, 5, 11])
+                        ),
+                        "presenca": (
+                            1.0
+                            if perfil_anuncio["papel"] != PAPEL_PADRAO
+                            else sorteio.uniform(0.65, 1.0)
+                        ),
+                        "escala": (
+                            perfil_anuncio["escala"]
+                            * sorteio.uniform(0.85, 1.15)
+                        ),
                     })
     return anuncios
 
@@ -213,20 +508,42 @@ def gerar_linhas() -> list[dict]:
         fator_semana = 0.65 if data.weekday() >= 5 else 1.0
 
         for anuncio in anuncios:
+            perfil = anuncio["perfil"]
+            papel = perfil["papel"]
             if dia < anuncio["estreia"]:
                 continue
+            if perfil["dias_maximos"] is not None:
+                if dia >= anuncio["estreia"] + perfil["dias_maximos"]:
+                    continue
             if sorteio.random() > anuncio["presenca"]:
                 continue
 
-            meta = anuncio["plataforma"] == "Meta Ads"
-            base = sorteio.uniform(400, 9000) * anuncio["escala"] * fator_semana
-            impressions = int(base)
-            if impressions <= 0:
-                continue
+            meta = anuncio["plataforma"] == META
+            if perfil["cliques_fixos"] is not None:
+                # Volume controlado: no gasto sem resultado o que decide o
+                # status e o total investido contra a referencia, entao ele nao
+                # pode depender de sorteio.
+                link_clicks = perfil["cliques_fixos"]
+                impressions = int(link_clicks / perfil["ctr"])
+            else:
+                base = sorteio.uniform(400, 9000) * anuncio["escala"] * fator_semana
+                impressions = int(base)
+                if impressions <= 0:
+                    continue
+                link_clicks = int(impressions * perfil["ctr"])
 
-            link_clicks = int(impressions * anuncio["ctr"])
-            spend = Decimal(str(round(link_clicks * anuncio["cpc"], 2)))
-            conversoes_brutas = link_clicks * anuncio["taxa_conversao"]
+            spend = Decimal(str(round(link_clicks * perfil["cpc"], 2)))
+            if papel == PAPEL_ZERO_RESULT or papel == PAPEL_SEM_KPI:
+                # Investimento sem nenhum resultado observado. Nao e erro de
+                # geracao: e o caso que separa "gastou pouco e ainda nao
+                # produziu" de "gastou muito e nao produziu".
+                conversoes_brutas = 0.0
+            elif papel == PAPEL_DENOMINADOR_BAIXO:
+                # Evidencia insuficiente da propria campanha: um unico
+                # resultado no periodo inteiro.
+                conversoes_brutas = 1.0 if dia == anuncio["estreia"] else 0.0
+            else:
+                conversoes_brutas = link_clicks * perfil["taxa"]
 
             if meta:
                 conversions = Decimal(int(round(conversoes_brutas)))
@@ -239,14 +556,14 @@ def gerar_linhas() -> list[dict]:
                 # `conversion_value`: sao conceitos distintos, e o segundo e
                 # estruturalmente zero na fonte.
                 purchase_value = Decimal(
-                    str(round(purchases * anuncio["ticket"], 2))
+                    str(round(purchases * perfil["ticket"], 2))
                 )
                 reach = int(impressions * sorteio.uniform(0.55, 0.9))
                 video_views = int(impressions * sorteio.uniform(0.08, 0.45))
             else:
                 conversions = Decimal(str(round(conversoes_brutas, 6)))
                 conversion_value = Decimal(
-                    str(round(float(conversions) * anuncio["ticket"], 2))
+                    str(round(float(conversions) * perfil["ticket"], 2))
                 )
                 purchases = 0
                 # Google nao reporta compra neste grao: zero e ausencia de
@@ -255,7 +572,14 @@ def gerar_linhas() -> list[dict]:
                 reach = 0
                 video_views = int(impressions * sorteio.uniform(0.0, 0.06))
 
-            result_type = anuncio["result_type"]
+            result_type = perfil["tipo"]
+            if papel == PAPEL_SEM_KPI:
+                result_type = None
+            elif papel == PAPEL_RESULT_TARDIO and dia < DIAS // 2:
+                # Ausencia total na primeira metade e Resultado declarado na
+                # segunda: reproduz a fronteira de cobertura do artefato real,
+                # em que a reextracao de Result cobre so parte do periodo.
+                result_type = None
             if result_type is None:
                 result_count = None
                 result_attribution_window = None

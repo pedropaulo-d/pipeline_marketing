@@ -325,14 +325,27 @@ DERIVADAS: dict[str, Derivada] = {
 META: str = "Meta Ads"
 GOOGLE: str = "Google Ads"
 
-# Camada de apresentacao deliberadamente pequena: so os indicators validados
-# pelos probes reais recebem rotulo amigavel. Valor desconhecido permanece
-# tecnico internamente, mas nao ganha quantidade/custo agregado por inferencia.
+# Rotulo amigavel dos indicators de Resultado OBSERVADOS na superficie. Cada
+# chave saiu de `results[].indicator` em dado real; nenhum rotulo foi inventado
+# para um indicator que a fonte nunca devolveu. Indicator desconhecido continua
+# sem rotulo — e continua sem quantidade e sem custo agregados por inferencia.
 #
-# Os dois indicators prefixados de Lead vieram do primeiro request real com a
-# familia completa (bloco 2026-08-01..07): a Meta nomeia a origem do lead —
-# pixel offsite e formulario onsite agrupado — e as duas sao Lead para quem le
-# o painel.
+# Os dez rotulos abaixo cobrem os dez indicators presentes no artefato atual. A
+# escolha de nome nao e cosmetica: cada `result_type` e um EIXO DE COMPARACAO
+# diferente na classificacao de campanhas, e dois eixos com o mesmo nome na
+# tela levariam o leitor a comparar numeros medidos contra referencias
+# distintas.
+#
+# Por isso os dois indicators de Lead NAO colapsam mais em "Lead": pixel
+# offsite e formulario onsite agrupado sao origens diferentes e grupos de
+# comparacao diferentes.
+#
+# `reach` e `...fb_pixel_purchase` carregam o sufixo de origem de proposito:
+# - "Alcance (resultado Meta)" e o resultado que a Meta reporta para a
+#   campanha. Nao e a metrica `reach` da tabela, que e NAO ADITIVA e continua
+#   indisponivel em qualquer agregado com mais de uma linha;
+# - "Compra (resultado Pixel)" e um indicator de Resultado, distinto da metrica
+#   canonica `purchases` usada nos KPIs. Os dois nao se convertem um no outro.
 #
 # `lead` sem prefixo NAO entra. Ele existiu aqui enquanto o unico material
 # disponivel era fixture sintetica escrita antes de observar o contrato real;
@@ -341,17 +354,21 @@ GOOGLE: str = "Google Ads"
 # evidencia da fonte.
 #
 # CUIDADO — contrato diferente, nome igual: a metrica `conversions` do Meta
-# continua sendo `actions[action_type = "lead"]`, e essa remocao nao a toca.
+# continua sendo `actions[action_type = "lead"]`, e nada aqui a toca.
 # `actions[].action_type` e `results[].indicator` sao dois vocabularios
 # distintos da mesma resposta da API.
-#
-# `actions:onsite_conversion.messaging_conversation_started_7d` NAO entra: e
-# conversa iniciada, outro Resultado. Chamar de Lead seria interpretacao de
-# negocio inventada na camada de apresentacao.
 ROTULOS_RESULTADO: dict[str, str] = {
-    "actions:offsite_conversion.fb_pixel_lead": "Lead",
-    "actions:onsite_conversion.lead_grouped": "Lead",
+    "actions:offsite_conversion.fb_pixel_lead": "Lead (Pixel)",
+    "actions:onsite_conversion.lead_grouped": "Lead (formulário)",
+    "actions:onsite_conversion.messaging_conversation_started_7d":
+        "Conversas iniciadas (7 dias)",
     "video_thruplay_watched_actions": "ThruPlay",
+    "profile_visit_view": "Visitas ao perfil",
+    "actions:post_engagement": "Engajamento com a publicação",
+    "actions:omni_landing_page_view": "Visualizações da página de destino",
+    "estimated_ad_recallers": "Lembrança do anúncio (estimada)",
+    "reach": "Alcance (resultado Meta)",
+    "actions:offsite_conversion.fb_pixel_purchase": "Compra (resultado Pixel)",
 }
 
 RESULTADO_MULTIPLOS: str = "Múltiplos"
@@ -720,7 +737,9 @@ def janela_informativa(linha: LinhaDataset) -> bool:
     )
 
 
-def resultado_campanha(linhas: list[LinhaDataset]) -> dict:
+def resultado_campanha(
+    linhas: list[LinhaDataset], *, exigir_rotulo: bool = True
+) -> dict:
     """Agrega Resultado Meta no grao campanha x periodo filtrado.
 
     O custo factual vindo da API e guardado para auditoria, mas nao participa
@@ -759,8 +778,22 @@ def resultado_campanha(linhas: list[LinhaDataset]) -> dict:
     Mais de um tipo, mais de uma janela informativa, indicador desconhecido,
     Google ou ausencia total devolvem valores indisponiveis.
 
+    Rotulo ausente nao e defeito semantico
+    --------------------------------------
+    Um `result_type` sem entrada em `ROTULOS_RESULTADO` nao pode virar KPI de
+    painel: exibir "conversa iniciada" como se fosse Lead seria interpretacao
+    de negocio inventada na apresentacao. Comparar o custo de duas campanhas
+    do MESMO `result_type` tecnico, por outro lado, continua valido — a
+    comparacao nao depende de existir um nome amigavel. Por isso
+    `exigir_rotulo=False` deixa o agregado seguir com o tipo tecnico, marcado
+    como `RESULTADO_NAO_MAPEADO`, sem afrouxar nenhuma das checagens
+    semanticas anteriores. O padrao continua sendo o comportamento do painel.
+
     Args:
         linhas: Linhas factuais de uma unica campanha no recorte.
+        exigir_rotulo: Quando ``True`` (padrao), tipo sem rotulo amigavel
+            interrompe a agregacao com `RESULTADO_DESCONHECIDO`. Quando
+            ``False``, a agregacao prossegue com o tipo tecnico.
 
     Returns:
         Dicionario com tipo tecnico, rotulo, janela, quantidade, custo e
@@ -808,7 +841,7 @@ def resultado_campanha(linhas: list[LinhaDataset]) -> dict:
 
     result_type = next(iter(tipos))
     rotulo = ROTULOS_RESULTADO.get(result_type)
-    if rotulo is None:
+    if rotulo is None and exigir_rotulo:
         return {
             **base,
             "result_type": result_type,
@@ -855,7 +888,7 @@ def resultado_campanha(linhas: list[LinhaDataset]) -> dict:
         "result_count": result_count,
         "result_attribution_window": janela,
         "cost_per_result": dividir(spend, result_count),
-        "tipo_resultado": rotulo,
+        "tipo_resultado": rotulo if rotulo is not None else RESULTADO_NAO_MAPEADO,
         "status_resultado": RESULTADO_DISPONIVEL,
     }
 

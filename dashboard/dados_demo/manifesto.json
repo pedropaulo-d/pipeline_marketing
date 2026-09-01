@@ -2,12 +2,12 @@
   "versao_contrato": 3,
   "modo": "demonstracao",
   "natureza": "DADOS SINTETICOS E FICTICIOS. Nao derivam de nome, identificador ou metrica de cliente real, e nao usam a chave de pseudonimizacao da fronteira de exposicao.",
-  "gerado_em": "2026-08-31T19:33:58+00:00",
+  "gerado_em": "2026-09-01T15:17:23+00:00",
   "gerador": "dashboard/gerar_dados_demo.py",
   "semente": 20260825,
   "artefato": "metricas.csv",
-  "sha256": "c6ba6db6e5bee813ddd11ec57e2b7f37c3adac93d2ae11d74d201c7f0be77425",
-  "linhas": 1023,
+  "sha256": "79bfd3deb6371c6236b5ddf1dec2f515c40a41932cbbd611b68ea88931ec82e3",
+  "linhas": 1504,
   "data_min": "2026-06-01",
   "data_max": "2026-06-28",
   "grao": "1 anuncio x 1 dia — chave (anuncio_id, data)",
@@ -64,10 +64,10 @@
     "cost_per_result": "decimal nullable (NULL = sem denominador)"
   },
   "cardinalidades": {
-    "conta": 6,
-    "campanha": 15,
-    "adset": 30,
-    "anuncio": 48
+    "conta": 7,
+    "campanha": 31,
+    "adset": 57,
+    "anuncio": 76
   },
   "fingerprint_chave": null,
   "origem": "dashboard/gerar_dados_demo.py (gerador sintetico)",

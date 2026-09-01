@@ -35,9 +35,12 @@ if str(_RAIZ) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
+from dashboard import classificacao as cl  # noqa: E402
 from dashboard import componentes as ui  # noqa: E402
 from dashboard import dados, filtros, graficos  # noqa: E402
 from dashboard import metricas as m  # noqa: E402
+from dashboard import painel_classificacao as pc  # noqa: E402
+from dashboard import painel_classificacao_anuncios as pca  # noqa: E402
 from dashboard import sobre  # noqa: E402
 from dashboard.formatacao import formatar_periodo, _dia_mes  # noqa: E402
 
@@ -582,6 +585,93 @@ def tabela_ranking(itens: list[dict], nivel: str) -> list[dict]:
     return linhas
 
 
+def secao_classificacao(dataset, selecao: filtros.Selecao) -> None:
+    """Desenha a classificacao relativa das campanhas da conta selecionada.
+
+    A secao abre a pagina de campanhas: quem escolheu um cliente quer saber
+    onde mexer antes de olhar ranking por metrica.
+
+    Duas decisoes de recorte que nao sao obvias na tela:
+
+    1. **O benchmark usa um universo maior do que a tabela.** As campanhas
+       exibidas sao as da conta selecionada, mas o grupo de comparacao vem de
+       `filtros.universo_do_periodo`, que preserva as outras contas — sem isso
+       o nivel de portfolio do Meta desapareceria.
+    2. **Filtros de campanha e ad set nao encolhem a referencia.** A secao
+       representa a carteira da conta no periodo, e a legenda diz isso.
+
+    Args:
+        dataset: Dataset carregado.
+        selecao: Filtros vigentes.
+    """
+    ui.secao(
+        "Desempenho das campanhas",
+        "Classificação relativa baseada no KPI principal e em campanhas "
+        "semanticamente comparáveis.",
+    )
+
+    if len(selecao.contas) != 1:
+        ui.estado_vazio(
+            "Selecione um cliente",
+            "A classificação compara campanhas dentro de um cliente. "
+            "Escolha exatamente um para visualizá-la.",
+        )
+        return
+
+    conta = selecao.contas[0]
+    universo = filtros.universo_do_periodo(dataset.linhas, selecao)
+    inicio_anterior, fim_anterior = m.periodo_anterior(
+        selecao.data_inicio, selecao.data_fim
+    )
+    universo_anterior = filtros.universo_do_periodo(
+        dataset.linhas, selecao, inicio_anterior, fim_anterior
+    )
+    plataforma = (
+        selecao.plataformas[0] if len(selecao.plataformas) == 1 else None
+    )
+
+    classificacoes = cl.classificar_campanhas(
+        universo,
+        conta_id=conta,
+        plataforma=plataforma,
+        linhas_periodo_anterior=universo_anterior or None,
+    )
+    if not classificacoes:
+        ui.estado_vazio(
+            "Nenhuma campanha no período",
+            "Ajuste o período ou os filtros para ver a classificação.",
+        )
+        return
+
+    resumo = cl.resumir_classificacoes(classificacoes)
+    desempenho, contexto = pc.cartoes_resumo(resumo)
+    ui.linha_kpis(desempenho, compacto=True, chave="grade_classificacao")
+    # Os dois estados sem medicao continuam visiveis e com a contagem a vista,
+    # mas em quarto de largura: eles descrevem o que NAO foi medido e nao podem
+    # competir em peso visual com os quatro estados de desempenho. A chave
+    # `grade_resumo` reaproveita o estilo compacto que ja existe no painel.
+    with st.container(key="grade_resumo"):
+        colunas = st.columns(4, gap="small")
+        for indice, cartao in enumerate(contexto):
+            with colunas[indice]:
+                ui.cartao_kpi(
+                    cartao["rotulo"], cartao["valor"], compacto=True
+                )
+
+    with st.expander("Como funciona a classificação?"):
+        st.markdown(pc.AJUDA)
+
+    if (selecao.data_fim - selecao.data_inicio).days + 1 < cl.DIAS_PERIODO_CURTO:
+        ui.nota(pc.AVISO_PERIODO_CURTO)
+    if pc.tem_result_incompleto(classificacoes):
+        st.info(pc.AVISO_RESULT_INCOMPLETO)
+    if pc.tem_google_sem_pares(classificacoes):
+        ui.nota(pc.AVISO_GOOGLE_SEM_PARES)
+
+    ui.nota(f"{pc.NOTA_ESCOPO} {pc.AJUDA_DIFERENCA}")
+    ui.tabela(pc.linhas_tabela(classificacoes), altura=330)
+
+
 def pagina_ranking(linhas: list[dict], nivel: str, titulo: str,
                    apoio: str) -> None:
     """Desenha uma pagina de ranking (campanhas ou anuncios).
@@ -809,12 +899,101 @@ def pagina_visao_geral(dataset, selecao: filtros.Selecao,
     ui.tabela(comparativo)
 
 
-def pagina_anuncios(linhas: list[dict]) -> None:
+def secao_classificacao_anuncios(dataset, selecao: filtros.Selecao) -> None:
+    """Desenha a classificacao relativa dos anuncios da conta selecionada.
+
+    O motor recebe a conta inteira no periodo. Campanha e ad set so recortam
+    a lista depois que N1/N2 foram calculados, preservando os peers que nao
+    aparecem na tabela por causa de um filtro visual.
+
+    Args:
+        dataset: Dataset carregado.
+        selecao: Filtros vigentes.
+    """
+    ui.secao(
+        "Desempenho dos anúncios",
+        "Classificação relativa baseada no KPI principal e em anúncios "
+        "semanticamente comparáveis.",
+    )
+
+    if len(selecao.contas) != 1:
+        ui.estado_vazio(
+            "Selecione um cliente",
+            "A classificação compara anúncios dentro da estrutura de uma "
+            "conta. Escolha exatamente um para visualizá-la.",
+        )
+        return
+
+    conta = selecao.contas[0]
+    universo = filtros.universo_da_conta_no_periodo(
+        dataset.linhas, selecao, conta
+    )
+    plataforma = (
+        selecao.plataformas[0] if len(selecao.plataformas) == 1 else None
+    )
+    classificacoes = cl.classificar_anuncios(
+        universo,
+        conta_id=conta,
+        plataforma=plataforma,
+    )
+    classificacoes = pca.filtrar_alvos(
+        classificacoes,
+        campanhas=selecao.campanhas,
+        adsets=selecao.adsets,
+    )
+    if not classificacoes:
+        ui.estado_vazio(
+            "Nenhum anúncio no período",
+            "Ajuste o período ou os filtros para ver a classificação.",
+        )
+        return
+
+    resumo = cl.resumir_classificacoes(classificacoes)
+    desempenho, contexto = pc.cartoes_resumo(resumo)
+    ui.linha_kpis(
+        desempenho, compacto=True, chave="grade_classificacao_anuncios"
+    )
+    with st.container(key="grade_resumo_anuncios"):
+        colunas = st.columns(4, gap="small")
+        for indice, cartao in enumerate(contexto):
+            with colunas[indice]:
+                ui.cartao_kpi(
+                    cartao["rotulo"], cartao["valor"], compacto=True
+                )
+
+    with st.expander("Como funciona a classificação?"):
+        st.markdown(pca.AJUDA)
+
+    if pca.tem_motivo(classificacoes, cl.MOTIVO_RESULT_INCOMPLETO):
+        st.info(pca.AVISO_RESULT_INCOMPLETO)
+    if pca.tem_motivo(classificacoes, cl.MOTIVO_SEM_PEERS):
+        ui.nota(pca.NOTA_SEM_PEERS)
+
+    ui.nota(f"{pca.NOTA_ESCOPO} {pc.AJUDA_DIFERENCA}")
+    linhas_tabela = pca.linhas_tabela(classificacoes)
+    st.dataframe(
+        linhas_tabela,
+        width="stretch",
+        height=390,
+        hide_index=True,
+        column_config={
+            coluna: st.column_config.TextColumn(width=largura)
+            for coluna, largura in pca.LARGURA_COLUNA.items()
+            if coluna in linhas_tabela[0]
+        },
+    )
+
+
+def pagina_anuncios(dataset, selecao: filtros.Selecao,
+                    linhas: list[dict]) -> None:
     """Desenha a pagina de anuncios.
 
     Args:
+        dataset: Dataset carregado.
+        selecao: Filtros vigentes.
         linhas: Linhas ja filtradas.
     """
+    secao_classificacao_anuncios(dataset, selecao)
     pagina_ranking(
         linhas, "anuncio", "Ranking de anúncios",
         "Anúncios pseudonimizados, no grão de anúncio x dia.",
@@ -935,12 +1114,13 @@ def main() -> None:
     if pagina == "Visao Geral":
         pagina_visao_geral(dataset, selecao, linhas)
     elif pagina == "Campanhas":
+        secao_classificacao(dataset, selecao)
         pagina_ranking(
             linhas, "campanha", "Ranking de campanhas",
             "Campanhas pseudonimizadas, ordenadas pela métrica escolhida.",
         )
     elif pagina == "Anuncios":
-        pagina_anuncios(linhas)
+        pagina_anuncios(dataset, selecao, linhas)
 
 
 main()

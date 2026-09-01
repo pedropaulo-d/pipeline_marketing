@@ -2062,7 +2062,7 @@ class TestResultadoPorCampanha(CSVComResultado, unittest.TestCase):
     def test_campanha_lead_soma_resultado_e_recalcula_custo(self):
         resultado = m.resultado_campanha(self._lead())
         self.assertEqual(resultado["result_count"], Decimal(9))
-        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["tipo_resultado"], "Lead (Pixel)")
         self.assertEqual(
             resultado["cost_per_result"], Decimal("138.20") / Decimal(9)
         )
@@ -2177,15 +2177,26 @@ class TestFormasReaisDeResultado(CSVComResultado, unittest.TestCase):
     interpretacao de negocio inventada na camada de apresentacao.
     """
 
-    def test_indicators_de_lead_observados_recebem_rotulo_lead(self):
-        for indicator in ("actions:offsite_conversion.fb_pixel_lead",
-                          "actions:onsite_conversion.lead_grouped"):
-            with self.subTest(indicator=indicator):
-                self.assertEqual(m.ROTULOS_RESULTADO[indicator], "Lead")
+    def test_indicators_de_lead_nomeiam_a_origem_e_nao_colapsam(self):
+        # Os dois sao Lead, mas sao EIXOS DE COMPARACAO diferentes no
+        # classificador: pixel offsite e formulario onsite tem grupos de
+        # referencia distintos. Dois rotulos iguais na tela convidariam a
+        # comparar numeros medidos contra referencias diferentes.
+        pixel = m.ROTULOS_RESULTADO["actions:offsite_conversion.fb_pixel_lead"]
+        formulario = m.ROTULOS_RESULTADO[
+            "actions:onsite_conversion.lead_grouped"
+        ]
+        self.assertEqual(pixel, "Lead (Pixel)")
+        self.assertEqual(formulario, "Lead (formulário)")
+        self.assertNotEqual(pixel, formulario)
 
-    def test_conversa_iniciada_nao_e_lead(self):
+    def test_conversa_iniciada_tem_rotulo_proprio_e_nao_e_lead(self):
+        # O indicator ganhou nome de tela, o que NAO o transforma em Lead:
+        # conversa iniciada e outro Resultado, com outro grupo de comparacao.
         indicator = "actions:onsite_conversion.messaging_conversation_started_7d"
-        self.assertNotIn(indicator, m.ROTULOS_RESULTADO)
+        rotulo = m.ROTULOS_RESULTADO[indicator]
+        self.assertEqual(rotulo, "Conversas iniciadas (7 dias)")
+        self.assertNotIn("Lead", rotulo)
         linhas = self._carregar([
             linha_csv_resultado(
                 "2026-08-01", "Meta Ads", spend="10",
@@ -2194,8 +2205,8 @@ class TestFormasReaisDeResultado(CSVComResultado, unittest.TestCase):
             ),
         ])
         resultado = m.resultado_campanha(linhas)
-        self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO)
-        self.assertIsNone(resultado["result_count"])
+        self.assertEqual(resultado["tipo_resultado"], rotulo)
+        self.assertEqual(resultado["result_count"], Decimal(3))
 
     def test_thruplay_mantem_rotulo(self):
         self.assertEqual(
@@ -2203,17 +2214,35 @@ class TestFormasReaisDeResultado(CSVComResultado, unittest.TestCase):
         )
 
     def test_indicator_desconhecido_estruturalmente_valido_e_nao_mapeado(self):
+        # Indicator que a superficie ainda nao devolveu: estruturalmente
+        # valido, sem rotulo humano. Continua sem quantidade e sem custo
+        # agregados — rotular por inferencia seria inventar semantica.
+        indicator = "actions:onsite_conversion.indicator_ainda_nao_observado"
+        self.assertNotIn(indicator, m.ROTULOS_RESULTADO)
         linhas = self._carregar([
             linha_csv_resultado(
                 "2026-08-01", "Meta Ads", spend="10",
-                result_type="profile_visit_view", result_count="78",
+                result_type=indicator, result_count="78",
                 cost_per_result="0.09551282",
             ),
         ])
         resultado = m.resultado_campanha(linhas)
         self.assertEqual(resultado["tipo_resultado"], m.RESULTADO_NAO_MAPEADO)
         self.assertEqual(resultado["status_resultado"], m.RESULTADO_DESCONHECIDO)
-        self.assertEqual(resultado["result_type"], "profile_visit_view")
+        self.assertEqual(resultado["result_type"], indicator)
+
+    def test_visita_ao_perfil_passou_a_ter_rotulo(self):
+        linhas = self._carregar([
+            linha_csv_resultado(
+                "2026-08-01", "Meta Ads", spend="10",
+                result_type="profile_visit_view", result_count="78",
+                result_attribution_window="default",
+                cost_per_result="0.12820513",
+            ),
+        ])
+        resultado = m.resultado_campanha(linhas)
+        self.assertEqual(resultado["tipo_resultado"], "Visitas ao perfil")
+        self.assertEqual(resultado["result_count"], Decimal(78))
 
     def test_dia_com_zero_resultado_ainda_contribui_com_investimento(self):
         linhas = self._carregar([
@@ -2453,7 +2482,7 @@ class TestAusenciaTotalNaAgregacao(CSVComResultado, unittest.TestCase):
                          self.LEAD, "2", "5"),
         ])
         resultado = m.resultado_campanha(linhas)
-        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["tipo_resultado"], "Lead (Pixel)")
         self.assertNotEqual(
             resultado["tipo_resultado"], m.RESULTADO_INCOMPLETO
         )
@@ -2566,7 +2595,7 @@ class TestJanelaNeutraEmResultadoZero(CSVComResultado, unittest.TestCase):
         ])
         resultado = m.resultado_campanha(linhas)
         self.assertEqual(resultado["status_resultado"], m.RESULTADO_DISPONIVEL)
-        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["tipo_resultado"], "Lead (Pixel)")
         self.assertEqual(resultado["result_count"], Decimal(2))
         # A janela efetiva vem SO da linha que a declarou.
         self.assertEqual(resultado["result_attribution_window"], "default")
@@ -2617,7 +2646,7 @@ class TestJanelaNeutraEmResultadoZero(CSVComResultado, unittest.TestCase):
         ])
         resultado = m.resultado_campanha(linhas)
         self.assertEqual(resultado["status_resultado"], m.RESULTADO_DISPONIVEL)
-        self.assertEqual(resultado["tipo_resultado"], "Lead")
+        self.assertEqual(resultado["tipo_resultado"], "Lead (Pixel)")
         self.assertEqual(resultado["result_count"], Decimal(0))
         self.assertIsNone(resultado["result_attribution_window"])
         # Nao ha resultado para dividir; o spend nao some, so nao tem divisor.
