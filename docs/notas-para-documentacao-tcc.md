@@ -3,12 +3,15 @@
 Arquivo de trabalho. Reúne fatos, números medidos, decisões com justificativa e
 achados do desenvolvimento, organizados pela estrutura típica de um TCC.
 
-**Última atualização:** 19/08/2026 — seção 5.10 acrescentada; seção 5.4
-pseudonimizada; seção 2 marcada como snapshot histórico.
+**Última atualização:** 01/09/2026 — seção 15 acrescentada como referência
+técnica pós-4V; snapshots e achados anteriores preservados e datados.
 
-⚠️ **Os números das seções 2, 6.2, 6.3 e 7 são de 06/08/2026 e foram superados
-por cargas reais posteriores.** As seções 4 e 5 continuam válidas: dependem do
-mecanismo e da ordem de grandeza, não do total do dia.
+⚠️ **As seções 2, 6.2, 6.3, 7, 8 e 9 contêm estados históricos que foram
+superados.** Elas permanecem como evidência da evolução do projeto e estão
+marcadas como tal. Para o fechamento do pipeline, do DW e da superfície de
+exposição, usar a seção 14; para o estado posterior à classificação de
+campanhas e anúncios, usar a seção 15. Os achados datados das seções 4 e 5
+continuam válidos dentro do contexto em que foram medidos.
 
 ---
 
@@ -50,8 +53,9 @@ um Data Warehouse dimensional que permita análise comparativa entre plataformas
 3. Garantir idempotência e reprodutibilidade do processamento.
 4. Preservar o dado bruto para permitir reprocessamento sem nova extração.
 5. Validar a qualidade dos dados por testes automatizados.
-6. ❓ Comparar empiricamente o desempenho analítico entre armazenamento
-   orientado a linhas e a colunas (ver seção 9).
+6. Comparar empiricamente o desempenho analítico entre armazenamento
+   orientado a linhas e a colunas — objetivo realizado no benchmark da seção
+   5.6.
 
 **Contexto de origem dos dados:** contas reais de clientes de uma agência de
 marketing (referida como "a agência" no texto). O autor teve acesso concedido
@@ -184,9 +188,13 @@ período, volume, momento) — base de observabilidade.
 - `stg_google_ads`: tipagem e alinhamento de nomenclatura ao vocabulário comum.
 - `stg_ads_unified`: união das duas plataformas e criação das chaves naturais.
 
-Deduplicação: como a bronze acumula snapshots do mesmo dia, a silver aplica
-`dense_rank()` particionado por (fonte, data de referência) ordenado por momento
-de extração decrescente. Vence o snapshot mais recente.
+🛑 **Evolução histórica da deduplicação.** Até 24/08/2026, como a Bronze
+acumulava snapshots do mesmo dia, a Silver aplicava `dense_rank()` por fonte e
+data de referência, ordenado pelo momento da extração: o lote mais recente
+substituía logicamente o dia inteiro. Esse contrato permitiu a supressão
+descrita na seção 5.13 e foi superado em 25/08/2026. No estado final, vence a
+**última observação por entidade × dia**; uma entidade ausente do lote posterior
+não recebe zero nem apaga a observação anterior. Ver seção 14.4.
 
 **Gold — modelo dimensional**
 
@@ -205,9 +213,11 @@ dim_tempo → Fato
 
 **Grão da tabela fato:** um anúncio por dia.
 
-**Nove métricas:** investimento (spend), impressões, cliques em link,
-conversões, valor de conversão, visualizações de vídeo, alcance, visualizações
-de perfil e compras.
+**Nove métricas tradicionais do primeiro contrato Gold:** investimento
+(`spend`), impressões, cliques em link, conversões, valor de conversão,
+visualizações de vídeo, alcance, visualizações de perfil e compras. O contrato
+final acrescentou `purchase_value` e a família Result, além de contexto interno
+de objetivo/otimização; ver seções 14.7 e 14.8.
 
 **Sistema de chaves (após implementação de SCD Tipo 2):**
 
@@ -234,7 +244,12 @@ Kimball chama de *surrogate key pipeline*.
 | Armazenamento | PostgreSQL 16 |
 | Transformação | dbt (dbt-core + dbt-postgres) |
 | Testes de dados | dbt tests |
-| ❓ Orquestração | Apache Airflow (planejado, não implementado) |
+| Orquestração | Apache Airflow 3.3.0 com LocalExecutor |
+| Consumo | Streamlit + Plotly |
+
+🛑 **Nota histórica:** Airflow ainda era trabalho futuro no snapshot de
+06/08/2026. Foi implementado em 07/08/2026; o estado operacional final está na
+seção 14.13.
 
 ---
 
@@ -326,9 +341,10 @@ conversões por até 28 dias, então o mesmo dia extraído em momentos diferente
 retorna números diferentes. Com a bronze append-only, essa diferença fica
 registrada e é mensurável.
 
-❓ Esta é uma **oportunidade de contribuição original**: quantificar em quanto as
-métricas de um dia mudam ao longo dos 28 dias seguintes é análise que raramente
-aparece em trabalhos da área e que os dados já permitem fazer.
+✅ A oportunidade foi concretizada em duas medições: a primeira está descrita
+na seção 5.10; a reextração final de 01 a 25/08 permitiu medir revisões
+retroativas adicionais, consolidadas na seção 14.15. Os resultados observados
+não autorizam extrapolar uma frequência futura de revisão.
 
 ### 4.5 SCD Tipo 2
 
@@ -489,11 +505,12 @@ assim criar uma versão nova na dimensão.
 
 ### 5.5 Perfis distintos das plataformas
 
-🔍 Os dados consolidados evidenciam comportamentos diferentes: o Meta entrega
-volume de impressões cerca de sete vezes maior com CTR de 0,84%, enquanto o
-Google entrega menos impressões com CTR de 4,37%. É a diferença esperada entre
-mídia de descoberta e mídia de intenção, e o pipeline permite demonstrá-la
-quantitativamente — o que sustenta o objetivo geral do trabalho.
+🔍 No snapshot de 06/08/2026, os dados consolidados evidenciavam comportamentos
+diferentes: o Meta entregava volume de impressões cerca de sete vezes maior com
+CTR de 0,84%, enquanto o Google entregava menos impressões com CTR de 4,37%.
+Esse retrato sustenta a capacidade de comparação do pipeline, mas não deve ser
+apresentado como agregado final nem como causalidade comprovada do perfil de
+mídia.
 
 ---
 
@@ -585,12 +602,13 @@ são de um **dia passado**. Ao reextrair 01–04/08/2026 em 06/08, as campanhas
 pausadas nesse intervalo deixaram de ser retornadas — junto com o investimento
 que elas de fato realizaram naqueles dias.
 
-**Consequência, e é aqui que a arquitetura amplifica o erro.** A camada silver
-deduplica adotando o snapshot mais recente de cada dia. Um lote menor não
-convive com o anterior: ele o substitui. A reextração, que existe justamente
-para *corrigir* dado histórico, **apagou** R$ 210,57 de investimento real de
-04/08 — uma campanha inteira, 284 impressões, que já estavam corretamente
-carregadas no armazém.
+**Consequência no contrato vigente naquele momento, posteriormente corrigido.**
+A camada Silver deduplicava adotando o snapshot mais recente de cada dia. Um
+lote menor não convivia logicamente com o anterior: ele o substituía. A
+reextração, que existe justamente para *corrigir* dado histórico, **apagou**
+R$ 210,57 de investimento real de 04/08 — uma campanha inteira, 284
+impressões, que já estavam corretamente carregadas no armazém. Desde
+25/08/2026, a seleção ocorre por entidade × dia (seções 5.13 e 14.4).
 
 📊 Efeito medido sobre o período 01–04/08:
 
@@ -704,6 +722,11 @@ seção 2.3 já foi corrigida.
 ---
 
 ### 5.10 Deriva retroativa medida em produção
+
+🛑 **Snapshot experimental anterior à correção de 25/08.** A medição e seus
+resultados permanecem válidos para a execução descrita. A referência atual de
+seleção da Silver é a última observação por entidade × dia, consolidada na
+seção 14.4.
 
 🔍 O experimento mais forte do trabalho sobre a natureza da fonte. Uma execução
 agendada do pipeline reextraiu sete dias completos anteriores e permitiu
@@ -1163,7 +1186,16 @@ continuam alinhados. A DAG foi **pausada de novo, deliberadamente**: a operaçã
 real está comprovada e a base fica congelada durante a escrita da monografia —
 não é falha operacional, é congelamento intencional.
 
+🛑 **Estado de 26/08/2026, superado no fechamento técnico.** As 11.326 linhas
+continuam no fato final, mas o Golden, o hash do artefato e o contrato de 19
+colunas foram atualizados posteriormente. A referência vigente é a seção 14.
+
 ### 5.15 O erro que só a conferência manual revelou
+
+🛑 **Marco histórico da correção semântica anterior à reextração de Result.**
+As regras canônicas de compras e valor permaneceram vigentes; contagens da
+Bronze, Golden e superfície citadas nesta seção descrevem aquele momento. O
+estado operacional final está na seção 14.
 
 Um número correto na tela pode estar medindo a coisa errada. Foi a validação
 manual do dashboard contra as interfaces das plataformas — não um teste — que
@@ -1261,6 +1293,10 @@ contrato, porque os consumidores — o dashboard e o auditor independente —
 declaram a lista esperada e comparam por igualdade, recusando o artefato
 inteiro se ela não bater. O número é o que permite dizer *por que* a leitura
 falhou.
+
+🛑 **Marco histórico:** o contrato v2 descrito acima foi o fechamento dessa
+correção semântica. A superfície evoluiu depois para v3, com quatro campos de
+Result, sem alterar a regra de `purchase_value`; ver seção 14.10.
 
 ### 5.16 Dado sintético de teste que envelhece para dentro do dado real
 
@@ -1514,6 +1550,12 @@ um número absurdo, porque parece prudência.
 
 ### 5.21 O limite da fonte é parte do sistema, e ele já se anuncia
 
+🛑 **Registro do incidente e da decisão no momento em que a telemetria foi
+implementada.** A frase abaixo sobre ainda não haver observação real dos
+headers pertence àquele instante. Execuções posteriores observaram a
+telemetria passiva; elas não eliminam a possibilidade de novo rate limit. O
+contrato operacional final está na seção 14.13.
+
 🔍 Achado operacional: a restrição externa que só aparece quando o volume
 cresce — e o instrumento que já existia sem ser lido.
 
@@ -1610,7 +1652,7 @@ reproduzida. Em seguida o caminho ETL foi removido do projeto. As medidas
 acima são o registro final da paridade; reproduzi-las exige recuperar o código
 do histórico do versionamento.
 
-### 6.2 Testes automatizados
+### 6.2 Testes automatizados — SNAPSHOT HISTÓRICO DE 06/08/2026
 
 📊 72 testes executados a cada build (o `dbt build` reporta `PASS=83`, que é a
 contagem de **nós**: 11 modelos + 72 testes — não citar 83 como número de
@@ -1632,7 +1674,14 @@ sumir da resposta não prova que a métrica histórica virou zero. Uma eventual
 semântica de remoção precisa chegar como evidência explícita; até lá, apagar a
 última observação válida seria uma decisão que o dado de origem não sustenta.
 
-### 6.3 Idempotência
+🛑 Esta contagem não representa o gate final. Os números de validação de
+31/08/2026 estão na seção 14.14.
+
+### 6.3 Idempotência — CONTRATO HISTÓRICO ANTES DE `run_id`
+
+🛑 O texto abaixo registra a noção de idempotência do fato antes da proteção
+contra replay de lotes. O contrato final acrescenta `run_id` e unicidade
+física por fonte, descritos na seção 14.4.
 
 Verificada empiricamente: executar o pipeline repetidamente sobre o mesmo
 período mantém a tabela fato no mesmo grão, com zero duplicações. A camada
@@ -1653,10 +1702,11 @@ corrigir dados históricos sem duplicá-los.
 
 ---
 
-## 7. Limitações
+## 7. Limitações registradas em 06/08/2026 — HISTÓRICO
 
-⚠️ Todas devem constar no texto. Reconhecer limitação é rigor; ser questionado
-sobre uma limitação não declarada é falha.
+🛑 Esta lista retrata o sistema em 06/08/2026. Airflow, a camada de consumo e a
+cobertura temporal evoluíram depois; a lista consolidada vigente está na seção
+14.15. As limitações conceituais que continuam válidas foram preservadas.
 
 1. **Cobertura desigual de métricas.** A consulta ao Google Ads não retorna
    alcance, visualizações de perfil nem compras no nível consultado. As colunas
@@ -1676,46 +1726,58 @@ sobre uma limitação não declarada é falha.
    a cada execução. Adequado ao volume atual, insuficiente em outra ordem de
    grandeza.
 4. **Integridade referencial mais fraca** que no modelo anterior (seção 4.3).
-5. **Ausência de orquestração** — a execução é sequencial, sem política de
-   repetição em caso de falha e sem agendamento.
+5. ~~**Ausência de orquestração** — a execução era sequencial, sem política de
+   repetição em caso de falha e sem agendamento.~~ Superada em 07/08/2026 com
+   Airflow; configuração final na seção 14.13.
 6. **Comparação de conversões entre plataformas** tem ressalva de atribuição
    (seção 2.3).
-7. **Série temporal curta** — cinco dias carregados. Suficiente para demonstrar
-   a mecânica, insuficiente para análise de sazonalidade ou tendência.
+7. **Série temporal curta naquele snapshot** — cinco dias carregados. A
+   cobertura final cresceu, mas o intervalo factual continua inadequado para
+   inferir sazonalidade de longo prazo.
 
 ---
 
-## 8. Trabalhos futuros
+## 8. Trabalhos futuros registrados durante o desenvolvimento — HISTÓRICO
 
-- Orquestração com Apache Airflow.
-- Materialização incremental da camada gold.
+Esta lista preserva propostas feitas antes do fechamento. O status atual de
+cada item resolvido aparece explicitamente.
+
+- ~~Orquestração com Apache Airflow.~~ ✅ Implementada em 07/08/2026.
+- ~~Materialização incremental da camada gold.~~ ⚖️ Avaliada e rejeitada como
+  desnecessária para o volume observado; o full-refresh permaneceu deliberado.
 - ~~Camada de consumo (painel analítico).~~ ✅ Implementada em 25/08/2026 —
   Streamlit + Plotly sobre a superfície de exposição (seção 5.11).
-- Quantificação da deriva retroativa de métricas (seção 4.4).
+- ~~Quantificação da deriva retroativa de métricas.~~ ✅ Medida nas seções 5.10
+  e 14.14.
 - Extensão a outras plataformas (TikTok Ads, LinkedIn Ads) — o modelo
   dimensional já acomoda, bastaria um novo extrator e um novo modelo de staging.
 - Detecção de anomalias em investimento e desempenho.
 
 ---
 
-## 9. Questões pendentes de decisão
+## 9. Questões registradas durante o desenvolvimento — HISTÓRICO
 
-❓ Dependem do orientador ou de escolha ainda não feita:
+Os itens abaixo foram registrados como pendências em 06/08/2026. A marcação
+indica o que foi resolvido e o que permanece acadêmico, não técnico.
 
-1. **Benchmark PostgreSQL × DuckDB** como contribuição experimental —
+1. ~~**Benchmark PostgreSQL × DuckDB** como contribuição experimental~~ —
    comparação de tempo de resposta em consultas analíticas com volumes
    crescentes (10 mil, 1 milhão, 50 milhões de linhas sintéticas). Transformaria
-   a decisão da seção 4.1 de argumentação em evidência. Não implementado.
+   a decisão da seção 4.1 de argumentação em evidência. ✅ Implementado com as
+   escalas efetivas de 10 mil, 100 mil, 1 milhão e 10 milhões (seção 5.6).
 2. **Metodologia a declarar** — estudo de caso, Design Science Research ou
    pesquisa aplicada. Afeta como as evidências precisam ser registradas.
 3. **Referencial teórico de modelagem dimensional** — Kimball, Inmon, ou
    contraste entre os dois.
-4. **Autorização formal de uso dos dados** e forma de publicação do dataset.
+4. **Forma de publicação do dataset.** A fronteira de exposição foi definida,
+   mas publicar/versionar dado real pseudonimizado continua dependendo de
+   autorização específica; a superfície operacional permanece fora do Git.
 5. ~~**Camada de consumo** faz parte do escopo?~~ Resolvida: implementada em
    25/08/2026 como camada demonstrativa de consumo, não como produto de BI
    (seção 5.11).
-6. **Volume de dados** a ser demonstrado — dados reais apenas ou também volume
-   sintético.
+6. ~~**Volume de dados a demonstrar.**~~ Resolvido em duas frentes: superfície
+   operacional pseudonimizada com métricas reais para uso controlado e demo
+   sintética versionada para reprodução sem credenciais.
 
 ---
 
@@ -1781,7 +1843,11 @@ Research, por exemplo):
 | 05/08/2026 | Benchmark row-store × column-store |
 | 06/08/2026 | Cobertura de visualizações de vídeo do Google; detecção do filtro por status e da inflação por versão de dimensão |
 | 06/08/2026 | Remoção do caminho ETL — o projeto passa a ter uma arquitetura só |
+| 07/08/2026 | Orquestração com Airflow implementada |
 | 25/08/2026 | Correção da descoberta Meta e adoção da última observação por entidade/dia após detecção de supressão histórica por snapshot parcial |
+| 25–26/08/2026 | Recuperação histórica Meta; correção da descoberta Google; política auditável para contas indisponíveis |
+| 28–31/08/2026 | Reextração de Result em quatro blocos, carga append-only, reconstrução do Gold, superfície e demo v3 e ampliação do Golden |
+| 31/08/2026 | Encerramento da implementação técnica no commit `921dde9` |
 
 ---
 
@@ -1800,18 +1866,786 @@ Research, por exemplo):
 - **Não citar a tabela antiga da seção 2.3.** Os valores foram corrigidos em
   06/08; a versão anterior estava inflada em 7,8% (seção 5.9).
 - **Não somar visualizações de vídeo entre plataformas** (seção 5.8).
-- **Números desta nota são de 06/08/2026** e mudarão conforme novas cargas.
-  Reconferir antes da versão final — e sempre pela rota de consulta correta:
-  a soma das linhas por plataforma tem de fechar com o total da tabela fato.
+- **Números históricos desta nota pertencem aos snapshots datados.** Para o
+  fechamento técnico de 31/08/2026, usar a seção 14. A rota de conferência
+  continua sendo a view canônica, e a soma das linhas por plataforma precisa
+  fechar com o total da tabela fato.
+- **Não publicar `SUM(reach)` como Reach total.** A soma aparece apenas como
+  checksum técnico; Reach é não aditivo (seção 14.9).
+- **Não publicar `SUM(result_count)` como total de resultados.** Os tipos
+  misturam semânticas diferentes; o valor global serve apenas como checksum
+  técnico (seção 14.8).
 - **Este arquivo é versionado.** O nome da agência, de clientes, marcas, razões
   sociais, identificadores externos e nomes reais de campanha, conjunto ou
   anúncio **não podem aparecer aqui** — nem como exemplo. A seção 5.4 usa
   pseudônimos documentais por esse motivo. Identificador indireto conta:
   localidade, produto, data de convenção interna e abreviação associável a
   cliente também não entram.
-- **Números vencidos.** As seções 2, 6.2, 6.3 e 7 guardam medidas de 06/08/2026
-  já superadas por cargas reais posteriores — contagem de testes, linhas do
-  fato, dias carregados e o estado da orquestração mudaram. A seção 2 está
-  marcada como snapshot histórico; as demais ainda não foram revisadas. Confira
-  no banco antes de citar qualquer número, e sempre pela rota de consulta
-  correta.
+- **Números vencidos não são números errados.** As seções 2, 6.2, 6.3, 7, 8 e
+  9 preservam estados anteriores e estão marcadas como históricas. Não as
+  misturar com o estado final da seção 14 nem atualizar retroativamente seus
+  valores.
+
+---
+
+## 14. Estado técnico final consolidado — 31/08/2026
+
+Esta seção é a **referência factual vigente** para a redação posterior. A
+implementação técnica foi encerrada no commit
+`921dde9acf5b2b445a70eee6ec769ae6fdee3546`
+(`feat(exposicao): finaliza contrato v3 e cobertura de resultado`). Os dados
+foram congelados com observações até 25/08/2026; 31/08/2026 é a data do
+fechamento da implementação, não uma nova data factual.
+
+O snapshot experimental de 26/07/2026 a 24/08/2026 permanece um marco
+histórico separado, documentado em `docs/tcc/snapshot-experimental-final.md`.
+Seus números e hashes não devem ser atualizados retroativamente. Os valores
+abaixo descrevem o **estado operacional final** e não substituem evidências
+datadas das seções anteriores.
+
+### 14.1 Escopo temporal e marcos
+
+- **Snapshot experimental:** 26/07/2026 a 24/08/2026, preservado como retrato
+  da etapa experimental.
+- **Estado operacional final:** fatos com datas entre 07/04/2026 e
+  25/08/2026, após recuperação histórica, revisão semântica, reextração de
+  Result, reconstrução do Gold e geração da superfície v3.
+- **Encerramento técnico:** 31/08/2026, no commit indicado acima.
+
+O intervalo mínimo–máximo não afirma uma série diária contínua desde abril.
+Ele informa apenas os extremos factuais do conjunto final.
+
+### 14.2 Arquitetura e tecnologias finais
+
+Fluxo canônico:
+
+```text
+Meta Ads + Google Ads
+  → extratores Python
+  → JSON bruto temporário + manifesto de execução
+  → Bronze append-only em PostgreSQL (JSONB)
+  → Silver em views dbt
+  → Gold dimensional em tabelas dbt
+  → gold.vw_metricas_completas
+  → superfície de exposição pseudonimizada v3
+  → dashboard Streamlit
+```
+
+Tecnologias principais: Python, PostgreSQL, dbt, Apache Airflow, Docker
+Compose, Streamlit e Plotly. O Airflow orquestra extração, carga Bronze e
+transformação dbt; Golden e superfície de exposição são gates separados e não
+são produzidos automaticamente pela DAG.
+
+### 14.3 Volumetria e métricas finais
+
+📊 **Camadas e lotes:**
+
+| Componente | Linhas | Lotes |
+|---|---:|---:|
+| Bronze total | 55.485 | 71 |
+| Meta Ads na Bronze | 22.502 | 38 |
+| Google Ads na Bronze | 32.983 | 33 |
+| `bronze.ingestion_log` | 71 | — |
+| Silver unificada | 11.326 | — |
+| Fato Gold | 11.326 | — |
+
+Quatro registros de `ingestion_log` têm `run_id` preenchido; os 67 lotes
+históricos anteriores têm `run_id` nulo. O período factual mínimo–máximo é
+07/04/2026 a 25/08/2026.
+
+📊 **Dimensões Gold:**
+
+| Dimensão | Versões materializadas | Entidades multiversão |
+|---|---:|---:|
+| Conta | 67 | 2 |
+| Campanha | 222 | 5 |
+| AdSet | 450 | 4 |
+| Anúncio | 910 | 0 |
+
+📊 **Agregados técnicos do estado operacional final:**
+
+| Métrica | Valor |
+|---|---:|
+| `spend` | 138.350,991624 |
+| `impressions` | 4.783.910 |
+| `link_clicks` | 83.906 |
+| `video_views` | 512.509 |
+| `conversions` | 5.674,442581 |
+| `purchases` | 65 |
+| `purchase_value` | 62 |
+| `conversion_value` | 2.934,583150 |
+| `SUM(reach)` — checksum de integridade | 3.704.612 |
+
+`SUM(reach)` não é alcance consolidado; a restrição está detalhada na seção
+14.9.
+
+### 14.4 Bronze, última observação e idempotência
+
+O contrato final combina preservação histórica e proteção contra replay:
+
+1. A Bronze é **append-only**. Reextrações acrescentam lotes e não
+   sobrescrevem, atualizam ou removem lotes anteriores.
+2. A Silver escolhe a **última observação por entidade × dia**, usando a chave
+   natural hierárquica e a precedência temporal da ingestão.
+3. Uma entidade ausente de um lote posterior não recebe zero, não cria
+   *tombstone* e não apaga sua última observação válida. Uma revisão presente
+   no lote novo pode substituir a observação anterior no snapshot lógico.
+4. Se duas observações da mesma chave empatarem na precedência, a ambiguidade
+   permanece visível e os testes de grão falham fechado; não existe desempate
+   arbitrário.
+
+`bronze.ingestion_log.run_id` é `TEXT NULL`. Um índice único parcial protege:
+
+```text
+(source, run_id) WHERE run_id IS NOT NULL
+```
+
+Há duas camadas de defesa: precheck na aplicação e unicidade física no banco.
+A inserção em `bronze.raw_ads` e o registro em `ingestion_log` pertencem à
+mesma transação; uma colisão reverte ambos. Assim, o replay do mesmo par
+`(source, run_id)` é rejeitado. Append-only não significa aceitar o mesmo
+evento de ingestão indefinidamente.
+
+Os 67 lotes históricos permanecem com `run_id` nulo por compatibilidade. As
+quatro reextrações de Result usam `run_id` preenchido e constituem quatro
+eventos idempotentes separados.
+
+### 14.5 Recuperação histórica e cobertura das fontes
+
+**Meta — recuperação histórica.** O incidente ocorreu porque a descoberta
+baseada no estado atual das contas foi usada como critério de participação
+histórica. A correção separou os conceitos: estado atual não determina se a
+conta participou de uma data passada. Foram consultadas 17 datas antes sem
+evidência; 3 eram consultas válidas sem linhas e nenhuma ficou
+inconclusiva/inacessível nesse processo específico.
+
+Esse resultado não deve ser confundido com o fechamento operacional
+posterior: duas contas Meta conhecidas estavam `temporarily_unavailable`. A
+política final omite somente essas contas naquela execução, registra a lacuna
+de cobertura de forma agregada e **não** cria zeros. Estado desconhecido ou
+erro inesperado continua abortando a extração (*fail closed*).
+
+**Google — histórico não verificável.** O filtro de estado atual foi removido:
+contas `ENABLED`, `CANCELED` e `CLOSED` podem ter participação histórica. No
+estado atual da API, porém, 50 contas `CANCELED`/`CLOSED` respondem
+`CUSTOMER_NOT_ENABLED`. Elas nunca entraram na Bronze por essa consulta e a
+recusa atual não prova inatividade passada. A classificação correta é
+**histórico não verificável**, nunca zero.
+
+### 14.6 Modelagem dimensional, SCD2 e materialização
+
+O Snowflake Schema segue Plataforma → Conta → Campanha → AdSet/AdGroup →
+Anúncio → Fato, com `dim_tempo` ligada diretamente ao fato. O grão permanece
+um anúncio × um dia. SCD Tipo 2 preserva as mudanças **observáveis** nos
+atributos dimensionais, de acordo com os snapshots efetivamente presentes na
+Bronze.
+
+⚠️ **Limitação aceita:** numa reextração histórica, uma campanha recebeu o
+nome atual também em datas passadas. Como a API consultada hoje não oferece o
+atributo nominal histórico fiel, uma versão nominal anterior não pôde ser
+reconstruída integralmente no SCD2. A observação antiga continua recuperável na
+Bronze append-only. Portanto, o SCD2 representa o histórico observado pelo
+pipeline, não um *change log* completo da plataforma.
+
+A Silver é composta por **views** e reflete a Bronze imediatamente. O Gold é
+materializado em **tabelas** e exigiu reconstrução dbt após as cargas. A view
+`gold.vw_metricas_completas` resolve a travessia SCD2 e é a rota canônica de
+consumo. O full-refresh do Gold foi mantido por adequação ao volume; a
+integridade referencial é detectada por testes depois da materialização, em
+vez de impedida por chaves estrangeiras.
+
+### 14.7 Semântica das métricas e KPIs
+
+- **Meta:** `conversions` representa Leads no contrato adotado. O indicador
+  principal de custo é `CPL = spend Meta / leads`.
+- **Google:** `conversions` preserva a semântica da plataforma, inclusive
+  atribuição fracionada. O indicador de custo é
+  `CPA = spend Google / conversions`.
+- Meta Leads e Google Conversions não formam uma quantidade semanticamente
+  válida de “conversões totais”.
+
+**Compras Meta.** A regra anterior somava `purchase + omni_purchase` e
+duplicava eventos que coexistiam. O contrato final usa `omni_purchase` como
+fonte primária e `purchase` como fallback, nunca a soma das duas. A correção
+observada foi de 130 para 65 compras.
+
+**Valores atribuídos.** `purchase_value` do Meta totaliza 62 no estado final;
+no recorte Meta Result de 01 a 25/08, totaliza 53. São escopos diferentes. O
+`conversion_value` do Google totaliza 2.934,583150. Esses valores são
+**atribuídos pelas plataformas**; não devem ser chamados automaticamente de
+receita ou faturamento.
+
+**ROAS:**
+
+- Meta: `purchase_value / spend Meta`;
+- Google: `conversion_value / spend Google`;
+- consolidado: `(purchase_value Meta + conversion_value Google) / spend
+  total`.
+
+O ROAS consolidado sai das somas, nunca da média dos ROAS individuais.
+
+**Cliques e vídeo.** `link_clicks` representa *inline link clicks* no Meta e
+`clicks`, conceito mais amplo, no Google. CTR e CPC devem ser interpretados por
+plataforma. `video_views` também tem definições distintas entre as fontes;
+somá-la como se fosse uma métrica homogênea não é válido.
+
+### 14.8 Result e Custo por Resultado
+
+A reextração de Result foi dividida em blocos de no máximo sete dias,
+sequenciais e nunca paralelos:
+
+| Bloco | Janela |
+|---|---|
+| B1 | 01–07/08/2026 |
+| B2 | 08–14/08/2026 |
+| B3 | 15–21/08/2026 |
+| B4 | 22–25/08/2026 |
+
+O conjunto contém 2.834 linhas: 1.786 tipadas, 1.048 ausências legítimas e
+zero inválidas. `cost_per_result` está preenchido em 1.166 linhas e
+`result_attribution_window` em 628.
+
+**Formas factuais observadas:**
+
+- **Forma A:** `results` e `cost_per_result` trazem o mesmo indicador, ambos
+  sem `values`. O tipo é conhecido, `result_count = 0`, custo e janela ficam
+  `NULL`. É resultado conhecido zero.
+- **Forma B:** os dois campos trazem `values`, sem `attribution_windows`. A
+  janela `NULL` é factual e informativa.
+- **Forma C:** `results` traz valor `"0"` e o custo traz o mesmo indicador sem
+  `values`. A quantidade é zero e o custo fica `NULL`.
+- **Ausência total:** `results` e `cost_per_result` estão ausentes; os quatro
+  campos Result ficam `NULL`. Ausência não é convertida em zero.
+
+Quantidade positiva sem custo correspondente permanece inválida e falha
+fechado. `objective` e `optimization_goal` são contexto interno, não definem o
+tipo de Result e não autorizam inferência.
+
+**Compatibilidade de janela.** O `NULL` da Forma A é neutro: como não há valor
+factual, ele não cria uma segunda janela. O `NULL` da Forma B é informativo;
+se coexistir com uma janela explícita no mesmo agregado, o custo fica
+incompatível. Nenhuma janela é imputada de outra linha.
+
+**Agregação.** Em campanha, Resultado só é agregado quando tipo e janela
+informativa são compatíveis. O custo agregado é:
+
+```text
+SUM(spend) / SUM(result_count)
+```
+
+Nunca se usa `SUM(cost_per_result)` nem `AVG(cost_per_result)`. Quando a
+semântica não fecha, a saída é indisponível (`N/A`).
+
+> **Não existe KPI global “Total de Resultados”.** `result_count` mistura
+> Lead, ThruPlay, engajamento, alcance, visita, mensagem, Pixel Purchase e
+> outros indicadores. `SUM(result_count) = 865.044` é somente checksum técnico,
+> não uma quantidade de negócio.
+
+O Gold contém `result_type`, `result_count`, `result_attribution_window`,
+`cost_per_result`, `objective` e `optimization_goal`. Google e Meta fora do
+recorte 01–25/08 não têm Result preenchido. O indicador de Pixel Purchase em
+Result permanece distinto da métrica canônica `purchases`; não existe
+conversão automática entre os dois.
+
+### 14.9 Reach é não aditivo
+
+No Meta, Reach é factual no grão de um anúncio × um dia. Ele não é aditivo
+entre dias, anúncios, campanhas ou contas: a mesma pessoa pode pertencer a
+vários conjuntos, e a fonte não fornece as interseções necessárias para
+deduplicá-la. Também não existe *lower bound* útil derivado das somas.
+
+Consequência: qualquer agregação de negócio com mais de uma linha deve
+apresentar Reach como indisponível (`N/A`). A soma 3.704.612 existe apenas como
+checksum de integridade no Golden e nos auditores. É incorreto escrever
+“Reach total = 3.704.612”.
+
+### 14.10 Superfície de exposição v3
+
+A superfície operacional final usa contrato v3, com 11.326 linhas, 24 colunas
+e período de 07/04/2026 a 25/08/2026. Em relação à v2, acrescenta exatamente:
+
+- `result_type`;
+- `result_count`;
+- `result_attribution_window`;
+- `cost_per_result`.
+
+`objective` e `optimization_goal` permanecem somente no DW. IDs externos,
+chaves internas e nomes reais também não saem. As métricas e datas são reais;
+a identidade é pseudonimizada.
+
+📊 **Evidências técnicas de reprodutibilidade:**
+
+- CSV SHA-256:
+  `ad01a7e872372bd76d8c0789ef3792f8bcbe4f7d737a72174ee38f30914e73ee`;
+- manifesto SHA-256:
+  `bb47c651f4d9ac3b21784d0c47fbd46e16057bc9d6b9d0f5e4d68991ff31266f`;
+- fingerprint da chave HMAC: `4EFD314550FC2D48`.
+
+Esses valores servem como evidência técnica ou material de apêndice; não são
+conteúdo obrigatório do corpo acadêmico.
+
+`data/exposicao/` é artefato operacional gerado localmente, deliberadamente
+ignorado pelo Git e não versionado. Ele contém métricas reais
+pseudonimizadas: pseudonimização permite exposição controlada, mas não concede
+autorização automática para versionamento ou publicação. O artefato distribuído
+no repositório é a demo sintética.
+
+### 14.11 Dashboard e demo sintética v3
+
+O dashboard Streamlit + Plotly consome somente CSV compatível com o contrato de
+exposição. Não se conecta ao DW, não chama API e não pseudonimiza. Sua camada
+semântica separa CPL Meta, CPA Google, valores atribuídos, Result/Custo por
+Resultado e métricas indisponíveis ou incompatíveis.
+
+A demo versionada é v3, tem 1.023 linhas e 24 colunas, cobre 01/06/2026 a
+28/06/2026 e é 100% sintética. Foi criada para demonstrar o painel sem DW,
+`.env`, credenciais ou dado real.
+
+| Recorte da demo | Linhas |
+|---|---:|
+| Meta total | 491 |
+| Meta tipadas | 344 |
+| Meta com ausência de Result | 147 |
+| Meta com zero factual tipado | 18 |
+| Meta com custo preenchido | 326 |
+| Meta com janela preenchida | 326 |
+
+Os tipos sintéticos exibidos são Lead e ThruPlay. Todas as linhas Google têm
+os quatro campos Result em `NULL`. A demo ilustra comportamento do software;
+não constitui evidência dos resultados reais.
+
+### 14.12 Segurança e governança
+
+- Pseudonimização determinística por HMAC, com chave local fora do dataset e
+  fora do versionamento.
+- `fingerprint_chave` detecta troca da chave sem revelá-la.
+- Superfície pública construída por allowlist e com falha fechada diante de
+  coluna não classificada.
+- `objective` e `optimization_goal` permanecem no DW.
+- Nomes, IDs externos e chaves internas reais são proibidos no artefato e na
+  documentação versionada.
+- Auditor de exposição é independente do produtor e não compartilha sua
+  implementação crítica.
+- Superfície operacional não é versionada; demo versionada é inteiramente
+  sintética.
+
+### 14.13 Operação, Airflow e limites externos
+
+A DAG usa agenda diária às 06:00 em `America/Sao_Paulo`, `catchup=False`,
+`max_active_runs=1`, LocalExecutor e duas tentativas adicionais por task
+(`retries=2`). Depois do fechamento, o Airflow foi pausado/parado de propósito
+para congelar o estado usado na documentação.
+
+Golden e superfície de exposição não fazem parte da execução automática da
+DAG. Cada um permanece um gate explícito, executado e auditado separadamente.
+
+A telemetria de rate limit do Meta é passiva: observa, quando presentes,
+`X-App-Usage`, `X-Ad-Account-Usage`, `X-Business-Use-Case-Usage`,
+`x-fb-ads-insights-throttle` e `Retry-After`, sem produzir request adicional e
+sem registrar identificadores embutidos nos headers. Não há limiar, *pacing*
+ou retry automático inventado para quota. Rate limit continua uma restrição
+externa real e uma falha terminal da execução corrente; a telemetria informa a
+decisão operacional, não elimina o limite.
+
+### 14.14 Golden, paridade e testes finais
+
+O Golden final tem SHA-256
+`98708b0d683a8fb601faaa645defee0918ac4823066fd0b8812a0ff650134277`.
+A verificação terminou com **PARIDADE OK**, 11.326 linhas e zero divergências.
+
+Além das métricas e estruturas anteriores, o Golden protege Result por duas
+coleções:
+
+- `cobertura_resultado_por_plataforma_dia`: 64 entradas;
+- `distribuicao_resultado_por_plataforma_dia_tipo_janela`: 279 entradas.
+
+`cost_per_result` é protegido por checksum técnico determinístico dentro de
+grupos homogêneos. Não há coleção nem KPI de “resultados totais”.
+
+📊 **Evidência técnica final de validação:**
+
+| Bateria | Resultado |
+|---|---|
+| Python global | 763 passed, 35 skipped, 0 failed |
+| Dashboard | 305 passed, 1 skipped, 0 failed |
+| Paridade focada | 41 passed |
+| Demo focada | 27 passed |
+| Exportação e auditoria | 100 passed |
+| Anonimização e segurança | 55 passed |
+| dbt build final relevante | 121 nós: 11 modelos + 110 testes; PASS 121, WARN 0, ERROR 0, SKIP 0 |
+
+Essas contagens são evidências verificáveis do gate, não prova isolada de
+qualidade acadêmica ou ausência absoluta de defeitos.
+
+### 14.15 Revisões retroativas observadas no Meta
+
+A reextração de 01 a 25/08 encontrou mudança métrica em 35 das 2.834 chaves;
+21 dos 25 dias não tiveram mudança. As revisões se concentraram em 04/08,
+18/08, 24/08 e 25/08.
+
+| Métrica | Delta total |
+|---|---:|
+| `spend` | +3,85 |
+| `impressions` | +187 |
+| `link_clicks` | +4 |
+| `SUM(reach)` — checksum | +159 |
+| `video_views` | +23 |
+| Leads | inalterados |
+| `purchases` | inalteradas |
+| `purchase_value` | inalterado |
+
+O achado sustenta que a fonte pode revisar métricas retroativamente. Ele não
+autoriza extrapolar a frequência ou magnitude das revisões futuras.
+
+### 14.16 Limitações consolidadas
+
+1. O SCD2 é limitado pela capacidade histórica das APIs e pelos snapshots
+   efetivamente observados.
+2. Uma campanha teve versão nominal histórica não recuperável integralmente;
+   a observação anterior permanece na Bronze.
+3. Duas contas Meta estavam temporariamente indisponíveis e constituem lacuna
+   de cobertura conhecida, não zero.
+4. Cinquenta contas Google têm histórico não verificável no estado atual da
+   API.
+5. Ausência de entidade ou de Result não prova zero e não cria tombstone.
+6. O contrato de Result foi formalizado empiricamente a partir das formas
+   observadas; forma nova permanece sujeita a revisão fail-closed.
+7. Rate limit é restrição externa; telemetria não garante quota futura.
+8. Reach é não aditivo e indisponível em agregações de negócio multi-linha.
+9. Cliques, conversões e visualizações de vídeo não têm semântica idêntica
+   entre Meta e Google.
+10. Google e Meta fora do recorte reextraído não possuem Result factual.
+11. O Gold usa full-refresh por adequação ao volume observado; outra ordem de
+    grandeza exigiria reavaliação.
+12. A integridade referencial é detectada por testes após a materialização,
+    não impedida por chaves estrangeiras.
+13. O benchmark foi executado em um único ambiente de hardware; seus valores
+    absolutos não devem ser generalizados.
+14. A demo é sintética e não constitui evidência dos resultados reais.
+15. A superfície operacional é reprodutível localmente, mas deliberadamente
+    não versionada.
+
+### 14.17 Pendências para a escrita acadêmica
+
+As pendências seguintes são editoriais e acadêmicas; a implementação técnica
+está encerrada:
+
+- consolidar metodologia final, desenvolvimento, resultados, limitações e
+  conclusão;
+- atualizar o DER e o diagrama de arquitetura/fluxo;
+- criar o Diagrama de Sequência do Sistema (DSS);
+- explicar a classificação de campanhas e a apresentação das KPIs;
+- preencher as lacunas de referências bibliográficas;
+- revisar `docs/queries_demo.sql` antes de qualquer uso público;
+- executar revisão final da fronteira de exposição de texto, diagramas,
+  tabelas e imagens.
+
+### 14.18 Lacunas bibliográficas
+
+Os temas abaixo ainda precisam de fontes acadêmicas, normativas ou oficiais.
+Esta lista **não** significa que já estejam referenciados:
+
+- pesquisa aplicada e Design Science Research;
+- arquitetura Bronze–Silver–Gold;
+- dbt e transformação analítica;
+- Apache Airflow e orquestração;
+- idempotência;
+- append-only e replay;
+- dados tardios e métricas revisadas retroativamente;
+- contratos e evolução de schema;
+- qualidade e testes de dados;
+- aditividade e não aditividade de métricas;
+- HMAC e pseudonimização;
+- LGPD e orientações da ANPD;
+- definições oficiais de métricas do Meta Ads;
+- definições oficiais de métricas do Google Ads;
+- modelos e janelas de atribuição;
+- benchmark de armazenamento orientado a linhas × colunas;
+- observabilidade de limites impostos por sistemas externos.
+
+## 15. Classificação relativa de desempenho e estado final pós-4V — 01/09/2026
+
+Esta seção complementa o estado consolidado de 31/08/2026 com a feature de
+classificação relativa de campanhas e anúncios, encerrada nos commits
+`308805755139268b760995c79b21dae7cc14dd65`
+(`feat(dashboard): classifica desempenho de campanhas e anuncios`) e
+`1f6590cbf9c663b39402a377fc08f42c3a19a0b6`
+(`fix(classificacao): exige spend positivo nos peers de campanha`). As
+volumetrias da demo e as contagens de testes da seção 14 permanecem como
+snapshot do fechamento anterior; os valores desta seção são a referência
+técnica posterior à 4V. A pendência da seção 14.17 de explicar a classificação
+de campanhas foi superada por esta consolidação técnica; resta incorporá-la à
+redação acadêmica final junto com a classificação de anúncios.
+
+### 15.1 Estudo empírico e contrato comum de classificação
+
+O motor não usa limiares absolutos de mercado nem produz *score* de 0 a 100.
+Os critérios foram definidos após análise empírica das distribuições, da
+cobertura dos KPIs, dos tamanhos dos grupos comparáveis, da sensibilidade aos
+gates, do efeito *leave-one-out* e dos casos com investimento sem resultado.
+
+Na janela de 30 dias, de 27/07 a 25/08/2026, foram observadas 173 campanhas
+ativas: 79 do Meta e 94 do Google. Os custos apresentaram forte assimetria, o
+que sustentou o uso de mediana e quartis em lugar de média e pressuposto de
+normalidade. No Meta, o tipo de Result mostrou-se necessário para formar
+grupos semanticamente comparáveis. A referência restrita ao cliente foi
+insuficiente em parte das contas, justificando um segundo nível conservador
+para os eixos Meta permitidos. No Google, a superfície não oferece eixo
+semântico suficiente para comparação entre clientes; portanto, benchmark
+*cross-client* foi rejeitado.
+
+CTR e CPC permaneceram métricas diagnósticas e não decidem o status. Reach,
+ROAS, `purchase_value` e `conversion_value` também não participam da
+classificação. Em particular, `conversion_value` do Google não foi tratado
+como receita nem convertido em ROAS de negócio para definir desempenho.
+
+Os seis estados finais são:
+
+- `EXCELENTE`;
+- `BOA`;
+- `ATENCAO`;
+- `RUIM`;
+- `DADOS_INSUFICIENTES`;
+- `NAO_COMPARAVEL`.
+
+Os quatro primeiros representam desempenho relativo medido. Dados
+insuficientes significa que há KPI conceitualmente aplicável, mas falta
+evidência, volume ou referência. Não comparável significa que o próprio dado
+não sustenta comparação semântica. Nenhum dos dois estados neutros é sinônimo
+de desempenho ruim.
+
+Os KPIs primários são:
+
+- Meta com Result homogêneo e válido: `CPR = SUM(spend) / SUM(result_count)`;
+- Meta sem Result utilizável, mas com Leads: `CPL = SUM(spend) /
+  SUM(conversions)`;
+- Google: `CPA = SUM(spend) / SUM(conversions)`.
+
+CPR, CPL e CPA formam eixos separados. Tipos diferentes de Result e janelas
+informativas incompatíveis não são misturados. Recortes Meta com linhas
+tipadas e ausência de Result também permanecem não comparáveis.
+
+O gate mínimo da entidade avaliada e de cada peer usado no benchmark exige:
+
+- `spend > 0`;
+- pelo menos 3 dias ativos;
+- denominador maior ou igual a 3;
+- KPI calculável e eixo semanticamente compatível.
+
+A própria entidade avaliada é sempre excluída do conjunto de referência
+(*leave-one-out*). Essa regra impede que seu custo altere a mediana e os
+quartis usados para julgá-la.
+
+Como menor custo representa melhor desempenho, a classificação por quartis é:
+
+| Posição relativa | Status |
+|---|---|
+| valor menor ou igual a P25 | Excelente |
+| valor maior que P25 e menor ou igual a P50 | Boa |
+| valor maior que P50 e menor ou igual a P75 | Atenção |
+| valor maior que P75 | Ruim |
+
+**Gasto sem resultado.** Entidade com `spend = 0` recebe Dados insuficientes
+pelo gate de investimento. Para `spend > 0` e denominador igual a zero, uma
+referência válida permite comparar o investimento com o custo mediano dos
+peers:
+
+- abaixo de 0,5 vez a mediana: Dados insuficientes;
+- de 0,5 vez até menos de 2 vezes: Atenção;
+- a partir de 2 vezes: Ruim;
+- sem referência válida: Dados insuficientes.
+
+### 15.2 Classificação de campanhas
+
+A cascata de benchmark de campanhas é:
+
+1. **Meta N1:** mesmo cliente e mesmo eixo, com pelo menos 3 outras campanhas
+   elegíveis;
+2. **Meta N2:** mesmo eixo permitido no portfólio, com pelo menos 5 outras
+   campanhas elegíveis;
+3. **Google:** somente mesmo cliente, com pelo menos 3 outras campanhas
+   elegíveis.
+
+Google nunca usa comparação entre clientes. O N2 do Meta preserva o eixo
+semântico: Result mantém tipo e janela compatível, e CPL só se compara com CPL.
+Todos os peers passam pelo gate mínimo comum, inclusive `spend > 0`.
+
+A tendência de campanha é complementar e não altera o status. Ela compara o
+período selecionado com o período imediatamente anterior de mesma duração e só
+é calculada quando o denominador é pelo menos 10 nos dois intervalos. Variação
+de custo inferior a 15% em módulo é Estável; queda igual ou superior a 15% é
+Melhorando; alta igual ou superior a 15% é Piorando.
+
+No caso pseudonimizado usado na validação humana, entre 01 e 25/08/2026,
+`Cliente-C36F58D3` apresentou:
+
+| Status | Campanhas |
+|---|---:|
+| Excelente | 3 |
+| Boa | 1 |
+| Atenção | 1 |
+| Ruim | 3 |
+| Dados insuficientes | 0 |
+| Não comparável | 0 |
+
+Esse pseudônimo pertence à superfície de exposição e não revela nome, ID
+externo ou mapeamento de cliente real.
+
+### 15.3 Estudo empírico e classificação de anúncios
+
+O estudo no nível de anúncio caracterizou duas janelas:
+
+| Janela | Anúncios | Meta | Google | Campanhas | Grupos | Contas |
+|---|---:|---:|---:|---:|---:|---:|
+| 27/07–25/08/2026 | 733 | 340 | 393 | 173 | 366 | 57 |
+| 01/08–25/08/2026 | 644 | 293 | 351 | 160 | 325 | 52 |
+
+Muitos grupos contêm poucos anúncios. Usar apenas o grupo produziria cobertura
+muito baixa; ampliar para outras campanhas, por outro lado, destruiria o
+contexto local e foi rejeitado. A cascata final preserva o eixo semântico e
+nunca atravessa campanha:
+
+1. **N1:** mesmo grupo e mesmo eixo, com pelo menos 3 outros anúncios
+   elegíveis;
+2. **N2:** mesma campanha e mesmo eixo, com pelo menos 3 outros anúncios
+   elegíveis;
+3. sem N1 ou N2 suficiente: Dados insuficientes.
+
+Não existe benchmark *cross-campaign*, *cross-client* ou de portfólio para
+anúncios. Os mesmos KPIs CPR, CPL e CPA, gates de `spend > 0`, 3 dias e
+denominador 3, quartis, regra de gasto sem resultado e *leave-one-out* são
+aplicados. Tendência não foi adotada: a cobertura temporal e a estabilidade no
+grão de anúncio não sustentaram um sinal suficientemente confiável.
+
+📊 **Cobertura real de anúncios:**
+
+| Status | 27/07–25/08 | 01/08–25/08 |
+|---|---:|---:|
+| Excelente | 21 | 25 |
+| Boa | 9 | 14 |
+| Atenção | 20 | 23 |
+| Ruim | 23 | 28 |
+| Dados insuficientes | 444 | 479 |
+| Não comparável | 216 | 75 |
+| **Com desempenho medido** | **73/733 (9,96%)** | **90/644 (13,98%)** |
+
+A cobertura baixa é consequência deliberada das exigências de comparabilidade,
+evidência mínima e peers locais; não representa erro do motor. Relaxar a
+hierarquia apenas para produzir mais rótulos foi rejeitado.
+
+### 15.4 Valor adicional do nível de anúncio
+
+A comparação entre os dois níveis mostrou que o status agregado da campanha
+não substitui a avaliação dos anúncios:
+
+| Janela | Relação observada | Campanhas | Proporção |
+|---|---|---:|---:|
+| 27/07–25/08 | campanha Excelente/Boa com anúncio Atenção/Ruim | 4/28 | 14,29% |
+| 27/07–25/08 | campanha Atenção/Ruim com anúncio Excelente/Boa | 3/30 | 10,00% |
+| 01/08–25/08 | campanha Excelente/Boa com anúncio Atenção/Ruim | 6/40 | 15,00% |
+| 01/08–25/08 | campanha Atenção/Ruim com anúncio Excelente/Boa | 2/37 | 5,41% |
+
+Esses casos demonstram valor informacional adicional: uma campanha bem
+posicionada pode esconder anúncio que exige ação, enquanto campanha de custo
+alto pode conter anúncio competitivo. A classificação de anúncios não depende
+do status da campanha; ambos são resultados relativos calculados em seus
+respectivos grupos.
+
+### 15.5 Dashboard e demo sintética final
+
+Os painéis de campanhas e anúncios apresentam contagens por status, KPI,
+referência, diferença para a mediana e motivo estruturado. Filtros de campanha,
+grupo ou anúncio restringem a saída visual, mas preservam o universo necessário
+ao benchmark. Dados insuficientes e Não comparável permanecem neutros.
+
+A demo final continua 100% sintética, versionada e compatível com o contrato
+v3 de 24 colunas:
+
+| Estrutura | Quantidade |
+|---|---:|
+| Linhas | 1.504 |
+| Contas | 7 |
+| Campanhas | 31 |
+| Grupos | 57 |
+| Anúncios | 76 |
+
+📊 **Campanhas na demo:**
+
+| Status | Quantidade |
+|---|---:|
+| Excelente | 9 |
+| Boa | 2 |
+| Atenção | 3 |
+| Ruim | 9 |
+| Dados insuficientes | 6 |
+| Não comparável | 2 |
+
+📊 **Anúncios na demo:**
+
+| Status | Quantidade |
+|---|---:|
+| Excelente | 8 |
+| Boa | 3 |
+| Atenção | 6 |
+| Ruim | 6 |
+| Dados insuficientes | 49 |
+| Não comparável | 4 |
+
+Entre os 23 anúncios com desempenho medido, 19 usam `MESMO_GRUPO` e 4 usam
+`MESMA_CAMPANHA`. Os KPIs classificados são CPR em 9 anúncios, CPL em 4 e CPA
+em 10. Esses dados foram construídos pelo gerador sintético e servem apenas à
+demonstração e aos testes; não representam resultados reais.
+
+### 15.6 Refinamento de consistência dos peers de campanha
+
+A revisão conjunta do texto metodológico e do motor revelou uma assimetria de
+contrato: o alvo de campanha e os peers de anúncio já exigiam investimento
+positivo, mas um peer de campanha podia teoricamente possuir `spend = 0` se
+passasse pelos demais gates. O contrato foi uniformizado para exigir
+`spend > 0` também dos peers de campanha.
+
+O refinamento não alterou os resultados observados. Em 27/07–25/08 e em
+01/08–25/08 havia zero candidatos reais com `spend = 0` que passassem os
+demais gates de peer. Consequentemente, em cada janela houve:
+
+- 0 status alterados;
+- 0 benchmarks alterados;
+- 0 campanhas que perderam referência;
+- 0 fallbacks novos para o N2.
+
+Trata-se de correção de consistência metodológica e proteção para dados futuros,
+sem reinterpretação dos resultados factuais já apresentados. A demo também
+permaneceu inalterada e continuou exercitando os seis estados e as origens de
+benchmark previstas.
+
+### 15.7 Validação final e artefatos congelados
+
+📊 **Evidência pós-fix:**
+
+| Bateria | Resultado |
+|---|---|
+| Python global | 948 passed, 37 skipped, 0 failed |
+| Classificação de campanhas | 84 passed, 0 failed |
+| Classificação de anúncios | 50 passed, 0 failed |
+| Segurança e anonimização | 55 passed, 0 failed |
+
+Os números registram as baterias executadas e não constituem, isoladamente,
+prova de qualidade absoluta.
+
+📊 **Hashes finais preservados:**
+
+- superfície operacional: 11.326 linhas × 24 colunas;
+- fingerprint HMAC: `4EFD314550FC2D48`;
+- CSV operacional SHA-256:
+  `ad01a7e872372bd76d8c0789ef3792f8bcbe4f7d737a72174ee38f30914e73ee`;
+- manifesto operacional SHA-256:
+  `bb47c651f4d9ac3b21784d0c47fbd46e16057bc9d6b9d0f5e4d68991ff31266f`;
+- CSV da demo SHA-256:
+  `79bfd3deb6371c6236b5ddf1dec2f515c40a41932cbbd611b68ea88931ec82e3`;
+- manifesto da demo SHA-256:
+  `f3b03e58a500a82ef2ecdebc08c735734fae7e52d9e449c813f4a0062191a9b2`.
+
+A superfície operacional permaneceu deliberadamente fora do Git. A demo
+sintética é o artefato versionado para reprodução do dashboard. Nenhum dado,
+modelo do DW, Golden ou regra de classificação foi alterado durante esta
+consolidação documental.
