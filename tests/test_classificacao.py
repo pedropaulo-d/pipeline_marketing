@@ -577,6 +577,8 @@ class TestGastoSemResultado(unittest.TestCase):
         alvo = self.cenario("12.5")
         self.assertEqual(alvo.status, c.ATENCAO)
         self.assertIn("Investimento relevante sem resultado", alvo.motivo)
+        self.assertEqual(alvo.benchmark_origem, c.MESMO_CLIENTE)
+        self.assertEqual(alvo.benchmark_n, 4)
 
     def test_logo_abaixo_do_dobro_ainda_e_atencao(self):
         self.assertEqual(self.cenario("49.75").status, c.ATENCAO)
@@ -629,6 +631,8 @@ class TestSuficiencia(unittest.TestCase):
         alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
         self.assertEqual(alvo.status, c.DADOS_INSUFICIENTES)
         self.assertIn("Sem investimento", alvo.motivo)
+        self.assertEqual(alvo.benchmark_origem, c.INDISPONIVEL)
+        self.assertEqual(alvo.benchmark_n, 0)
 
     def test_dois_dias_e_insuficiente(self):
         linhas = self.base() + campanha_google(
@@ -674,6 +678,74 @@ class TestSuficiencia(unittest.TestCase):
         alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
         self.assertEqual(alvo.status, c.DADOS_INSUFICIENTES)
         self.assertEqual(alvo.benchmark_origem, c.INDISPONIVEL)
+
+
+class TestElegibilidadePeersSpend(unittest.TestCase):
+    """Peers de campanha passam pelo mesmo gate minimo de investimento."""
+
+    def test_peer_sem_spend_e_excluido_dos_quartis_e_da_contagem(self):
+        linhas = campanha_google(
+            CONTA_A, "Campanha-ZERO0001", spend="0", conversoes="10"
+        )
+        linhas += pares_google(CONTA_A, [10, 20, 30])
+        linhas += campanha_google(
+            CONTA_A, "Campanha-ALVO0001", spend="150", conversoes="10"
+        )
+
+        alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
+
+        self.assertEqual(alvo.benchmark_origem, c.MESMO_CLIENTE)
+        self.assertEqual(alvo.benchmark_n, 3)
+        self.assertEqual(alvo.benchmark_p25, Decimal(15))
+        self.assertEqual(alvo.benchmark_mediana, Decimal(20))
+        self.assertEqual(alvo.benchmark_p75, Decimal(25))
+
+    def test_meta_cai_para_n2_quando_zero_deixa_n1_abaixo_do_minimo(self):
+        linhas = campanha_result(
+            CONTA_A, "Campanha-ZERO0001", spend="0", resultados="10"
+        )
+        linhas += pares_result(CONTA_A, [10, 20], prefixo="A")
+        linhas += pares_result(CONTA_B, [30, 40, 50], prefixo="B")
+        linhas += campanha_result(
+            CONTA_A, "Campanha-ALVO0001", spend="150", resultados="10"
+        )
+
+        alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
+
+        self.assertEqual(alvo.benchmark_origem, c.MESMO_TIPO_PORTFOLIO)
+        self.assertEqual(alvo.benchmark_n, 5)
+
+    def test_sem_n1_e_sem_n2_suficientes_permanece_insuficiente(self):
+        linhas = campanha_result(
+            CONTA_A, "Campanha-ZERO0001", spend="0", resultados="10"
+        )
+        linhas += pares_result(CONTA_A, [10, 20], prefixo="A")
+        linhas += pares_result(CONTA_B, [30, 40], prefixo="B")
+        linhas += campanha_result(
+            CONTA_A, "Campanha-ALVO0001", spend="150", resultados="10"
+        )
+
+        alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
+
+        self.assertEqual(alvo.status, c.DADOS_INSUFICIENTES)
+        self.assertEqual(alvo.benchmark_origem, c.INDISPONIVEL)
+        self.assertEqual(alvo.benchmark_n, 0)
+
+    def test_google_nao_cai_para_outros_clientes_apos_excluir_zero(self):
+        linhas = campanha_google(
+            CONTA_A, "Campanha-ZERO0001", spend="0", conversoes="10"
+        )
+        linhas += pares_google(CONTA_A, [10, 20], prefixo="A")
+        linhas += pares_google(CONTA_B, [30, 40, 50, 60, 70, 80], prefixo="B")
+        linhas += campanha_google(
+            CONTA_A, "Campanha-ALVO0001", spend="150", conversoes="10"
+        )
+
+        alvo = por_campanha(c.classificar_campanhas(linhas))["Campanha-ALVO0001"]
+
+        self.assertEqual(alvo.status, c.DADOS_INSUFICIENTES)
+        self.assertEqual(alvo.benchmark_origem, c.INDISPONIVEL)
+        self.assertEqual(alvo.benchmark_n, 0)
 
 
 class TestTendencia(unittest.TestCase):

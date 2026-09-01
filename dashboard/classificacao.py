@@ -533,14 +533,14 @@ def _e_par_valido(candidato: _Agregado) -> bool:
     """Diz se uma campanha pode servir de referencia para outra.
 
     Par valido e campanha com o mesmo rigor de evidencia exigido de quem esta
-    sendo classificado: KPI calculavel, denominador e dias suficientes. Sem
-    isso, a referencia poderia ser construida sobre campanhas de uma unica
-    conversao — exatamente o ruido que o gate de suficiencia existe para
-    manter fora do status.
+    sendo classificado: KPI calculavel, investimento positivo, denominador e
+    dias suficientes. Sem isso, a referencia poderia ser construida sobre
+    campanhas sem investimento ou de uma unica conversao — exatamente o ruido
+    que o gate de suficiencia existe para manter fora do status.
     """
     return _tem_evidencia_para_benchmark(
         candidato,
-        exigir_spend_positivo=False,
+        exigir_spend_positivo=True,
     )
 
 
