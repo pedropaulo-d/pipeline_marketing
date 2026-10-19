@@ -1,6 +1,7 @@
 ---
 title: Arquitetura ELT em camadas
 data: 2026-08-05
+atualizado: 2026-10-19
 tags:
   - tcc
   - arquitetura
@@ -13,8 +14,18 @@ Implementada em 05/08/2026. Conviveu com o pipeline ETL original até 06/08,
 quando o caminho legado foi removido e o projeto passou a ter uma arquitetura
 só. As medições de paridade desta nota foram feitas enquanto os dois
 coexistiam; o código do ETL permanece no histórico do git e pode ser
-restaurado com
-`git checkout f86abba -- transformers/ loaders/supabase_loader.py init_db.sql`.
+restaurado pelo commit, resolvido pela mensagem (o SHA muda quando o histórico
+é sanitizado):
+
+```bash
+ETL=$(git log --all -1 --format=%H --grep='documenta arquitetura, demonstracao')
+git checkout "$ETL" -- transformers/ loaders/supabase_loader.py init_db.sql
+```
+
+Revisada em 19/10/2026 para o estado final: deduplicação por entidade (desde
+25/08), view de consumo, Result oficial do Meta, orquestração pelo Airflow e
+contagens do snapshot de 31/08/2026. As medições datadas de agosto ficam como
+registro histórico.
 
 ## Por que mudou
 
@@ -52,6 +63,7 @@ flowchart TD
     subgraph G["GOLD · dbt (tabelas)"]
         DIMS["dim_plataforma · dim_conta<br/>dim_campanha · dim_adset<br/>dim_anuncio · dim_tempo"]
         FATO["fato_metricas"]
+        VW["vw_metricas_completas<br/>(view de consumo)"]
     end
 
     META --> EXT
@@ -65,7 +77,18 @@ flowchart TD
     SU --> DIMS
     SU --> FATO
     DIMS --> FATO
+    DIMS --> VW
+    FATO --> VW
 ```
+
+O `main.py` executa a sequência numa chamada. Em operação, a DAG
+`pipeline_marketing_diario` do Airflow roda as mesmas etapas como tasks
+separadas (`extrai_meta`, `extrai_google`, `carrega_bronze`,
+`transforma_dbt`), todo dia às 06:00, sobre os 7 dias completos anteriores —
+ver [`airflow/README.md`](../airflow/README.md). A exposição (dashboard e
+material de Defesa) fica fora do pipeline: lê a view, pseudonimiza na
+fronteira e grava `data/exposicao/metricas.csv` — ver
+[`dashboard/README.md`](../dashboard/README.md).
 
 ## O que cada camada faz
 
@@ -90,18 +113,34 @@ Três views:
 
 | Modelo | Responsabilidade |
 |---|---|
-| `stg_meta_ads` | Tipagem + desempacotamento de `actions`/`action_values` |
+| `stg_meta_ads` | Tipagem + desempacotamento de `actions`/`action_values` e do Result oficial |
 | `stg_google_ads` | Tipagem + alinhamento de nomenclatura ao vocabulário comum |
 | `stg_ads_unified` | União das plataformas + surrogate keys encadeadas |
 
-**Deduplicação:** como a bronze acumula snapshots, a silver aplica
-`dense_rank()` por `(source, reference_date)` ordenado por `extracted_at
-desc` e mantém apenas o mais recente. Último snapshot vence.
+**Deduplicação:** como a bronze acumula snapshots, a silver mantém a última
+observação de cada entidade em cada dia: `dense_rank()` particionado pela data
+de referência e pela chave natural hierárquica (conta / campanha / adset ou
+grupo de anúncios / anúncio), ordenado por `extracted_at desc`. Entidade
+presente num lote posterior recebe a métrica revisada; entidade ausente
+conserva a última observação — ausência não é zero. A regra mora numa macro
+única para as duas fontes (`ultimo_snapshot`), e nome e métrica nunca
+participam da deduplicação.
+
+Até 24/08/2026 a partição era só `(source, reference_date)`: o lote mais
+recente substituía o dia inteiro, e um lote parcial apagava entidades
+ausentes. Ver [`tcc/snapshot-experimental-final.md`](tcc/snapshot-experimental-final.md).
 
 ### Gold — modelo dimensional
 
 O mesmo Snowflake Schema de antes, agora materializado por dbt: 6 dimensões
 em hierarquia encadeada mais a tabela fato, com grão de um anúncio por dia.
+Além das 9 métricas, o fato guarda `purchase_value` e o Result oficial do Meta
+(tipo, quantidade, janela de atribuição e custo), com `objective` e
+`optimization_goal` como contexto. Colunas e semântica em [`der.md`](der.md).
+
+A consulta passa pela view `gold.vw_metricas_completas`, que atravessa as
+cinco dimensões com a cláusula de validade em cada nível, no mesmo grão do
+fato.
 
 **Dimensões versionadas em SCD Tipo 2.** Cada entidade tem duas chaves:
 
@@ -161,6 +200,10 @@ o relatório de abril não é mais reescrito pela renomeação de agosto.
 Em 06/08, `dim_campanha` tem 183 linhas para 180 entidades; `dim_adset`, 340
 para 337; `dim_conta`, 58 para 57. A diferença são exatamente as versões.
 
+No snapshot final (31/08/2026), as versões extras são 11: `dim_conta` tem 67
+linhas para 65 entidades, `dim_campanha` 222 para 217, `dim_adset` 450 para
+446 e `dim_anuncio` 910 para 910.
+
 Três testes garantem a consistência do versionamento:
 `assert_scd2_sem_sobreposicao` (intervalos não se sobrepõem, o que duplicaria
 métricas no join), `assert_scd2_uma_versao_atual` (exatamente uma versão
@@ -181,7 +224,7 @@ hierarquia devolve exatamente uma linha por linha do fato).
 |---|---|---|
 | Reprocessar sem API | ❌ | ✅ |
 | Histórico do dado bruto | ❌ | ✅ append-only |
-| Testes de dados | ❌ | ✅ 72 testes |
+| Testes de dados | ❌ | ✅ 79 testes de dados + 31 unitários |
 | Histórico de renomeações | ❌ SCD Tipo 1 | ✅ SCD Tipo 2 |
 | Lineage documentado | ❌ | ✅ gerado pelo dbt |
 | Auditoria de execuções | ❌ | ✅ `ingestion_log` |
@@ -224,10 +267,19 @@ coluna passou a ser `NUMERIC` na gold.
 > `reach`, `conversions` e `conversion_value` do Google entre si.
 > Testes de schema não pegam erro de conteúdo.
 
+### Depois da remoção do ETL: golden de paridade
+
+Sem o ETL para comparar, a referência passou a ser um golden snapshot dos
+agregados do armazém (`tests/golden/`). `scripts/verificar_paridade.py
+verificar` compara o estado atual com ele e sai com 1 se algo divergir. As
+coleções com chave natural são comparadas por chave, e não há tolerância
+numérica: arredondar antes de comparar esconderia exatamente o tipo de erro
+descrito acima. Toda refatoração de transformação passa por essa verificação.
+
 ## Como rodar
 
 ```bash
-# Pipeline completo em modo ELT (default)
+# Pipeline completo: extração, carga na bronze e dbt build
 docker compose run --rm etl_app python main.py
 
 # Reprocessar sem consumir a API
@@ -238,6 +290,9 @@ docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt bui
 
 # Documentação navegável com o grafo de lineage
 docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt docs generate
+
+# Paridade com o golden
+docker compose run --rm etl_app python scripts/verificar_paridade.py verificar
 ```
 
 ## Limitações que permanecem
@@ -245,10 +300,13 @@ docker compose run --rm -e DBT_PROFILES_DIR=/app/dbt -w /app/dbt etl_app dbt doc
 - **SCD Tipo 2 limitado pela granularidade da extração** — só detecta
   renomeações entre extrações, não no instante em que ocorrem.
 - **Materialização full-refresh** — a gold é reconstruída inteira a cada
-  execução. Adequado ao volume atual (~1,7 mil linhas); exigiria modelos
-  incrementais em outra ordem de grandeza.
-- **Cobertura desigual de métricas** — `reach`, `profile_views` e `purchases`
-  continuam zerados para o Google, por limitação da consulta GAQL nesse nível.
+  execução. Adequado ao volume do snapshot final (11.326 linhas no fato; a
+  projeção fica abaixo de 600 mil em 5 anos); exigiria modelos incrementais em
+  outra ordem de grandeza.
+- **Cobertura desigual de métricas** — `reach`, `profile_views`, `purchases` e
+  `purchase_value` continuam zerados para o Google, por limitação da consulta
+  GAQL nesse nível. O Result oficial e o contexto de campanha (`objective`,
+  `optimization_goal`) existem só no Meta; no Google ficam nulos.
   `video_views` deixou de ser zero em 06/08, mas com uma ressalva: o valor vem
   de `metrics.video_trueview_views`, que conta visualização de 30 segundos,
   vídeo completo ou interação — enquanto o Meta conta a partir de 3 segundos.

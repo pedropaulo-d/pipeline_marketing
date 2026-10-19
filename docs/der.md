@@ -3,8 +3,8 @@
 Modelo dimensional da camada **gold**, materializado pelo dbt a partir da silver
 (ver [`arquitetura-elt`](arquitetura-elt.md)). Implementa um **Snowflake
 Schema**: 5 dimensoes normalizadas em cadeia (Plataforma -> Conta -> Campanha ->
-AdSet -> Anuncio) + `dim_tempo` + 1 tabela fato. Os modelos estao em
-`dbt/models/gold/`.
+AdSet -> Anuncio) + `dim_tempo` + 1 tabela fato, consumidos pela view
+`gold.vw_metricas_completas`. Os modelos estao em `dbt/models/gold/`.
 
 > **Por que Snowflake e nao Star?** A hierarquia de ads e mantida em tabelas
 > separadas, espelhando a estrutura nativa das APIs Meta Ads e Google Ads. Isso
@@ -87,8 +87,8 @@ erDiagram
     }
 
     fato_metricas {
-        TEXT    anuncio_sk FK
-        TEXT    tempo_sk FK
+        TEXT    anuncio_sk PK, FK "grao anuncio x dia"
+        TEXT    tempo_sk PK, FK
         NUMERIC spend
         BIGINT  impressions
         INT     link_clicks
@@ -98,6 +98,13 @@ erDiagram
         BIGINT  reach
         INT     profile_views
         INT     purchases
+        NUMERIC purchase_value
+        TEXT    result_type "Result oficial (Meta)"
+        NUMERIC result_count
+        TEXT    result_attribution_window
+        NUMERIC cost_per_result "razao, nao aditiva"
+        TEXT    objective "contexto (Meta)"
+        TEXT    optimization_goal
     }
 ```
 
@@ -130,6 +137,10 @@ macro `dimensao_scd2`. Uma renomeacao fecha a versao vigente (`valido_ate` =
 vespera) e abre outra. Os intervalos sao contiguos por construcao e a ultima
 versao vai ate `9999-12-31`.
 
+No snapshot final (31/08/2026): `dim_conta` tem 67 linhas para 65 entidades,
+`dim_campanha` 222 para 217, `dim_adset` 450 para 446 e `dim_anuncio` 910 para
+910. As 11 linhas extras sao as versoes.
+
 > ⚠️ **O versionamento muda o contrato de consulta.** Juntar o fato a uma
 > dimensao pela chave natural **sem** restringir ao intervalo de validade
 > transforma o join em 1:N e infla os agregados sem produzir erro nenhum. A
@@ -145,13 +156,31 @@ versao vai ate `9999-12-31`.
 
 - **Grao:** 1 anuncio x 1 dia.
 - **Idempotencia:** garantida antes do fato, na silver — a bronze acumula um
-  snapshot por extracao e a silver mantem apenas o mais recente de cada dia.
-  Reprocessar o mesmo periodo nao duplica linhas. Verificado pelo teste
-  `assert_grao_unico_fato`.
+  snapshot por extracao e a silver mantem a observacao mais recente de cada
+  anuncio em cada dia (macro `ultimo_snapshot`). Reprocessar o mesmo periodo
+  nao duplica linhas. Verificado pelo teste `assert_grao_unico_fato`.
+- **Colunas:** as duas chaves e 16 colunas nao chave.
 - **Metricas (9):** `spend`, `impressions`, `link_clicks`, `conversions`,
   `conversion_value`, `video_views`, `reach`, `profile_views`, `purchases`.
 - `conversions` e `conversion_value` sao **numericos, nao inteiros**: o Google
   reporta conversoes fracionadas por efeito da modelagem de atribuicao.
+- **Valor de compra:** `purchase_value` e o valor atribuido as compras pelo
+  Meta (`omni_purchase`, com `purchase` como alternativa) — valor atribuido
+  pela plataforma, nao receita. No Meta, `conversion_value` e estruturalmente
+  zero; o valor monetario mora em `purchase_value`. No Google fica zerado:
+  `conversions_value` agrega todas as conversion actions, nao so compras.
+- **Result oficial do Meta:** `result_type`, `result_count`,
+  `result_attribution_window` e `cost_per_result`, persistidos so quando tipo
+  e valores podem ser reconciliados. Ausencia completa dos campos e `NULL`,
+  nao zero.
+  `cost_per_result` e uma razao observada, nao aditiva: agregados recalculam
+  `SUM(spend) / SUM(result_count)` dentro de um unico tipo e janela. No Google
+  as quatro colunas ficam nulas.
+- **Contexto do Meta:** `objective` e `optimization_goal` descrevem a
+  configuracao da campanha e nunca entram na decisao de `result_type`. No
+  Google ficam nulos.
+- `reach`, `profile_views` e `purchases` sao zero no Google por ausencia de
+  suporte da GAQL nesse nivel, nao por desempenho medido.
 
 ### Dimensao `dim_tempo`
 
