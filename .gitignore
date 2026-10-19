@@ -85,6 +85,9 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+# Marca de "baixado da internet" que o Windows grava ao copiar arquivo para o
+# WSL (Alternate Data Stream exposto como arquivo vizinho).
+*:Zone.Identifier
 claude.md
 .claude/
 
