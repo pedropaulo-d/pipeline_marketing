@@ -61,7 +61,7 @@ services:
       POSTGRES_PASSWORD: etl
       POSTGRES_DB: marketing_dw
     ports:
-      - "5433:5432"   # 5433 no host para nao conflitar com Postgres local
+      - "127.0.0.1:5433:5432"   # 5433 no host para nao conflitar com Postgres local
     # O Docker da 64 MB de /dev/shm por padrao. O PostgreSQL usa memoria
     # compartilhada para consultas paralelas e VACUUM; em tabelas grandes
     # (benchmark de 10M linhas) isso estoura com "No space left on device".
@@ -132,7 +132,7 @@ services:
     ports:
       # 8082 no host: a 8080 e do Airflow do projeto b3-data-pipeline, que
       # roda em paralelo, e a 8081 e do callback OAuth do Google.
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
@@ -195,7 +195,7 @@ services:
       dockerfile: dashboard/Dockerfile
     container_name: tcc_dashboard
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     volumes:
       # Codigo montado para editar sem rebuild.
       - ./dashboard:/app/dashboard:ro
